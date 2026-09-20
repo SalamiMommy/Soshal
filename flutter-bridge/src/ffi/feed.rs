@@ -193,7 +193,7 @@ fn feed_engagement_counters(
     })
 }
 
-fn get_custom_word_filters(db: &soshal_db_core::Database) -> Vec<String> {
+pub(crate) fn get_custom_word_filters(db: &soshal_db_core::Database) -> Vec<String> {
     soshal_db_core::repos::settings::SettingsRepo::new(db)
         .get("moderation_word_filters")
         .ok()

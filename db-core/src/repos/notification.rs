@@ -29,7 +29,7 @@ impl<'a> NotificationRepo<'a> {
             .map(|s| s.trim().to_ascii_lowercase());
         crate::query::execute(
             &conn,
-            "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET is_read=excluded.is_read",
+            "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET is_read = CASE WHEN notifications.is_read = 1 THEN 1 ELSE excluded.is_read END",
             params![
                 n.id.as_str(),
                 norm_pk,
@@ -53,39 +53,54 @@ impl<'a> NotificationRepo<'a> {
         }
         let conn = self.db.conn()?;
         crate::query::with_tx(&conn, |tx| async move {
-            let sql = "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET is_read=excluded.is_read";
-            let stmt = tx.prepare(sql).await?;
-            for n in notifications {
-                if crate::repos::limits::notification_too_big(n.content.as_deref().unwrap_or("")) {
-                    continue; // oversized notification payload: skip
-                }
-                let norm_pk = n.pubkey.trim();
-                let norm_event_id = n.event_id.as_deref().map(|s| s.trim().to_ascii_lowercase());
-                let norm_from_pk = n
-                    .from_pubkey
-                    .as_deref()
-                    .map(|s| s.trim().to_ascii_lowercase());
-                tx.execute(
-                    "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
-                    params![norm_pk],
-                )
-                .await?;
-                stmt.run(params![
-                    n.id.as_str(),
-                    norm_pk,
-                    n.type_.as_str(),
-                    norm_event_id.as_deref(),
-                    norm_from_pk.as_deref(),
-                    n.content.as_deref(),
-                    n.created_at,
-                    n.is_read,
-                ])
-                .await?;
-                stmt.reset();
-            }
+            self.upsert_batch_in(&tx, notifications).await?;
             tx.commit().await?;
             Ok(())
         })
+    }
+
+    /// Transaction-scoped batch upsert (ingest path writes inside its own
+    /// IMMEDIATE transaction). Same read-state-preserving conflict rule as
+    /// `upsert`: a row already marked read stays read on replay.
+    pub async fn upsert_batch_in(
+        &self,
+        tx: &libsql::Transaction,
+        notifications: &[NotificationRow],
+    ) -> Result<(), crate::error::DbError> {
+        if notifications.is_empty() {
+            return Ok(());
+        }
+        let sql = "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET is_read = CASE WHEN notifications.is_read = 1 THEN 1 ELSE excluded.is_read END";
+        let stmt = tx.prepare(sql).await?;
+        for n in notifications {
+            if crate::repos::limits::notification_too_big(n.content.as_deref().unwrap_or("")) {
+                continue; // oversized notification payload: skip
+            }
+            let norm_pk = n.pubkey.trim();
+            let norm_event_id = n.event_id.as_deref().map(|s| s.trim().to_ascii_lowercase());
+            let norm_from_pk = n
+                .from_pubkey
+                .as_deref()
+                .map(|s| s.trim().to_ascii_lowercase());
+            tx.execute(
+                "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
+                params![norm_pk],
+            )
+            .await?;
+            stmt.run(params![
+                n.id.as_str(),
+                norm_pk,
+                n.type_.as_str(),
+                norm_event_id.as_deref(),
+                norm_from_pk.as_deref(),
+                n.content.as_deref(),
+                n.created_at,
+                n.is_read,
+            ])
+            .await?;
+            stmt.reset();
+        }
+        Ok(())
     }
 
     pub fn get_unread(
@@ -190,6 +205,7 @@ impl<'a> NotificationRepo<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct NotificationRow {
     pub id: String,
     pub pubkey: String,

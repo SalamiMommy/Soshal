@@ -490,6 +490,28 @@ impl<'a> PostRepo<'a> {
         )
     }
 
+    /// Drafts whose scheduled publish time has arrived, soonest first.
+    pub fn get_due_scheduled(
+        &self,
+        pubkey: &str,
+        now: i64,
+        limit: i64,
+    ) -> Result<Vec<PostRow>, crate::error::DbError> {
+        let limit = crate::repos::clamp_limit(limit);
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
+        let conn = self.db.conn()?;
+        crate::query::query(
+            &conn,
+            concat!(
+                "SELECT ",
+                post_columns!(),
+                " FROM posts WHERE LOWER(pubkey) = LOWER(?1) AND scheduled_at IS NOT NULL AND scheduled_at <= ?2 AND is_deleted = 0 AND sync_status = 'scheduled' ORDER BY scheduled_at ASC LIMIT ?3"
+            ),
+            params![norm_pk.as_str(), now, limit],
+            Self::map_row,
+        )
+    }
+
     fn map_meta_row(row: &libsql::Row) -> libsql::Result<PostMetaRow> {
         Ok(PostMetaRow {
             id: row.get(0)?,

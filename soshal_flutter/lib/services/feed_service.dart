@@ -333,7 +333,11 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
         eventId: eventId,
         reactionType: reactionType,
       );
-      final delta = reactionType == '+' ? 1 : reactionType == '-' ? -1 : 0;
+      final delta = reactionType == '+'
+          ? 1
+          : reactionType == '-'
+              ? -1
+              : 0;
       final index = _posts.indexWhere((p) => p.eventId == eventId);
       if (index >= 0) {
         final p = _posts[index];
@@ -561,8 +565,16 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   final Set<String> _seenReactions = {};
 
   /// Apply a live reaction to a cached post (bump the counter if known).
+  /// NIP-25 content may be `'+'` (like), `'-'` (unlike: content counts as
+  /// removal), or any emoji payload for animated reactions — anything that is
+  /// not `'-'` is an addition. `liked` reflects the signer's own state only.
   void applyLiveReaction(
-      String eventId, String pubkey, String content, String reactionId) {
+    String eventId,
+    String pubkey,
+    String content,
+    String reactionId, {
+    String? signerPubkey,
+  }) {
     if (reactionId.isEmpty || !_seenReactions.add(reactionId)) return;
     // FIFO eviction (NEVER full clear): a clear wiped the just-added id plus
     // every prior one, so replays after the boundary re-processed and
@@ -575,12 +587,11 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     final index = _posts.indexWhere((p) => p.eventId == eventId);
     if (index < 0) return;
     final p = _posts[index];
-    final delta = content == '+' ? 1 : -1;
-    final bool liked = content == '+'
-        ? true
-        : content == '-'
-            ? false
-            : p.liked;
+    final delta = content == '-' ? -1 : 1;
+    final bool liked =
+        signerPubkey != null && pubkey == signerPubkey && content != '-';
+    final bool isSelfUnLike =
+        signerPubkey != null && pubkey == signerPubkey && content == '-';
     final updated = FeedPost(
       eventId: p.eventId,
       pubkey: p.pubkey,
@@ -589,7 +600,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
       reactions: (p.reactions + delta) < 0 ? 0 : p.reactions + delta,
       replies: p.replies,
       reposts: p.reposts,
-      liked: liked,
+      liked: isSelfUnLike ? false : (liked ? true : p.liked),
       profileName: p.profileName,
       profilePicture: p.profilePicture,
       media: p.media,

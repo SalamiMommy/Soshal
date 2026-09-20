@@ -33,7 +33,28 @@ pub fn scheduled_create(
         return Err("scheduled_at must be in the future".to_string());
     }
     let now = soshal_common_core::format::now_secs();
-    let id = format!("sched:{pubkey}:{scheduled_at}:{now}");
+    // Unique draft id: nanosecond-resolution nonce so two drafts created in
+    // the same second for the same scheduled_at can never collide, plus a
+    // bounded retry against an id that already exists (e.g. recreated after
+    // a soft delete left the row behind).
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let mut id = format!("sched:{pubkey}:{scheduled_at}:{nanos}");
+    let mut attempt = 0u32;
+    loop {
+        let conflict =
+            super::db::with_db_result(|db| Ok(PostRepo::new(db).get_by_id(&id)?.is_some()))?;
+        if !conflict {
+            break;
+        }
+        attempt += 1;
+        if attempt >= 8 {
+            return Err("could not allocate a unique draft id (too many collisions)".to_string());
+        }
+        id = format!("sched:{pubkey}:{scheduled_at}:{nanos}-{attempt}");
+    }
     let row = PostRow {
         id: id.clone(),
         pubkey,
@@ -83,7 +104,7 @@ pub fn scheduled_delete(id: String) -> Result<bool, String> {
         let repo = PostRepo::new(db);
         if let Some(post) = repo.get_by_id(&id)? {
             super::signer::require_identity(&post.pubkey)
-                .map_err(soshal_db_core::error::DbError::Oversized)?;
+                .map_err(|e| soshal_db_core::error::DbError::Forbidden(e))?;
             if post.scheduled_at.is_none() && post.sync_status != "scheduled" {
                 return Err(soshal_db_core::error::DbError::NotFound);
             }
@@ -91,6 +112,123 @@ pub fn scheduled_delete(id: String) -> Result<bool, String> {
         repo.delete(&id)?;
         Ok(true)
     })
+}
+
+/// Publish every scheduled draft whose `scheduled_at` has arrived for
+/// `pubkey`. Each draft is signed as a real kind-1 event, persisted as a
+/// synced post, removed from the draft set, and broadcast via the sync
+/// pipeline. Returns the number of drafts published. Idempotent: only
+/// rows still in `sync_status = 'scheduled'` are touched.
+#[frb(serialize)]
+pub async fn scheduled_publish_due(pubkey: String, limit: i32) -> Result<u32, String> {
+    super::signer::require_identity(&pubkey)?;
+    let limit = limit.clamp(1, 100) as i64;
+    let now = soshal_common_core::format::now_secs();
+    let drafts =
+        super::db::with_db_result(|db| PostRepo::new(db).get_due_scheduled(&pubkey, now, limit))?;
+    let mut published = 0u32;
+    for draft in drafts {
+        let content = draft.content.trim().to_string();
+        if content.is_empty() {
+            continue; // empty draft: skip, stays scheduled
+        }
+        soshal_feed_core::publish::validate_note_content(&content).map_err(super::util::to_err)?;
+        let filters = super::db::with_db_result(|db| Ok(super::feed::get_custom_word_filters(db)))
+            .unwrap_or_default();
+        let verdict = soshal_moderation_core::check::check_with_custom_words(&content, &filters);
+        if !verdict.passed {
+            return Err(format!(
+                "scheduled post blocked by moderation filter: {}",
+                verdict.reason.unwrap_or_default()
+            ));
+        }
+        // tags: stored Nostr-format tags_json + hashtags extracted from
+        // content (deduped, case-insensitive) so `#x` typed but unlisted
+        // survives publish.
+        let mut tags: Vec<Vec<String>> = serde_json::from_str(&draft.tags_json).unwrap_or_default();
+        let mut seen: std::collections::HashSet<String> = tags
+            .iter()
+            .filter(|t| t.first().map(|k| k == "t").unwrap_or(false))
+            .filter_map(|t| t.get(1).cloned())
+            .map(|t| t.to_ascii_lowercase())
+            .collect();
+        for tag in soshal_content_core::hashtag::extract(&content) {
+            if seen.insert(tag.to_ascii_lowercase()) {
+                tags.push(vec!["t".to_string(), tag]);
+            }
+        }
+        let builder = nostr::event::EventBuilder::new(nostr::event::Kind::TextNote, &content).tags(
+            tags.iter()
+                .filter_map(|t| nostr::event::Tag::parse(t.clone()).ok()),
+        );
+        let signed_json = super::signer::sign_builder(builder)?;
+        let signed: SignedScheduledEvent = serde_json::from_str(&signed_json)
+            .map_err(|e| format!("signer returned malformed event: {e}"))?;
+        let created_at = signed
+            .created_at
+            .unwrap_or_else(soshal_common_core::format::now_secs);
+        let tags_json = serde_json::to_string(&tags).map_err(|e| format!("tags serialize: {e}"))?;
+        let hashtags: Vec<String> = soshal_content_core::hashtag::extract(&content)
+            .into_iter()
+            .collect();
+        if let Ok(rows) = serde_json::to_string(&[ScheduledIndexRow {
+            id: signed.id,
+            pubkey: signed.pubkey,
+            content: signed.content,
+            kind: 1u64,
+        }]) {
+            let _ = super::search::search_index_posts(rows);
+        }
+        super::db::with_db_result(|db| {
+            let _ = soshal_db_core::repos::user::UserRepo::new(db).ensure_exists(signed.pubkey);
+            PostRepo::new(db).upsert(&PostRow {
+                id: signed.id.to_string(),
+                pubkey: signed.pubkey.to_string(),
+                content: signed.content.to_string(),
+                kind: 1,
+                created_at,
+                tags_json: tags_json.clone(),
+                sig: Some(signed.sig.to_string()),
+                reply_to: None,
+                root_id: None,
+                mentioned_pubkeys: String::new(),
+                mentioned_hashtags: hashtags.join(","),
+                subject: None,
+                sync_status: "synced".to_string(),
+                is_deleted: false,
+                scheduled_at: None,
+                freenet_key: None,
+                is_freenet_native: false,
+                rsvp_event_id: None,
+            })?;
+            // Draft row no longer referenced once the real event exists.
+            PostRepo::new(db).delete(&draft.id)?;
+            Ok(())
+        })?;
+        super::sync::publish_or_enqueue("post", &signed_json).await?;
+        published += 1;
+    }
+    Ok(published).into()
+}
+
+/// Publish-time snapshot of the signed event header (mirrors
+/// `feed::SignedEventHeader`; kept local to avoid cross-module deps).
+#[derive(serde::Deserialize)]
+struct SignedScheduledEvent<'a> {
+    id: &'a str,
+    pubkey: &'a str,
+    content: &'a str,
+    #[serde(default)]
+    created_at: Option<i64>,
+    sig: &'a str,
+}
+
+#[derive(serde::Serialize)]
+struct ScheduledIndexRow<'a> {
+    id: &'a str,
+    pubkey: &'a str,
+    content: &'a str,
+    kind: u64,
 }
 
 #[cfg(test)]
@@ -279,5 +417,98 @@ mod tests {
         assert!(scheduled_create(pk.clone(), "test".to_string(), at, vec![]).is_err());
         assert!(scheduled_list(pk.clone()).is_err());
         assert!(scheduled_delete(format!("sched:{pk}:1:2")).is_err());
+    }
+
+    #[test]
+    fn test_same_second_create_generates_unique_ids() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = tmp_db("collision");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let at = soshal_common_core::format::now_secs() + 3600;
+        db::insert_test_user(&pk);
+        let id1 = scheduled_create(pk.clone(), "one".to_string(), at, vec![]).unwrap();
+        let id2 = scheduled_create(pk.clone(), "two".to_string(), at, vec![]).unwrap();
+        assert_ne!(
+            id1, id2,
+            "same-second drafts with the same scheduled_at must not collide"
+        );
+        let arr = parse_arr(&scheduled_list(pk).unwrap());
+        assert_eq!(arr.len(), 2, "json: {arr:?}");
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_delete_other_owners_draft_reports_forbidden() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = tmp_db("forbidden");
+        let keys_a = soshal_nostr_core::keys::generate_keys();
+        let pk_a = keys_a.public_key().to_hex();
+        db::insert_test_user(&pk_a);
+        let at = soshal_common_core::format::now_secs() + 3600;
+        super::super::signer::signer_unlock(keys_a.secret_key().to_secret_hex()).unwrap();
+        let id = scheduled_create(pk_a.clone(), "mine".to_string(), at, vec![]).unwrap();
+        // A different identity tries to delete the draft: authorization
+        // failure, not a size-cap error.
+        let keys_b = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys_b.secret_key().to_secret_hex()).unwrap();
+        let res = scheduled_delete(id);
+        assert!(res.is_err());
+        let err = res.unwrap_err().to_lowercase();
+        assert!(
+            err.contains("forbidden")
+                || err.contains("not authorized")
+                || err.contains("identity mismatch"),
+            "expected authorization error, got: {err}"
+        );
+        assert!(
+            !err.contains("oversized"),
+            "must not mislabel as oversized: {err}"
+        );
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_publish_due_persists_real_post_and_clears_draft() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = tmp_db("due");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let due_in = soshal_common_core::format::now_secs() + 2;
+        db::insert_test_user(&pk);
+        let _id = scheduled_create(
+            pk.clone(),
+            "due post #soshal".to_string(),
+            due_in,
+            vec!["hardcoded".to_string()],
+        )
+        .unwrap();
+        assert_eq!(
+            parse_arr(&scheduled_list(pk.clone()).unwrap()).len(),
+            1,
+            "draft must be listed before it comes due"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
+        let published = scheduled_publish_due(pk.clone(), 10).await.unwrap();
+        assert_eq!(published, 1, "exactly one due draft should publish");
+        assert!(
+            parse_arr(&scheduled_list(pk.clone()).unwrap()).is_empty(),
+            "published draft must leave the draft set"
+        );
+        let rows = crate::ffi::db::db_query_raw_test(format!(
+            "SELECT id, content, sync_status, scheduled_at FROM posts WHERE pubkey = '{pk}'"
+        ));
+        let found = rows.unwrap();
+        assert!(
+            found.contains("due post #soshal"),
+            "published post missing: {found}"
+        );
+        super::super::signer::signer_lock().unwrap();
     }
 }

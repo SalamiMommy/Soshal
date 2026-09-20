@@ -59,6 +59,7 @@ const POST_KIND_ALLOWLIST: &[u16] = &[
 use soshal_db_core::error::DbError;
 use soshal_db_core::repos::bookmark::{BookmarkRepo, BookmarkRow};
 use soshal_db_core::repos::hashtag::{HashtagRepo, HashtagRow};
+use soshal_db_core::repos::notification::{NotificationRepo, NotificationRow};
 use soshal_db_core::repos::post::{PostRepo, PostRow};
 use soshal_db_core::repos::reaction::{ReactionRepo, ReactionRow};
 use soshal_db_core::repos::relay::{RelayRepo, RelayRow};
@@ -138,6 +139,54 @@ fn has_p_tag(event: &Event, pubkey: &str) -> bool {
         .iter()
         .filter(|t| t.kind() == "p")
         .any(|t| t.content().is_some_and(|c| c.eq_ignore_ascii_case(pubkey)))
+}
+
+/// Author pubkey of a cached post, by id. Used by the notification producer
+/// to decide whether a reaction/reply/repost targets the local user's content.
+async fn post_author_id(
+    t: &libsql::Transaction,
+    event_id: &str,
+) -> Result<Option<String>, DbError> {
+    let stmt = t
+        .prepare("SELECT pubkey FROM posts WHERE LOWER(id) = LOWER(?1) AND is_deleted = 0")
+        .await?;
+    let mut rows = stmt.query(libsql::params![event_id]).await?;
+    let Ok(Some(row)) = rows.next().await else {
+        return Ok(None);
+    };
+    let pk: String = row.get(0)?;
+    Ok(Some(pk))
+}
+
+/// Write a notification row for `event` addressed to the local user, mirroring
+/// the aggregator's canonical id scheme (`notif_id`) and wording. Self-actions
+/// never notify. Oversized payloads are skipped by the repo.
+async fn notify_me(
+    db: &Database,
+    my_pubkey: &str,
+    t: &libsql::Transaction,
+    event: &Event,
+    notif_type: &str,
+    event_id: &str,
+    content: &str,
+) -> Result<(), DbError> {
+    if event.pubkey.to_hex().eq_ignore_ascii_case(my_pubkey) {
+        return Ok(());
+    }
+    let from_pubkey = event.pubkey.to_hex();
+    let formatted =
+        soshal_notification_core::aggregator::format_notification_content(notif_type, content, &[]);
+    let row = NotificationRow {
+        id: soshal_notification_core::events::notif_id(notif_type, event_id, &from_pubkey),
+        pubkey: my_pubkey.to_string(),
+        type_: notif_type.to_string(),
+        event_id: Some(event_id.to_string()),
+        from_pubkey: Some(from_pubkey),
+        content: Some(formatted),
+        created_at: sanitize_ts(event.created_at.as_secs()),
+        is_read: false,
+    };
+    NotificationRepo::new(db).upsert_batch_in(t, &[row]).await
 }
 
 /// Convert a verified relay event into its cached DB row (if cacheable).
@@ -527,6 +576,14 @@ async fn handle_impl(
                         .await?;
                 }
             }
+            // "follow" notifications: only when the local user is newly on
+            // this author's list (new follows, not re-syncs of the same list).
+            if !pubkey.eq_ignore_ascii_case(my_pubkey)
+                && has_p_tag(event, my_pubkey)
+                && !before.iter().any(|p| p.eq_ignore_ascii_case(my_pubkey))
+            {
+                notify_me(db, my_pubkey, t, event, "follow", &event.id.to_hex(), "").await?;
+            }
         }
         Kind::ZapRequest => {
             // Store the request so later receipts can bind to it (NIP-57).
@@ -590,7 +647,7 @@ async fn handle_impl(
                 id: event.id.to_hex(),
                 pubkey: event.pubkey.to_hex(),
                 recipient_pubkey: recipient,
-                event_id: Some(zapped_event),
+                event_id: Some(zapped_event.clone()),
                 amount: amount_msats.div_ceil(1000).min(i64::MAX as u64) as i64,
                 amount_msat: amount_msats.min(i64::MAX as u64) as i64,
                 content: Some(event.content.clone()),
@@ -598,6 +655,8 @@ async fn handle_impl(
                 zap_type: "public".to_string(),
             };
             ZapRepo::new(db).upsert_in(t, &row).await?;
+            // Notification: only trusted, NIP-57-bound receipts reach here.
+            notify_me(db, my_pubkey, t, event, "zap", &zapped_event, "").await?;
         }
         Kind::RelayList => {
             let relay_repo = RelayRepo::new(db);
@@ -656,6 +715,9 @@ async fn handle_impl(
                 )
                 .await?;
             }
+            // Tombstoned targets: bookmarks are useless once the post is
+            // deleted; sweep them whenever the list refreshes.
+            let _ = repo.delete_for_deleted_targets_in(t, &pubkey).await;
         }
         Kind::Reaction => {
             let Some(target) = first_e_tag(event) else {
@@ -671,6 +733,22 @@ async fn handle_impl(
                 created_at: sanitize_ts(event.created_at.as_secs()),
             };
             ReactionRepo::new(db).upsert_in(t, &row).await?;
+            // Notification: only when the reaction targets the local user's
+            // own post (reactions to strangers are not ours to surface).
+            if let Some(author) = post_author_id(t, &row.event_id).await? {
+                if author.eq_ignore_ascii_case(my_pubkey) {
+                    notify_me(
+                        db,
+                        my_pubkey,
+                        t,
+                        event,
+                        "reaction",
+                        &row.event_id,
+                        row.content.as_deref().unwrap_or(""),
+                    )
+                    .await?;
+                }
+            }
             if tx
                 .try_send(SyncUpdate::Reaction {
                     id: row.id,
@@ -693,10 +771,16 @@ async fn handle_impl(
             let row = RepostRow {
                 id: event.id.to_hex(),
                 pubkey: event.pubkey.to_hex(),
-                event_id: target,
+                event_id: target.clone(),
                 created_at: sanitize_ts(event.created_at.as_secs()),
             };
             RepostRepo::new(db).upsert_in(t, &row).await?;
+            // Notification: only when the repost targets the local user's post.
+            if let Some(author) = post_author_id(t, &target).await? {
+                if author.eq_ignore_ascii_case(my_pubkey) {
+                    notify_me(db, my_pubkey, t, event, "repost", &target, "").await?;
+                }
+            }
         }
         // Text notes and other app-published kinds all land in `posts` so the
         // cached feed stays complete; only kinds with a surface model emit.
@@ -723,6 +807,53 @@ async fn handle_impl(
                             },
                         )
                         .await?;
+                }
+                // Notifications for text notes touching the local user:
+                // friend-request (tag), reply (targets our post), else mention
+                // (p-tag references us). Precedence mirrors the aggregator.
+                let author = event.pubkey.to_hex();
+                if !author.eq_ignore_ascii_case(my_pubkey) {
+                    let friend_request = event.tags.iter().any(|t| {
+                        t.kind() == "t"
+                            && t.content()
+                                .is_some_and(|c| c.eq_ignore_ascii_case("friend-request"))
+                    });
+                    let reply_target = row.reply_to.as_deref().or(row.root_id.as_deref());
+                    let reply_to_me = match reply_target {
+                        Some(rt) => post_author_id(t, rt)
+                            .await?
+                            .is_some_and(|a| a.eq_ignore_ascii_case(my_pubkey)),
+                        None => false,
+                    };
+                    if friend_request && has_p_tag(event, my_pubkey) {
+                        notify_me(
+                            db,
+                            my_pubkey,
+                            t,
+                            event,
+                            "friend_request",
+                            &row.id,
+                            &row.content,
+                        )
+                        .await?;
+                    } else if reply_to_me {
+                        notify_me(
+                            db,
+                            my_pubkey,
+                            t,
+                            event,
+                            "reply",
+                            reply_target.unwrap_or(&row.id),
+                            &row.content,
+                        )
+                        .await?;
+                    } else if has_p_tag(event, my_pubkey) {
+                        let target = first_e_tag(event)
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| event.id.to_hex());
+                        notify_me(db, my_pubkey, t, event, "mention", &target, &row.content)
+                            .await?;
+                    }
                 }
                 if tx
                     .try_send(SyncUpdate::Feed {

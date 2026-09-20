@@ -37,7 +37,12 @@ impl<'a> HashtagRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "INSERT INTO hashtags (tag, pubkey, last_used_at, count) VALUES (?1,?2,?3,?4) ON CONFLICT(tag, pubkey) DO UPDATE SET last_used_at=excluded.last_used_at, count=count+excluded.count",
+            // count only bumps for a strictly-newer tag usage (`last_used_at`
+            // = the post's created_at), so relay replays of an already-seen
+            // post (same timestamp) cannot inflate trend counts. A same-second
+            // batch of genuinely-distinct posts sharing a tag under-counts by
+            // one; accepted tradeoff.
+            "INSERT INTO hashtags (tag, pubkey, last_used_at, count) VALUES (?1,?2,?3,?4) ON CONFLICT(tag, pubkey) DO UPDATE SET last_used_at=MAX(last_used_at, excluded.last_used_at), count=count+excluded.count WHERE excluded.last_used_at > hashtags.last_used_at",
             params![row.tag.as_str(), row.pubkey.as_str(), row.last_used_at, row.count],
         )?;
         Ok(())
@@ -49,7 +54,9 @@ impl<'a> HashtagRepo<'a> {
         row: &HashtagRow,
     ) -> Result<(), crate::error::DbError> {
         tx.execute(
-            "INSERT INTO hashtags (tag, pubkey, last_used_at, count) VALUES (?1,?2,?3,?4) ON CONFLICT(tag, pubkey) DO UPDATE SET last_used_at=excluded.last_used_at, count=count+excluded.count",
+            // See `upsert`: count only bumps for strictly-newer usage so
+            // re-ingestion of the same post cannot inflate trend counts.
+            "INSERT INTO hashtags (tag, pubkey, last_used_at, count) VALUES (?1,?2,?3,?4) ON CONFLICT(tag, pubkey) DO UPDATE SET last_used_at=MAX(last_used_at, excluded.last_used_at), count=count+excluded.count WHERE excluded.last_used_at > hashtags.last_used_at",
             params![row.tag.as_str(), row.pubkey.as_str(), row.last_used_at, row.count],
         )
         .await?;

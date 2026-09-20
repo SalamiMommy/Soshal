@@ -4534,6 +4534,7 @@ dependencies = [
  "soshal-db-core",
  "soshal-network-core",
  "soshal-nostr-core",
+ "soshal-notification-core",
  "soshal-test-util",
  "soshal-zap-core",
  "tokio",

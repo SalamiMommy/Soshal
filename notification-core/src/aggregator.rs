@@ -30,7 +30,11 @@ pub struct NotificationOutput {
 // ─── Helper ────────────────────────────────────────────────────────────
 
 /// Format notification content text given type and raw event content.
-fn format_notification_content(notif_type: &str, content: &str, tags: &[Vec<String>]) -> String {
+pub fn format_notification_content(
+    notif_type: &str,
+    content: &str,
+    tags: &[Vec<String>],
+) -> String {
     match notif_type {
         "reaction" => {
             let trimmed = content.trim();

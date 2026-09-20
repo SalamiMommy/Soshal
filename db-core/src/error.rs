@@ -8,6 +8,8 @@ pub enum DbError {
     NotFound,
     /// Relay content rejected by size caps.
     Oversized(String),
+    /// Operation not permitted for the current identity.
+    Forbidden(String),
     /// Turso database sync / replication error.
     TursoSync(String),
 }
@@ -20,6 +22,7 @@ impl fmt::Display for DbError {
             DbError::Migration(s) => write!(f, "migration: {}", s),
             DbError::NotFound => write!(f, "not found"),
             DbError::Oversized(s) => write!(f, "oversized: {}", s),
+            DbError::Forbidden(s) => write!(f, "forbidden: {}", s),
             DbError::TursoSync(s) => write!(f, "turso sync: {}", s),
         }
     }

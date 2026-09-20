@@ -56,6 +56,13 @@ class MessagingService extends ChangeNotifier
   Map<String, int> get readWatermarks => _readWatermarks;
   List<EphemeralMedia> get pendingEphemeral => _cachedPendingEphemeral;
 
+  /// Test seam: mark a conversation as just-used so eviction treats it as a
+  /// recently active (i.e. NOT evictable) key.
+  @visibleForTesting
+  void markConversationCached(String key) {
+    _conversationsCacheTime[key] = DateTime.now();
+  }
+
   @override
   void dispose() {
     _storeFlushTimer?.cancel();
@@ -229,12 +236,15 @@ class MessagingService extends ChangeNotifier
         isOwn: true,
       );
 
-      if (!_conversations.containsKey(recipientPubkey)) {
-        _conversations[recipientPubkey] = [];
-      }
-      _evictConversationsIfNeeded();
-      final convo = _conversations[recipientPubkey]!;
+      // Add to local conversation. Insert + mark fresh first, THEN evict: the
+      // cap check must see the new key so a full cache still evicts one, and
+      // the freshly-set cacheTime guarantees the just-added (previously
+      // unknown → epoch-0) conversation is never the LRU victim. putIfAbsent
+      // (not `!`-unwrap) means a victimized key is simply re-created.
+      final convo = _conversations.putIfAbsent(recipientPubkey, () => []);
       convo.insert(0, message);
+      _conversationsCacheTime[recipientPubkey] = DateTime.now();
+      _evictConversationsIfNeeded();
       if (convo.length > 200) {
         convo.removeLast();
       }
@@ -295,9 +305,10 @@ class MessagingService extends ChangeNotifier
           decrypted: true,
           isOwn: true,
         );
-        _evictConversationsIfNeeded();
         final convo = _conversations.putIfAbsent(groupId, () => []);
         convo.insert(0, message);
+        _conversationsCacheTime[groupId] = DateTime.now();
+        _evictConversationsIfNeeded();
         if (convo.length > 200) {
           convo.removeLast();
         }

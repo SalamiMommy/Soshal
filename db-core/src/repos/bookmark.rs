@@ -65,6 +65,24 @@ impl<'a> BookmarkRepo<'a> {
         Ok(())
     }
 
+    /// Drop this author's bookmarks whose target post has been soft-deleted
+    /// (`is_deleted = 1`). Orphaned rows (target gone or absent) are left
+    /// alone: a bookmark may legitimately arrive before its target is cached.
+    pub async fn delete_for_deleted_targets_in(
+        &self,
+        tx: &libsql::Transaction,
+        pubkey: &str,
+    ) -> Result<u64, crate::error::DbError> {
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
+        let res = tx
+            .execute(
+                "DELETE FROM bookmarks WHERE LOWER(pubkey)=LOWER(?1) AND event_id IN (SELECT id FROM posts WHERE is_deleted = 1)",
+                params![norm_pk.as_str()],
+            )
+            .await?;
+        Ok(res)
+    }
+
     pub fn delete(&self, id: &str) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
         crate::query::execute(

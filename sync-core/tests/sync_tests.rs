@@ -7,6 +7,7 @@ use nostr::key::Keys;
 use sha2::{Digest, Sha256};
 use soshal_db_core::query::query_first;
 use soshal_db_core::repos::bookmark::BookmarkRepo;
+use soshal_db_core::repos::notification::NotificationRepo;
 use soshal_db_core::repos::post::PostRepo;
 use soshal_db_core::repos::reaction::ReactionRepo;
 use soshal_db_core::repos::settings::SettingsRepo;
@@ -904,4 +905,111 @@ fn test_prolly_sync_deduplication_and_filtering() {
     } else {
         panic!("expected RequestDeltas");
     }
+}
+
+#[test]
+fn ingest_reaction_to_my_post_writes_reaction_notification() {
+    let db = soshal_test_util::test_db();
+    let me = Keys::generate();
+    let reactor = Keys::generate();
+    let target_id = "e_my_post_1";
+    let mut my_post = soshal_test_util::post_row_content(target_id, "my post");
+    my_post.pubkey = me.public_key().to_hex();
+    PostRepo::new(&db).upsert(&my_post).unwrap();
+    let event = soshal_test_util::signed_event_tagged(
+        &reactor,
+        Kind::Reaction,
+        "+",
+        vec![vec!["e".to_string(), target_id.to_string()]],
+    );
+    let (tx, _rx) = tokio::sync::mpsc::channel(16);
+    handle(&db, &me.public_key().to_hex(), &event, &tx).unwrap();
+    let unread = NotificationRepo::new(&db)
+        .get_unread(&me.public_key().to_hex(), 10)
+        .unwrap();
+    assert_eq!(unread.len(), 1, "unread: {unread:?}");
+    assert_eq!(unread[0].type_, "reaction");
+    assert_eq!(unread[0].event_id.as_deref(), Some(target_id));
+    let reactor_pk = reactor.public_key().to_hex();
+    assert_eq!(unread[0].from_pubkey.as_deref(), Some(reactor_pk.as_str()));
+}
+
+#[test]
+fn ingest_reply_to_my_post_writes_reply_notification() {
+    let db = soshal_test_util::test_db();
+    let me = Keys::generate();
+    let replier = Keys::generate();
+    let target_id = "e_my_post_2";
+    let mut my_post = soshal_test_util::post_row_content(target_id, "my post");
+    my_post.pubkey = me.public_key().to_hex();
+    PostRepo::new(&db).upsert(&my_post).unwrap();
+    let event = soshal_test_util::signed_event_tagged(
+        &replier,
+        Kind::TextNote,
+        "nice post!",
+        vec![
+            vec![
+                "e".to_string(),
+                target_id.to_string(),
+                "".to_string(),
+                "root".to_string(),
+            ],
+            vec!["p".to_string(), me.public_key().to_hex()],
+        ],
+    );
+    let (tx, _rx) = tokio::sync::mpsc::channel(16);
+    handle(&db, &me.public_key().to_hex(), &event, &tx).unwrap();
+    let unread = NotificationRepo::new(&db)
+        .get_unread(&me.public_key().to_hex(), 10)
+        .unwrap();
+    assert_eq!(unread.len(), 1, "unread: {unread:?}");
+    assert_eq!(unread[0].type_, "reply");
+    assert_eq!(unread[0].event_id.as_deref(), Some(target_id));
+}
+
+#[test]
+fn ingest_new_follow_writes_follow_notification() {
+    let db = soshal_test_util::test_db();
+    let me = Keys::generate();
+    let follower = Keys::generate();
+    // Follower's list did not previously include me; the update adds me.
+    let event = soshal_test_util::signed_event_tagged(
+        &follower,
+        Kind::ContactList,
+        "",
+        vec![vec!["p".to_string(), me.public_key().to_hex()]],
+    );
+    let (tx, _rx) = tokio::sync::mpsc::channel(16);
+    handle(&db, &me.public_key().to_hex(), &event, &tx).unwrap();
+    let unread = NotificationRepo::new(&db)
+        .get_unread(&me.public_key().to_hex(), 10)
+        .unwrap();
+    assert_eq!(unread.len(), 1, "unread: {unread:?}");
+    assert_eq!(unread[0].type_, "follow");
+    let follower_pk = follower.public_key().to_hex();
+    assert_eq!(unread[0].from_pubkey.as_deref(), Some(follower_pk.as_str()));
+}
+
+#[test]
+fn ingest_reaction_to_stranger_post_skips_notification() {
+    let db = soshal_test_util::test_db();
+    let me = Keys::generate();
+    let reactor = Keys::generate();
+    let stranger_post_id = "e_stranger_1";
+    // Target post authored by a THIRD party, not me: no notification.
+    let mut other = soshal_test_util::post_row_content(stranger_post_id, "not mine");
+    other.pubkey = reactor.public_key().to_hex();
+    PostRepo::new(&db).upsert(&other).unwrap();
+    let event = soshal_test_util::signed_event_tagged(
+        &reactor,
+        Kind::Reaction,
+        "+",
+        vec![vec!["e".to_string(), stranger_post_id.to_string()]],
+    );
+    let (tx, _rx) = tokio::sync::mpsc::channel(16);
+    handle(&db, &me.public_key().to_hex(), &event, &tx).unwrap();
+    let unread = NotificationRepo::new(&db)
+        .get_unread(&me.public_key().to_hex(), 10)
+        .unwrap();
+    assert!(unread.is_empty(), "stranger reaction must not notify me");
 }

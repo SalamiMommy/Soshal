@@ -22,16 +22,16 @@ impl<'a> RepostRepo<'a> {
         tx: &libsql::Transaction,
         r: &RepostRow,
     ) -> Result<(), crate::error::DbError> {
-        let norm_pk = r.pubkey.trim();
+        let norm_pk = r.pubkey.trim().to_ascii_lowercase();
         let norm_eid = r.event_id.trim().to_ascii_lowercase();
         tx.execute(
             "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
-            params![norm_pk],
+            params![norm_pk.as_str()],
         )
         .await?;
         tx.execute(
             "INSERT INTO reposts (id, pubkey, event_id, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO NOTHING",
-            params![r.id.trim(), norm_pk, norm_eid.as_str(), r.created_at],
+            params![r.id.trim(), norm_pk.as_str(), norm_eid.as_str(), r.created_at],
         )
         .await?;
         Ok(())

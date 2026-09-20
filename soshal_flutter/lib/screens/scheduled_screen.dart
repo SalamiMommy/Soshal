@@ -19,12 +19,23 @@ class ScheduledScreen extends StatefulWidget {
 class _ScheduledScreenState extends State<ScheduledScreen> {
   bool _loading = true;
   String? _pubkey;
+  ScheduledService? _scheduled;
 
   @override
   void initState() {
     super.initState();
     _pubkey = context.read<SessionService>().activePubkey;
+    _scheduled = context.read<ScheduledService>();
     _load();
+  }
+
+  @override
+  void dispose() {
+    // Stop the periodic publish scan; a fresh screen starts its own.
+    // Use the cached reference: `context.read` is unsafe in dispose (the
+    // element tree is being torn down).
+    _scheduled?.stopAutoPublish();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -33,12 +44,22 @@ class _ScheduledScreenState extends State<ScheduledScreen> {
       if (mounted) setState(() => _loading = false);
       return;
     }
+    // Publish anything that came due while the app was closed / on another
+    // screen, then keep scanning every ~60 s.
+    try {
+      await context.read<ScheduledService>().publishDue(pubkey);
+    } catch (e) {
+      debugPrint('scheduled publish-on-open: $e');
+    }
     try {
       await context.read<ScheduledService>().list(pubkey);
     } catch (e) {
       debugPrint('scheduled load: $e');
     }
-    if (mounted) setState(() => _loading = false);
+    if (mounted) {
+      context.read<ScheduledService>().startAutoPublish(pubkey);
+      setState(() => _loading = false);
+    }
   }
 
   Future<void> _composeDialog() async {

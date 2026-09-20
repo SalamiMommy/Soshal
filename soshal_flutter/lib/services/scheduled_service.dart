@@ -1,11 +1,15 @@
 import '../utils/json_ext.dart';
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
 import '../utils/service_guard.dart';
+
+/// How often the scheduled-publish timer scans for due drafts (secs).
+const int _autoPublishIntervalSecs = 60;
 
 /// Scheduled Service
 /// Draft posts with a future scheduled_at timestamp, persisted in the
@@ -19,6 +23,7 @@ class ScheduledService extends ChangeNotifier
   /// Clear draft posts on account switch so Account B never sees Account A's
   /// scheduled posts.
   void resetForAccountSwitch() {
+    stopAutoPublish();
     _drafts = [];
     clearLastError();
     notifyListeners();
@@ -65,6 +70,51 @@ class ScheduledService extends ChangeNotifier
         }
         return ok;
       });
+
+  /// Publish every draft whose `scheduled_at` has arrived (Rust signs each
+  /// one, persists it as a real post, and broadcasts it via the sync
+  /// pipeline). Returns the number of drafts published. Idempotent.
+  Future<int> publishDue(String pubkey, {int limit = 50}) async {
+    final published = await guard(() {
+      return RustLib.instance.api.crateFfiScheduledScheduledPublishDue(
+        pubkey: pubkey,
+        limit: limit,
+      );
+    }, notifyOnSuccess: false);
+    // Published drafts are gone from the draft set — refresh so the UI never
+    // shows a due-but-already-broadcast post as pending.
+    if (published > 0) {
+      await list(pubkey);
+    }
+    return published;
+  }
+
+  Timer? _autoPublishTimer;
+
+  /// Start the periodic scan that publishes due drafts (~every 60 s).
+  /// No-op while the current pubkey's drafts are managed by the compose UI.
+  void startAutoPublish(String pubkey) {
+    if (_autoPublishTimer != null) {
+      _autoPublishTimer!.cancel();
+    }
+    _autoPublishTimer = Timer.periodic(
+      const Duration(seconds: _autoPublishIntervalSecs),
+      (_) {
+        unawaited(publishDue(pubkey).then((n) {
+          if (n > 0) debugPrint('scheduled publish: broadcast $n draft(s)');
+        }).catchError((Object e) {
+          debugPrint('scheduled publish: $e');
+        }));
+      },
+    );
+  }
+
+  /// Stop the periodic scan (account switch / screen dispose). Safe to call
+  /// when idle.
+  void stopAutoPublish() {
+    _autoPublishTimer?.cancel();
+    _autoPublishTimer = null;
+  }
 }
 
 /// A scheduled post draft row from the posts table.

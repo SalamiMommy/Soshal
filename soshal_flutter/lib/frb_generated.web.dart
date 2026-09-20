@@ -3915,6 +3915,14 @@ class RustLibWire implements BaseWire {
           wasmModule.wire__crate__ffi__scheduled__scheduled_list(
               ptr_, rust_vec_len_, data_len_);
 
+  void wire__crate__ffi__scheduled__scheduled_publish_due(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__scheduled__scheduled_publish_due(
+          port_, ptr_, rust_vec_len_, data_len_);
+
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__search__search_global(
               PlatformGeneralizedUint8ListPtr ptr_,
@@ -7059,6 +7067,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);
+
+  external void wire__crate__ffi__scheduled__scheduled_publish_due(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__search__search_global(

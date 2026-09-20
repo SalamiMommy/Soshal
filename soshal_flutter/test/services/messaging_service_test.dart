@@ -224,6 +224,38 @@ void main() {
       expect(api.namedArg(inv, 'recipientPubkey'), 'recipient_pk');
     });
 
+    test('sendDM to a fresh recipient at cache capacity never crashes', () async {
+      final msg = MessagingService();
+      api.stubString('crateFfiMessagingMessagingSendDm', 'eventid123');
+
+      // Fill the conversation cache to capacity with recently-active keys so
+      // the incoming (unknown, epoch-0) recipient is the guaranteed LRU
+      // victim once eviction runs. Regression: eviction ran AFTER the
+      // containsKey-guard inserted the key, then `!`-unwrapped a key that
+      // could already have been evicted — null crash.
+      for (var i = 0; i < 50; i++) {
+        final pk = 'peer_$i';
+        msg.conversations[pk] = [
+          DirectMessage(
+            id: 'id$i',
+            sender: pk,
+            recipient: 'me',
+            content: 'x',
+            createdAt: 1000,
+            decrypted: true,
+            isOwn: false,
+          ),
+        ];
+        msg.markConversationCached(pk);
+      }
+
+      final result = await msg.sendDM('hello evict', 'recipient_new', 'sender');
+      expect(result, 'eventid123');
+      expect(msg.conversations['recipient_new'], isNotNull);
+      expect(msg.conversations['recipient_new']!.first.content, 'hello evict');
+      expect(msg.conversations.length, lessThanOrEqualTo(50));
+    });
+
     test('sendDM sets error on exception', () async {
       final msg = MessagingService();
       api.stub('crateFfiMessagingMessagingSendDm', (_) {

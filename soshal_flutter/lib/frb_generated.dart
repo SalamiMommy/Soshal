@@ -81,7 +81,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1110419274;
+  int get rustContentHash => 134321592;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -1430,6 +1430,9 @@ abstract class RustLibApi extends BaseApi {
   bool crateFfiScheduledScheduledDelete({required String id});
 
   String crateFfiScheduledScheduledList({required String pubkey});
+
+  Future<int> crateFfiScheduledScheduledPublishDue(
+      {required String pubkey, required int limit});
 
   String crateFfiSearchSearchGlobal(
       {required String query, required int limit, required String audience});
@@ -13610,6 +13613,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "scheduled_list",
         argNames: ["pubkey"],
+      );
+
+  @override
+  Future<int> crateFfiScheduledScheduledPublishDue(
+      {required String pubkey, required int limit}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(pubkey, serializer);
+        sse_encode_i_32(limit, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__scheduled__scheduled_publish_due(
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_u_32,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiScheduledScheduledPublishDueConstMeta,
+      argValues: [pubkey, limit],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiScheduledScheduledPublishDueConstMeta =>
+      const TaskConstMeta(
+        debugName: "scheduled_publish_due",
+        argNames: ["pubkey", "limit"],
       );
 
   @override

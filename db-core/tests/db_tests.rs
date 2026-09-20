@@ -2584,3 +2584,109 @@ fn test_case_insensitivity_and_normalization_regression() {
     let u_upper = user_repo.get_by_pubkey("UPPER_USER").unwrap();
     assert!(u_upper.is_some());
 }
+
+#[test]
+fn test_hashtag_count_not_inflated_by_reingest() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    insert_test_user(&db, "h_pk");
+    let repo = HashtagRepo::new(&db);
+    let base = HashtagRow {
+        tag: "nostr".into(),
+        pubkey: "h_pk".into(),
+        last_used_at: 1000,
+        count: 1,
+    };
+    repo.upsert(&base).unwrap();
+    // Relay replay of the same post (same created_at): must not inflate.
+    repo.upsert(&base).unwrap();
+    let trend = repo.get_trending(10).unwrap();
+    assert_eq!(trend.len(), 1);
+    assert_eq!(trend[0].count, 1, "re-ingest must not inflate count");
+    // Strictly newer usage bumps the count.
+    repo.upsert(&HashtagRow {
+        tag: "nostr".into(),
+        pubkey: "h_pk".into(),
+        last_used_at: 2000,
+        count: 1,
+    })
+    .unwrap();
+    let trend = repo.get_trending(10).unwrap();
+    assert_eq!(trend[0].count, 2);
+    assert_eq!(trend[0].last_used_at, 2000);
+    // Older replay must not regress last_used_at or double-count.
+    repo.upsert(&HashtagRow {
+        tag: "nostr".into(),
+        pubkey: "h_pk".into(),
+        last_used_at: 999,
+        count: 100,
+    })
+    .unwrap();
+    let trend = repo.get_trending(10).unwrap();
+    assert_eq!(trend[0].last_used_at, 2000);
+    assert_eq!(trend[0].count, 2);
+}
+
+#[test]
+fn test_repost_pubkey_normalized_lowercase() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    insert_test_user(&db, "mixed_pk");
+    let repo = RepostRepo::new(&db);
+    let r = RepostRow {
+        id: "r1".into(),
+        pubkey: "MiXeD_Pk".into(),
+        event_id: "EvT_1".into(),
+        created_at: 900,
+    };
+    repo.upsert(&r).unwrap();
+    {
+        // Scoped: a second conn guard cannot be opened while one is held
+        // (pool size 1 → repo.count_by_event would deadlock waiting).
+        let conn = db.conn().unwrap();
+        let pk = soshal_db_core::query::query_first(
+            &conn,
+            "SELECT pubkey FROM reposts WHERE id = 'r1'",
+            (),
+            |row| row.get::<String>(0),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(pk, "mixed_pk", "pubkey must be stored lowercase");
+    }
+    // count_by_event normalizes its own input, so case-insensitive match.
+    assert_eq!(repo.count_by_event("EvT_1").unwrap(), 1);
+    assert_eq!(repo.count_by_event("evt_1").unwrap(), 1);
+}
+
+#[test]
+fn test_notification_reingest_preserves_read_state() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    insert_test_user(&db, "n_pk");
+    let repo = NotificationRepo::new(&db);
+    let unread_copy = NotificationRow {
+        id: "notif1".into(),
+        pubkey: "n_pk".into(),
+        type_: "reaction".into(),
+        event_id: Some("e1".into()),
+        from_pubkey: Some("from1".into()),
+        content: Some("Liked your post".into()),
+        created_at: 1000,
+        is_read: false,
+    };
+    repo.upsert(&unread_copy).unwrap();
+    // Mark read, then replay the same event's row (still is_read=false):
+    // the stored read state must win.
+    repo.upsert(&NotificationRow {
+        is_read: true,
+        ..unread_copy.clone()
+    })
+    .unwrap();
+    repo.upsert(&unread_copy).unwrap();
+    assert_eq!(
+        repo.count_unread("n_pk").unwrap(),
+        0,
+        "re-ingest must not reset a read notification to unread"
+    );
+}

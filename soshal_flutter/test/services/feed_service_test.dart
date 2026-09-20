@@ -379,6 +379,50 @@ void main() {
       ];
       expect(feed.aggregateChatReactions(zeroPosts, 'my_pk'), isEmpty);
     });
+
+    test('applyLiveReaction moves counters and owned-liked state', () {
+      final feed = FeedService();
+      feed.posts.add(FeedPost(
+        eventId: 'ev1',
+        pubkey: 'author',
+        content: 'hi',
+        createdAt: 1000,
+        reactions: 3,
+        replies: 0,
+        reposts: 0,
+        liked: false,
+      ));
+
+      // '+' like and emoji reactions both add to the counter.
+      feed.applyLiveReaction('ev1', 'alice', '+', 'r1', signerPubkey: 'me');
+      feed.applyLiveReaction('ev1', 'bob', '❤️', 'r2', signerPubkey: 'me');
+      feed.applyLiveReaction('ev1', 'carol', '🔥', 'r3', signerPubkey: 'me');
+      expect(feed.posts.first.reactions, 6);
+
+      // '-' unlike decrements (clamped at 0).
+      feed.applyLiveReaction('ev1', 'bob', '-', 'r4', signerPubkey: 'me');
+      expect(feed.posts.first.reactions, 5);
+
+      // Own reaction flips liked; own unlike clears it.
+      feed.applyLiveReaction('ev1', 'me', '+', 'r5', signerPubkey: 'me');
+      expect(feed.posts.first.liked, true);
+      feed.applyLiveReaction('ev1', 'me', '-', 'r6', signerPubkey: 'me');
+      expect(feed.posts.first.liked, false);
+      expect(feed.posts.first.reactions, 5);
+
+      // Another user's reaction never changes my liked state.
+      feed.applyLiveReaction('ev1', 'dave', '❤️', 'r7', signerPubkey: 'me');
+      expect(feed.posts.first.liked, false);
+      expect(feed.posts.first.reactions, 6);
+
+      // Duplicate reaction events (replays) are deduped by reaction id.
+      feed.applyLiveReaction('ev1', 'dave', '❤️', 'r7', signerPubkey: 'me');
+      expect(feed.posts.first.reactions, 6);
+
+      // Unknown post: safe no-op.
+      feed.applyLiveReaction('nope', 'alice', '+', 'r9', signerPubkey: 'me');
+      expect(feed.posts.first.reactions, 6);
+    });
   });
 }
 

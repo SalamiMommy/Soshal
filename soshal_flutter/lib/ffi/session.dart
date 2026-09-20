@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `check_idle_timeout`, `load_or_create_session_key`, `lock_session`, `persist_session`, `random_suffix`, `session_key_path`, `session_sig_valid`, `sign_session`, `validate_npub`, `validate_path_security`, `validate_pubkey_hex`, `validated_session_path_hardened`, `validated_session_path`, `write_session_file`
+// These functions are ignored because they are not marked as `pub`: `check_idle_timeout`, `load_or_create_session_key`, `load_session_from_disk`, `lock_session`, `persist_session`, `random_suffix`, `session_key_path`, `session_sig_valid`, `sign_session`, `validate_npub`, `validate_path_security`, `validate_pubkey_hex`, `validated_session_path_hardened`, `validated_session_path`, `write_session_file`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `SESSION`, `SessionAccount`, `SessionData`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `deref`, `fmt`, `fmt`, `initialize`
 

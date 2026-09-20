@@ -13220,6 +13220,37 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
+  void wire__crate__ffi__scheduled__scheduled_publish_due(
+    int port_,
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__scheduled__scheduled_publish_due(
+      port_,
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__scheduled__scheduled_publish_duePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__scheduled__scheduled_publish_due',
+      );
+  late final _wire__crate__ffi__scheduled__scheduled_publish_due =
+      _wire__crate__ffi__scheduled__scheduled_publish_duePtr
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
+
   WireSyncRust2DartSse wire__crate__ffi__search__search_global(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -16090,6 +16121,10 @@ const int COLOR_FormatYUV420Flexible = 2135033992;
 
 typedef DartPort = ffi.Int64;
 typedef DartDartPort = int;
+
+
+
+
 
 typedef __ssize_t = ffi.Long;
 typedef Dart__ssize_t = int;
