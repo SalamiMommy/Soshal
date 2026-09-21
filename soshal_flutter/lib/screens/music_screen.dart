@@ -816,8 +816,9 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
   bool _shareBusy = false;
   bool _commentBusy = false;
   String? _shareStatus;
-  double _playbackPosition = 14.5;
-  final double _trackDuration = 184.0;
+  // No audio-core peak extraction / playback position hookup exists yet — the
+  // old hardcoded 14.5s/184.0s values fabricated a scrubber that lied about
+  // playback. Removed; see the "unavailable (roadmap)" waveform note.
 
   MusicTrack get _track => widget.track;
 
@@ -917,8 +918,6 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
   Future<void> _postComment() async {
     final raw = _commentCtrl.text.trim();
     if (raw.isEmpty) return;
-    final timePrefix = '[${_playbackPosition.toStringAsFixed(0)}s] ';
-    final content = '$timePrefix$raw';
     setState(() {
       _commentBusy = true;
       _commentStatus = null;
@@ -927,14 +926,13 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
       await context.read<MusicService>().comment(
             trackPubkey: _track.pubkey,
             trackD: _trackD,
-            content: content,
+            content: raw,
           );
       if (!mounted) return;
       _commentCtrl.clear();
       await _loadComments();
       if (!mounted) return;
-      setState(() => _commentStatus =
-          'Comment posted at ${_playbackPosition.toStringAsFixed(0)}s.');
+      setState(() => _commentStatus = 'Comment posted.');
     } catch (e) {
       if (mounted) setState(() => _commentStatus = 'Failed: $e');
     } finally {
@@ -1030,14 +1028,30 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
                         icon: Icon(
                           trackPlaying ? Icons.pause : Icons.play_arrow,
                         ),
-                        onPressed: () {
+                        onPressed: () async {
                           final shell = context.read<ShellService>();
                           if (shell.audioPlaying &&
                               shell.audioTitle == _track.title) {
                             shell.stopAudio();
-                          } else {
-                            shell.playAudio(_track.audioUrl, _track.title);
+                            return;
                           }
+                          // Same blob-resolution path as the list rows: the
+                          // audio may live on a LAN peer, not locally.
+                          final url = await resolveTrackPlaybackUrl(
+                            _track,
+                            context.read<MediaService>(),
+                            context.read<P2pService>(),
+                          );
+                          if (!context.mounted) return;
+                          if (url == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text(
+                                      'Audio unavailable — no device has this blob.')),
+                            );
+                            return;
+                          }
+                          await shell.playAudio(url, _track.title);
                         },
                       ),
                       const SizedBox(width: 12),
@@ -1051,69 +1065,37 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis),
                             Text(
-                                '${_playbackPosition.toStringAsFixed(1)}s / ${_trackDuration.toStringAsFixed(1)}s',
-                                style: Theme.of(context).textTheme.bodySmall),
+                              'Playback position unavailable (roadmap)',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
                           ],
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  // Waveform Bar Scrubber
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onHorizontalDragUpdate: (details) {
-                      final box = context.findRenderObject() as RenderBox?;
-                      if (box != null) {
-                        final local =
-                            details.localPosition.dx.clamp(0.0, box.size.width);
-                        setState(() {
-                          _playbackPosition =
-                              (local / box.size.width) * _trackDuration;
-                        });
-                      }
-                    },
-                    child: SizedBox(
-                      height: 56,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          for (int i = 0; i < 40; i++) ...[
-                            Expanded(
-                              child: Container(
-                                height: 12.0 + ((i * 7 + 13) % 40).toDouble(),
-                                margin:
-                                    const EdgeInsets.symmetric(horizontal: 1),
-                                decoration: BoxDecoration(
-                                  color: (i / 40.0) <=
-                                          (_playbackPosition / _trackDuration)
-                                      ? Colors.orangeAccent
-                                      : Colors.grey.shade400,
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
+                  // Waveform scrubber & timed comments: no audio-core peak
+                  // extraction or live position hookup exists — the previous
+                  // hardcoded 14.5s/184.0s bars fabricated a scrubber that
+                  // never reflected real playback. Honest placeholder instead.
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('0:00',
-                          style: Theme.of(context).textTheme.bodySmall),
-                      Text(
-                          'Comment at ${_playbackPosition.toStringAsFixed(0)}s',
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.bold)),
-                      Text(
-                          '${(_trackDuration / 60).floor()}:${(_trackDuration % 60).floor().toString().padLeft(2, '0')}',
-                          style: Theme.of(context).textTheme.bodySmall),
-                    ],
+                    child: const Row(
+                      children: [
+                        Icon(Icons.graphic_eq, size: 18),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Waveform & timed comments unavailable (roadmap)',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),

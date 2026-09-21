@@ -75,6 +75,14 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   bool _disposed = false;
   Duration _powerInterval = const Duration(seconds: 30);
   PowerStateDto? _lastPowerSample;
+  // Pre-pause server state so resume can bring the LAN/QUIC servers (and
+  // their mDNS advertisement) back up with fresh ports. Without this, the
+  // servers NEVER restarted after backgrounding — peers vanished from the
+  // LAN registry and blob fetches failed until a manual re-start.
+  bool _wasLanRunning = false;
+  bool _wasQuicRunning = false;
+  bool _wasAdvertising = false;
+  String _mdnsPubkey = '';
 
   P2pService() {
     _lifecycle = AppLifecycleListener(
@@ -89,6 +97,9 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   void _pausePollAndPowerTimers() {
     _pausePollTimer();
     _pausePowerTimer();
+    _wasLanRunning = _lanPort != null;
+    _wasQuicRunning = _quicPort != null;
+    _wasAdvertising = _advertising;
     if (_lanPort != null) stopLanServer();
     if (_quicPort != null) stopQuicServer();
   }
@@ -96,6 +107,41 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   void _resumePollAndPowerTimers() {
     _resumePollTimer();
     _resumePowerTimer();
+    if (_wasLanRunning || _wasQuicRunning) {
+      unawaited(_restartServers());
+    }
+  }
+
+  /// Rebind the LAN/QUIC chunk servers that were killed on pause and
+  /// re-advertise them over mDNS (the old TXT records point at dead ports).
+  Future<void> _restartServers() async {
+    try {
+      int? lan;
+      int? quic;
+      if (_wasLanRunning) {
+        lan = p2PLanServerStart(storeRoot: '');
+        _lanPort = lan;
+      }
+      if (_wasQuicRunning) {
+        quic = p2PQuicServerStart(storeRoot: '');
+        _quicPort = quic;
+      }
+      if (_wasAdvertising && (lan != null || quic != null)) {
+        _advertising = p2PMdnsAdvertiseStart(
+          pubkey: _mdnsPubkey,
+          port: lan ?? _lanPort ?? 0,
+          quicPort: quic ?? _quicPort,
+        );
+      }
+      _wasLanRunning = false;
+      _wasQuicRunning = false;
+      _wasAdvertising = false;
+      clearLastError();
+      notifyListeners();
+    } catch (e, st) {
+      setLastError(e, st);
+      notifyListeners();
+    }
   }
 
   /// (Re)start the power poller at the current interval; no-op while the
@@ -126,6 +172,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
       _lanPort = p2PLanServerStart(storeRoot: '');
       _quicPort = p2PQuicServerStart(storeRoot: '');
 
+      _mdnsPubkey = pubkey;
       _advertising = p2PMdnsAdvertiseStart(
         pubkey: pubkey,
         port: _lanPort!,
@@ -167,6 +214,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   }) async {
     try {
       final p = port ?? _lanPort ?? p2PLanServerPort();
+      _mdnsPubkey = pubkey;
       _advertising = p2PMdnsAdvertiseStart(
         pubkey: pubkey,
         port: p,

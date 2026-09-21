@@ -122,6 +122,12 @@ class ShellService extends ChangeNotifier {
 
   // Incoming call signal.
   Map<String, dynamic>? _incomingCall;
+
+  /// Last decline-signal failure (surfaced for a failed-end state). Null in
+  /// the common success path.
+  String? _lastDeclineError;
+
+  String? get lastDeclineError => _lastDeclineError;
   Map<String, dynamic>? get incomingCall => _incomingCall;
   final List<String> _seenCalls = [];
 
@@ -483,7 +489,8 @@ class ShellService extends ChangeNotifier {
           (v is Map<String, dynamic> ? v['media_type'] as String? : null) ??
               'voice';
       if (peer.isNotEmpty && callId.isNotEmpty) {
-        // Fire-and-forget: tell the peer the call ended.
+        // Tell the peer the call ended. A failure here is surfaced instead
+        // of swallowed: the peer still thinks we're in the call.
         RustLib.instance.api
             .crateFfiCallsCallsSendSignal(
               signalType: 'end',
@@ -493,8 +500,13 @@ class ShellService extends ChangeNotifier {
               candidate: null,
               mediaType: mediaType,
             )
-            .then((_) {})
-            .catchError((_) {});
+            .then((_) {
+              _lastDeclineError = null;
+            })
+            .catchError((e, st) {
+              _lastDeclineError = 'decline signal failed: $e';
+              debugPrint('$_lastDeclineError\n$st');
+            });
       }
     }
     notifyListeners();

@@ -62,26 +62,9 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
   bool _showChatOverlay = true;
   bool _modView = false;
   final TextEditingController _chatInput = TextEditingController();
-  final List<Map<String, String>> _chatMessages = [
-    {
-      'user': 'ModAlice',
-      'role': 'mod',
-      'badge': '🛡️',
-      'text': 'Welcome to the live stream!'
-    },
-    {
-      'user': 'VIPBob',
-      'role': 'vip',
-      'badge': '💎',
-      'text': 'Hype! Let\'s go!'
-    },
-    {
-      'user': 'SubCarol',
-      'role': 'sub',
-      'badge': '⭐',
-      'text': 'Subscribed for 3 months!'
-    },
-  ];
+  // No stream-core chat transport exists — previously seeded with fabricated
+  // users (ModAlice/VIPBob/SubCarol) to fake an active chat. Start empty.
+  final List<Map<String, String>> _chatMessages = const [];
 
   @override
   void initState() {
@@ -407,18 +390,16 @@ class _MoqViewerScreenState extends State<MoqViewerScreen> {
                       IconButton.filled(
                         icon: const Icon(Icons.send, size: 18),
                         onPressed: () {
+                          // Messages would only append to a local list —
+                          // nothing transmits. Don't fake a sent message.
                           final text = _chatInput.text.trim();
-                          if (text.isNotEmpty) {
-                            setState(() {
-                              _chatMessages.add({
-                                'user': 'You',
-                                'role': 'viewer',
-                                'badge': '👤',
-                                'text': text,
-                              });
-                            });
-                            _chatInput.clear();
-                          }
+                          if (text.isEmpty) return;
+                          setState(() => _chatInput.clear());
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content:
+                                    Text('Live chat unavailable (roadmap)')),
+                          );
                         },
                       ),
                     ],

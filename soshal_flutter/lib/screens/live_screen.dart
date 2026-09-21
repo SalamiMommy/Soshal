@@ -64,8 +64,7 @@ class _LiveScreenState extends State<LiveScreen> {
             setDialogState(() {
               canGo = title.text.trim().isNotEmpty &&
                   title.text.trim().length <= 300 &&
-                  url.text.trim().isNotEmpty &&
-                  url.text.trim().length <= 500;
+                  _isValidLiveUrl(url.text);
             });
           }
 
@@ -136,6 +135,24 @@ class _LiveScreenState extends State<LiveScreen> {
         }
       }
     }
+  }
+
+  /// A real ingest endpoint, not a placeholder: http(s) URL with a concrete
+  /// host (blocks the `.example` placeholder that pre-filled the dialog and
+  /// silently produced a dead "live" stream).
+  bool _isValidLiveUrl(String s) {
+    final t = s.trim();
+    if (t.isEmpty || t.length > 500) return false;
+    final uri = Uri.tryParse(t);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) return false;
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme != 'http' && scheme != 'https') return false;
+    if (uri.host == 'example.com' ||
+        uri.host.endsWith('.example') ||
+        uri.host.contains('soshal.example')) {
+      return false;
+    }
+    return true;
   }
 
   Future<void> _endStream(StreamRow stream) async {

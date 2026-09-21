@@ -168,9 +168,15 @@ class _SoshalAppState extends State<SoshalApp> {
       // Bring up the shared relay client before any screen touches it, so
       // relay-gated fetches (chatrandom, musicloud, …) don't fail with
       // "relay client not initialized" before sign-in. Idempotent; account
-      // relays take over after auth. Failures land in the outer catch.
+      // relays take over after auth. A failure here (e.g. boot fully offline)
+      // must NOT abort the rest of the startup wiring — relays are retried
+      // lazily by consuming services and the client re-inits on connect.
       final networkService = context.read<NetworkService>();
-      await networkService.initRelays(NetworkService.defaultRelays);
+      try {
+        await networkService.initRelays(NetworkService.defaultRelays);
+      } catch (e, st) {
+        logRuntimeError('initRelays (retried lazily): $e\n$st');
+      }
       if (!mounted) return;
       final syncService = context.read<SyncService>();
       syncService.attach(

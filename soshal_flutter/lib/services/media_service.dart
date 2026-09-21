@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -28,13 +29,27 @@ class MediaService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
 
   MediaService() {
     _lifecycle = AppLifecycleListener(
-      onHide: _stopLocalServerIfRunning,
+      // Stop the blob server on real backgrounding only. `onPause` fires for
+      // transient interruptions (dialogs, notification shade, permission
+      // prompts) too, but keeping `onHide` here killed the server during
+      // any such overlay and nothing restarted it on resume.
       onPause: _stopLocalServerIfRunning,
+      onResume: _restartLocalServerIfNeeded,
     );
   }
 
+  bool _wasServingOnPause = false;
+
   void _stopLocalServerIfRunning() {
+    _wasServingOnPause = _localServerPort != null;
     if (_localServerPort != null) stopLocalServer();
+  }
+
+  void _restartLocalServerIfNeeded() {
+    if (_wasServingOnPause) {
+      _wasServingOnPause = false;
+      unawaited(startLocalServer());
+    }
   }
 
   /// Fetch a blob by hash from LAN peers (crawl-then-swarm), falling back

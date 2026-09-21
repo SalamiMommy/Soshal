@@ -370,6 +370,15 @@ class DatingService extends ChangeNotifier
     );
   }
 
+  /// Re-insert a card at `index` after an "unblock" undo. `block()` removed
+  /// the card from the deck, so a plain index decrement lands on a shifted
+  /// position; the caller restores the exact prior slot instead.
+  void restoreCard(DatingCard card, int index) {
+    final i = index.clamp(0, _cards.length);
+    _cards.insert(i, card);
+    notifyDeferred();
+  }
+
   Future<bool> unmatch(String userPubkey, String profileId) async {
     try {
       final ok = RustLib.instance.api.crateFfiDatingDatingUnmatch(

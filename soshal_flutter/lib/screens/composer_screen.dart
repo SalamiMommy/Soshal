@@ -32,6 +32,9 @@ class _ComposerScreenState extends State<ComposerScreen> {
   final List<String> _tags = [];
   final List<String> _mentions = [];
   Timer? _tagDebounce;
+  /// Bumped on every debounce tick; a slow `mentions()` result from an older
+  /// tick is discarded when it lands (stale-closure guard).
+  int _mentionGen = 0;
   List<String> _detectedTags = [];
   List<SearchResultItem> _mentionResults = [];
   static final RegExp _mentionRe = RegExp(r'@([A-Za-z0-9_.:\-]{1,})$');
@@ -137,6 +140,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
   void _onContentChanged() {
     _tagDebounce?.cancel();
     _tagDebounce = Timer(const Duration(milliseconds: 300), () async {
+      final gen = ++_mentionGen;
       final text = _contentController.text;
       final match = _mentionRe.firstMatch(text);
       final query = match?.group(1) ?? '';
@@ -152,6 +156,9 @@ class _ComposerScreenState extends State<ComposerScreen> {
         resultsFuture,
       ]);
       if (!mounted) return;
+      // Discard results from a stale (older) debounce tick — a slow mention
+      // lookup must not overwrite fresher results typed since.
+      if (gen != _mentionGen) return;
       setState(() => _detectedTags = extracted[0] as List<String>);
       if (match == null) {
         if (_mentionResults.isNotEmpty) {
@@ -159,6 +166,10 @@ class _ComposerScreenState extends State<ComposerScreen> {
         }
         return;
       }
+      // The mention query may have raced the content change; only show
+      // results when the typed query still matches the current text.
+      final cur = _mentionRe.firstMatch(_contentController.text);
+      if (cur?.group(1) != query) return;
       setState(() => _mentionResults = extracted[1] as List<SearchResultItem>);
     });
   }

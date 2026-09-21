@@ -224,15 +224,18 @@ class NotificationService extends ChangeNotifier
   }
 
   /// Ignore all notifications from a user.
+  ///
+  /// Returns `false` (no state change) when there is no signed-in session —
+  /// the old code treated a missing session as a silent success.
   Future<bool> ignoreUser(String targetPubkey, {String? userPubkey}) async {
     return guard(() {
-      var ok = userPubkey == null || userPubkey.isEmpty;
-      if (!ok) {
-        ok = RustLib.instance.api.crateFfiNotificationsNotificationsIgnoreUser(
-          userPubkey: userPubkey,
-          fromPubkey: targetPubkey,
-        );
-      }
+      final pk = userPubkey;
+      if (pk == null || pk.isEmpty) return false;
+      final ok =
+          RustLib.instance.api.crateFfiNotificationsNotificationsIgnoreUser(
+        userPubkey: pk,
+        fromPubkey: targetPubkey,
+      );
       if (ok) {
         _notifications.removeWhere((n) => n.fromPubkey == targetPubkey);
         _unread.removeWhere((n) => n.fromPubkey == targetPubkey);
@@ -245,17 +248,16 @@ class NotificationService extends ChangeNotifier
     });
   }
 
-  /// Turn off notifications for a thread/post.
+  /// Turn off notifications for a thread/post. `false` when no session.
   Future<bool> ignoreThread(String eventId, {String? userPubkey}) async {
     return guard(() {
-      var ok = userPubkey == null || userPubkey.isEmpty;
-      if (!ok) {
-        ok =
-            RustLib.instance.api.crateFfiNotificationsNotificationsIgnoreThread(
-          userPubkey: userPubkey,
-          eventId: eventId,
-        );
-      }
+      final pk = userPubkey;
+      if (pk == null || pk.isEmpty) return false;
+      final ok =
+          RustLib.instance.api.crateFfiNotificationsNotificationsIgnoreThread(
+        userPubkey: pk,
+        eventId: eventId,
+      );
       if (ok) {
         _notifications.removeWhere((n) => n.eventId == eventId);
         _unread.removeWhere((n) => n.eventId == eventId);

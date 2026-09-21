@@ -1196,18 +1196,18 @@ class _InboxScreenState extends State<InboxScreen> {
                           : () => setState(() => _burn = !_burn),
                     ),
                     IconButton(
-                      icon: Icon(
-                        _isRecordingVoice ? Icons.stop_circle : Icons.mic_none,
-                        color: _isRecordingVoice ? Colors.red : null,
-                      ),
-                      tooltip:
-                          _isRecordingVoice ? 'Stop recording' : 'Voice note',
+                      icon: const Icon(Icons.mic_none),
+                      tooltip: 'Voice note',
                       onPressed: () {
-                        setState(() => _isRecordingVoice = !_isRecordingVoice);
-                        if (!_isRecordingVoice) {
-                          _messageController.text = '🎵 [Voice Note 0:04]';
-                          _sendMessage();
-                        }
+                        // In-chat voice capture doesn't exist — this used to
+                        // fake a recording session and inject '🎵 [Voice Note
+                        // 0:04]' as plain text. Don't pretend.
+                        setState(() => _isRecordingVoice = false);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content:
+                                  Text('Voice notes unavailable (roadmap)')),
+                        );
                       },
                     ),
                     Expanded(

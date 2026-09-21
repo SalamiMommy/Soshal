@@ -205,9 +205,13 @@ class _FeedScreenState extends State<FeedScreen> {
             myPubkey: myPk,
           )
         : allDisplay;
+    final pinnedIds =
+        context.select<FeedService, List<String>>((f) => f.pinnedPosts);
     final List<FeedPost> filteredPosts = switch (_selectedFeedTab) {
-      'Favorites' =>
-        audiencePosts.where((p) => p.reactions > 0 || p.liked).toList(),
+      'Favorites' => audiencePosts
+          .where((p) =>
+              p.reactions > 0 || p.liked || pinnedIds.contains(p.eventId))
+          .toList(),
       'Friends' =>
         audiencePosts.where((p) => p.reposts > 0 || p.reactions > 0).toList(),
       'Groups' => audiencePosts
@@ -539,7 +543,16 @@ class _FeedPostCardState extends State<FeedPostCard> {
                           );
                         }
                         if (!context.mounted) return;
-                        context.read<FeedService>().fetchFeed();
+                        try {
+                          await context.read<FeedService>().fetchFeed();
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content:
+                                        SelectableText('Feed refresh: $e')));
+                          }
+                        }
                       } catch (e) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -894,7 +907,15 @@ class _FeedPostCardState extends State<FeedPostCard> {
     } catch (e) {
       _snack('Zap error: $e');
     } finally {
-      setSending(false);
+      // The zap dialog can be dismissed while the payment is in flight —
+      // `setSending` calls the dialog's setDialogState, which throws once the
+      // dialog is unmounted. Swallow that: the dialog is gone, nothing to
+      // update.
+      try {
+        setSending(false);
+      } catch (_) {
+        // dialog already dismissed
+      }
     }
   }
 
@@ -1062,9 +1083,11 @@ class _FeedPostCardState extends State<FeedPostCard> {
       case 'bookmark':
         await _toggleBookmark(pubkey);
       case 'snooze':
-        _snack('Snoozed posts from this user for 30 days');
+        // No feed-core local snooze state exists yet — don't pretend.
+        _snack('Snooze unavailable (roadmap)');
       case 'hide':
-        _snack('Post hidden from feed');
+        // No feed-core local hide state exists yet — don't pretend.
+        _snack('Hide post unavailable (roadmap)');
       case 'mute':
         try {
           await context.read<ModerationService>().mute(

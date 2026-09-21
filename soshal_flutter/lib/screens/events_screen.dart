@@ -908,7 +908,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       final session = context.read<SessionService>();
       final pubkey = session.activePubkey;
       if (pubkey == null) throw Exception('Sign in to RSVP');
-      await context.read<EventsService>().rsvp(widget.eventId, pubkey, status);
+      final ok = await context
+          .read<EventsService>()
+          .rsvp(widget.eventId, pubkey, status);
+      if (!ok) throw Exception('RSVP rejected (no event activity available)');
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -938,8 +941,9 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         return;
       }
       if (!mounted) return;
-      await context.read<EventsService>().checkIn(
+      final ok = await context.read<EventsService>().checkIn(
           widget.eventId, pubkey, location.latitude!, location.longitude!);
+      if (!ok) throw Exception('Check-in rejected (geofence or offline)');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: SelectableText('Checked in!')),

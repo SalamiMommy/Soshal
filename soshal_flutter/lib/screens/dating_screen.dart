@@ -816,8 +816,17 @@ class _DatingScreenState extends State<DatingScreen>
 
   Future<void> _blockCard(
       DatingService api, String pubkey, DatingCard card) async {
-    await api.block(pubkey, card.pubkey);
+    final ok = await api.block(pubkey, card.pubkey);
+    if (!ok) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Block failed (unavailable)')),
+        );
+      }
+      return;
+    }
     if (!mounted) return;
+    final removedIndex = _cardIndex;
     setState(() => _cardIndex++);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -825,10 +834,19 @@ class _DatingScreenState extends State<DatingScreen>
         action: SnackBarAction(
           label: 'Undo',
           onPressed: () async {
-            await api.unblock(pubkey, card.pubkey);
-            if (mounted) {
-              setState(() =>
-                  _cardIndex = (_cardIndex - 1).clamp(0, api.cards.length - 1));
+            final okUn = await api.unblock(pubkey, card.pubkey);
+            if (!mounted) return;
+            if (okUn) {
+              // block() removed the card — re-insert it at the exact prior
+              // deck position instead of decrementing the (now-shifted) index.
+              setState(() {
+                api.restoreCard(card, removedIndex);
+                _cardIndex = removedIndex;
+              });
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Undo failed')),
+              );
             }
           },
         ),
@@ -843,13 +861,19 @@ class _DatingScreenState extends State<DatingScreen>
       builder: (_) => const _ReportDialog(),
     );
     if (result == null || !result.ok || !mounted) return;
-    await api.report(pubkey, card.pubkey,
+    final ok = await api.report(pubkey, card.pubkey,
         result.reason.trim().isEmpty ? 'reported' : result.reason.trim());
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: SelectableText('Reported')),
-      );
-      setState(() => _cardIndex++);
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText('Reported')),
+        );
+        setState(() => _cardIndex++);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Report failed (unavailable)')),
+        );
+      }
     }
   }
 
@@ -1183,12 +1207,21 @@ class _LikesTabState extends State<_LikesTab> {
                 children: [
                   TextButton(
                     onPressed: () async {
-                      await api.like(pubkey, l.pubkey);
+                      final ok = await api.like(pubkey, l.pubkey);
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: SelectableText('It\'s a match!')),
-                        );
+                        if (ok) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content:
+                                    SelectableText('It\'s a match!')),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: SelectableText(
+                                    'Like failed (unavailable)')),
+                          );
+                        }
                       }
                     },
                     child: const Text('Match back'),

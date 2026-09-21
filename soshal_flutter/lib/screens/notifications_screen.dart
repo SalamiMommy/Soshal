@@ -319,7 +319,7 @@ class _NotificationList extends StatelessWidget {
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_vert, size: 18),
                         tooltip: 'Options',
-                        onSelected: (val) {
+                        onSelected: (val) async {
                           if (val == 'ignore') {
                             api.ignoreNotification(n.id);
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -327,23 +327,29 @@ class _NotificationList extends StatelessWidget {
                                   content: Text('Notification ignored')),
                             );
                           } else if (val == 'ignore_user') {
-                            api.ignoreUser(n.fromPubkey,
+                            final ok = await api.ignoreUser(n.fromPubkey,
                                 userPubkey: context
                                     .read<SessionService>()
                                     .activePubkey);
+                            if (!context.mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('User ignored')),
+                              SnackBar(
+                                  content: Text(ok
+                                      ? 'User ignored'
+                                      : 'Ignore failed — sign in required')),
                             );
                           } else if (val == 'ignore_thread' &&
                               n.eventId != null) {
-                            api.ignoreThread(n.eventId!,
+                            final ok = await api.ignoreThread(n.eventId!,
                                 userPubkey: context
                                     .read<SessionService>()
                                     .activePubkey);
+                            if (!context.mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content:
-                                      Text('Thread notifications turned off')),
+                              SnackBar(
+                                  content: Text(ok
+                                      ? 'Thread notifications turned off'
+                                      : 'Ignore failed — sign in required')),
                             );
                           }
                         },

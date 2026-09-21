@@ -71,13 +71,6 @@ class _CallScreenState extends State<CallScreen> {
     super.dispose();
   }
 
-  String get _elapsedLabel {
-    final e = _service.elapsed;
-    final minutes = e.inMinutes.toString().padLeft(2, '0');
-    final seconds = (e.inSeconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
   Future<void> _endCall() async {
     if (_ending) return;
     setState(() => _ending = true);
@@ -157,13 +150,16 @@ class _CallScreenState extends State<CallScreen> {
     setState(() => _sendingOffer = true);
     try {
       final forceRelay = _privacyLevel == 'friends';
+      // No real codec session exists — the SDP is a placeholder carrying no
+      // addressable media path (loopback only). Keep the published offer's
+      // "signal" shape for the signaling demo without fabricating a route.
       final local = 'v=0\r\n'
           'o=- 0 0 IN IP4 0.0.0.0\r\n'
           's=-\r\n'
-          'c=IN IP4 192.168.1.50\r\n'
+          'c=IN IP4 127.0.0.1\r\n'
           't=0 0\r\n'
           'm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n'
-          'a=candidate:1 1 UDP 1 192.168.1.50 5000 typ host\r\n';
+          'a=candidate:1 1 UDP 1 127.0.0.1 5000 typ host\r\n';
       if (!_service.validateSdp(local)) {
         _snack('Local SDP invalid');
         return;
@@ -236,14 +232,18 @@ class _CallScreenState extends State<CallScreen> {
                 ),
                 const SizedBox(height: 32),
                 Text(
-                  _elapsedLabel,
-                  style: theme.textTheme.displaySmall?.copyWith(
-                    fontFeatures: const [FontFeature.tabularFigures()],
+                  'Media transport unavailable',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: theme.colorScheme.error,
                   ),
+                  textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Media transport pending relay signaling',
+                  'Relay signaling (kinds 20001-20004) works, but WebRTC '
+                  'audio/video transport is not implemented yet. This screen '
+                  'sends and polls signals only.',
+                  textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.outline,
                   ),

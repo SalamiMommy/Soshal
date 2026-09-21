@@ -149,10 +149,14 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
             peers: [peer.pubkey],
             contentJson: '',
           );
-      if (mounted) {
-        _showSnack('Match accepted with ${_short(peer.pubkey)}');
-        context.push('/inbox/${peer.pubkey}');
-      }
+      // Accepting a match ends the search session: stop the poll loop and
+      // re-enable the Start button for the next round.
+      _pollTimer?.cancel();
+      _pollTimer = null;
+      if (!mounted) return;
+      setState(() => _searching = false);
+      _showSnack('Match accepted with ${_short(peer.pubkey)}');
+      context.push('/inbox/${peer.pubkey}');
     } catch (e) {
       if (mounted) _showSnack('Accept failed: $e');
     }
@@ -273,7 +277,17 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
           const SizedBox(width: 8),
           OutlinedButton.icon(
             onPressed: () {
-              _showSnack('Skipping to next stranger...');
+              // During an active search, Skip interrupts it (cancels the
+              // poll loop + request flag) instead of being a silent no-op,
+              // then immediately starts a fresh find.
+              if (_searching) {
+                _pollTimer?.cancel();
+                _pollTimer = null;
+                setState(() => _searching = false);
+                _showSnack('Search interrupted — finding next stranger');
+              } else {
+                _showSnack('Skipping to next stranger...');
+              }
               _findPeer();
             },
             icon: const Icon(Icons.skip_next),

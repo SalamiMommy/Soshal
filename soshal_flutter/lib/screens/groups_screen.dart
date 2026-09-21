@@ -751,9 +751,19 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                                       onPressed: () async {
                                         final pubkey = me;
                                         if (pubkey == null) return;
-                                        await context
-                                            .read<GroupsService>()
-                                            .leave(widget.groupId, pubkey);
+                                        try {
+                                          await context
+                                              .read<GroupsService>()
+                                              .leave(widget.groupId, pubkey);
+                                        } catch (e) {
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(SnackBar(
+                                                    content: SelectableText(
+                                                        'Leave failed: $e')));
+                                          }
+                                          return;
+                                        }
                                         if (context.mounted) {
                                           context.go('/groups');
                                         }

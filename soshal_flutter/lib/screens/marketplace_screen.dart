@@ -149,9 +149,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
             icon: const Icon(Icons.bookmark_border),
             tooltip: 'Save item to Watchlist',
             onPressed: () {
+              // No marketplace-core watchlist table exists yet.
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                    content: Text('Saved "${detail.title}" to your Watchlist')),
+                const SnackBar(
+                    content: Text('Watchlist unavailable (roadmap)')),
               );
             },
           ),
@@ -192,12 +193,13 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
       ),
     );
     if (result == null || !result.ok || !mounted) return;
+    // Offer events are NOT transported yet — no outbox-relayed offer kind
+    // exists in marketplace-core, so claiming success would be a lie.
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-            'Offer sent to seller: ${result.offerAmount} ${listing.currency}'),
-      ),
+      const SnackBar(content: Text('Offers unavailable (roadmap)')),
     );
+    debugPrint('marketplace offer requested: ${result.offerAmount} '
+        '${listing.currency} for ${listing.title}');
   }
 
   Future<void> _buy(ListingInfo listing) async {
@@ -465,63 +467,65 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
         tooltip: 'Create listing',
         child: const Icon(Icons.add),
       ),
-      body: context.select((MarketplaceService s) => s.listingsLoading)
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
+      body: Column(
+        children: [
+          // Filter strip stays visible while a category/trending load runs —
+          // only the listing region below shows the spinner.
+          SizedBox(
+            height: 40,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               children: [
-                SizedBox(
-                  height: 40,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: ChoiceChip(
-                          label: const Text('🔥 Trending'),
-                          selected: _trending,
-                          onSelected: (_) async {
-                            _trending = true;
-                            _category = '';
-                            setState(() {});
-                            try {
-                              await context
-                                  .read<MarketplaceService>()
-                                  .trending();
-                            } catch (e) {
-                              debugPrint('trending: $e');
-                            }
-                          },
-                        ),
-                      ),
-                      for (final c in _categories)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: ChoiceChip(
-                            label: Text(c.isEmpty ? 'All' : c),
-                            selected: _category == c && !_trending,
-                            onSelected: (_) async {
-                              _category = c;
-                              _trending = false;
-                              setState(() {});
-                              try {
-                                final api = context.read<MarketplaceService>();
-                                if (c.isEmpty) {
-                                  await api.fetchListings();
-                                } else {
-                                  await api.byCategory(c);
-                                }
-                              } catch (e) {
-                                debugPrint('category: $e');
-                              }
-                            },
-                          ),
-                        ),
-                    ],
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: ChoiceChip(
+                    label: const Text('🔥 Trending'),
+                    selected: _trending,
+                    onSelected: (_) async {
+                      _trending = true;
+                      _category = '';
+                      setState(() {});
+                      try {
+                        await context
+                            .read<MarketplaceService>()
+                            .trending();
+                      } catch (e) {
+                        debugPrint('trending: $e');
+                      }
+                    },
                   ),
                 ),
-                Expanded(
-                  child: TabBarView(
+                for (final c in _categories)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: ChoiceChip(
+                      label: Text(c.isEmpty ? 'All' : c),
+                      selected: _category == c && !_trending,
+                      onSelected: (_) async {
+                        _category = c;
+                        _trending = false;
+                        setState(() {});
+                        try {
+                          final api = context.read<MarketplaceService>();
+                          if (c.isEmpty) {
+                            await api.fetchListings();
+                          } else {
+                            await api.byCategory(c);
+                          }
+                        } catch (e) {
+                          debugPrint('category: $e');
+                        }
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: context.select((MarketplaceService s) => s.listingsLoading)
+                ? const Center(child: CircularProgressIndicator())
+                : TabBarView(
                     controller: _tabs,
                     children: [
                       _buildBrowse(),
@@ -529,9 +533,9 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
                       _buildMine(),
                     ],
                   ),
-                ),
-              ],
-            ),
+          ),
+        ],
+      ),
     );
   }
 

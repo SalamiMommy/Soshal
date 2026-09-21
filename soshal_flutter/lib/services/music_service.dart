@@ -34,6 +34,9 @@ class MusicService extends ChangeNotifier
   void resetForAccountSwitch() {
     _savedTracks = [];
     _playlists = [];
+    // `_tracks` is scoped to the active account too — leaving the previous
+    // account's fetched stream behind leaks their lib into the new account.
+    _tracks = [];
     clearLastError();
     notifyListeners();
   }

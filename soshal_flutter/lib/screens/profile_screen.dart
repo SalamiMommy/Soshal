@@ -529,18 +529,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             FilledButton(
               onPressed: () async {
-                final json =
-                    await context.read<NetworkService>().fetchProtocolMetadata(
-                          scheme: schemeField.text.trim(),
-                          host: hostField.text.trim(),
-                          path: pathField.text.trim(),
-                        );
-                if (!context.mounted) return;
-                Navigator.of(context).pop();
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Metadata'),
+                try {
+                  final json = await context
+                      .read<NetworkService>()
+                      .fetchProtocolMetadata(
+                        scheme: schemeField.text.trim(),
+                        host: hostField.text.trim(),
+                        path: pathField.text.trim(),
+                      );
+                  if (!context.mounted) return;
+                  Navigator.of(context).pop();
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Metadata'),
                     content: SingleChildScrollView(
                       child: SelectableText(json),
                     ),
@@ -552,6 +554,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ),
                 );
+                } catch (e) {
+                  if (!context.mounted) return;
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: SelectableText('Metadata fetch failed: $e')));
+                }
               },
               child: const Text('Fetch'),
             ),
