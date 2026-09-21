@@ -371,8 +371,9 @@ class DatingService extends ChangeNotifier
   }
 
   /// Re-insert a card at `index` after an "unblock" undo. `block()` removed
-  /// the card from the deck, so a plain index decrement lands on a shifted
-  /// position; the caller restores the exact prior slot instead.
+  /// the card from the deck without advancing `_cardIndex` (removal already
+  /// slides the next card in), so the undo restores the exact prior slot and
+  /// the deck index stays pointed at the restored card.
   void restoreCard(DatingCard card, int index) {
     final i = index.clamp(0, _cards.length);
     _cards.insert(i, card);

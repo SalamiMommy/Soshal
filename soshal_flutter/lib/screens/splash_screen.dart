@@ -119,8 +119,12 @@ class _SplashScreenState extends State<SplashScreen> {
       // so defer the ScaffoldMessenger lookup past the current frame.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
+        final msg = e.toString().contains('unsigned')
+            ? 'Saved session is from an old app version and can\'t be '
+                'verified. Re-import your key to continue.'
+            : 'Initialization error: $e';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: SelectableText('Initialization error: $e')),
+          SnackBar(content: SelectableText(msg)),
         );
         context.go('/auth');
       });

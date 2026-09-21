@@ -97,11 +97,22 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   void _pausePollAndPowerTimers() {
     _pausePollTimer();
     _pausePowerTimer();
-    _wasLanRunning = _lanPort != null;
-    _wasQuicRunning = _quicPort != null;
-    _wasAdvertising = _advertising;
-    if (_lanPort != null) stopLanServer();
-    if (_quicPort != null) stopQuicServer();
+    // ACCUMULATE the restart flags instead of recomputing them from the
+    // live ports: on real Android both `onHide` and `onPause` fire on
+    // backgrounding, and the second call would otherwise see the already-
+    // nulled ports and reset the flags — leaving the servers dead on resume.
+    final lanUp = _lanPort != null;
+    final quicUp = _quicPort != null;
+    final advert = _advertising;
+    if (lanUp) {
+      _wasLanRunning = true;
+      stopLanServer();
+    }
+    if (quicUp) {
+      _wasQuicRunning = true;
+      stopQuicServer();
+    }
+    if (advert) _wasAdvertising = true;
   }
 
   void _resumePollAndPowerTimers() {
@@ -126,16 +137,23 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
         quic = p2PQuicServerStart(storeRoot: '');
         _quicPort = quic;
       }
-      if (_wasAdvertising && (lan != null || quic != null)) {
-        _advertising = p2PMdnsAdvertiseStart(
-          pubkey: _mdnsPubkey,
-          port: lan ?? _lanPort ?? 0,
-          quicPort: quic ?? _quicPort,
-        );
+      if (_wasAdvertising) {
+        // Only advertise when a real port is available — falling back to 0
+        // publishes a dead TXT record (peers connect to nothing).
+        final advertisePort = lan ?? _lanPort;
+        if (advertisePort != null) {
+          _advertising = p2PMdnsAdvertiseStart(
+            pubkey: _mdnsPubkey,
+            port: advertisePort,
+            quicPort: quic ?? _quicPort,
+          );
+        }
+        // The attempt is consumed either way: a failure here must not wedge
+        // the flag and retry forever on every resume.
+        _wasAdvertising = false;
       }
       _wasLanRunning = false;
       _wasQuicRunning = false;
-      _wasAdvertising = false;
       clearLastError();
       notifyListeners();
     } catch (e, st) {

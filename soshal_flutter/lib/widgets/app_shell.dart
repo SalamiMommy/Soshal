@@ -824,7 +824,14 @@ class _IncomingCallBanner extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
                 OutlinedButton(
-                  onPressed: () => shell.declineCall(),
+                  onPressed: () async {
+                    final err = await shell.declineCall();
+                    if (err != null && context.mounted) {
+                      ScaffoldMessenger.of(context)
+                        ..hideCurrentSnackBar()
+                        ..showSnackBar(SnackBar(content: Text(err)));
+                    }
+                  },
                   child: const Text('Decline'),
                 ),
               ],

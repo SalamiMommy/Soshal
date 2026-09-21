@@ -37,7 +37,6 @@ class _InboxScreenState extends State<InboxScreen> {
   String? _mediaResult;
   bool _isTyping = false;
   final bool _peerTyping = false;
-  bool _isRecordingVoice = false;
   bool _showMessageRequests = false;
   final Map<String, String> _messageReactions = {};
 
@@ -1199,10 +1198,9 @@ class _InboxScreenState extends State<InboxScreen> {
                       icon: const Icon(Icons.mic_none),
                       tooltip: 'Voice note',
                       onPressed: () {
-                        // In-chat voice capture doesn't exist — this used to
-                        // fake a recording session and inject '🎵 [Voice Note
-                        // 0:04]' as plain text. Don't pretend.
-                        setState(() => _isRecordingVoice = false);
+                        // In-chat voice capture doesn't exist — this used to fake a recording
+                        // session and inject '🎵 [Voice Note 0:04]' as plain
+                        // text. Don't pretend.
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                               content:
@@ -1221,9 +1219,7 @@ class _InboxScreenState extends State<InboxScreen> {
                           }
                         },
                         decoration: InputDecoration(
-                          hintText: _isRecordingVoice
-                              ? 'Recording audio waveform…'
-                              : 'Message…',
+                          hintText: 'Message…',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(24),
                           ),

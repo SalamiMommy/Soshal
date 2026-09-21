@@ -591,4 +591,51 @@ mod tests {
         );
         super::super::signer::signer_lock().unwrap();
     }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_repeat_due_run_does_not_duplicate_outbox_row() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = tmp_db("dedupe");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        db::insert_test_user(&pk);
+        let due_in = soshal_common_core::format::now_secs() + 2;
+        let _id = scheduled_create(
+            pk.clone(),
+            "dedupe post #soshal".to_string(),
+            due_in,
+            vec![],
+        )
+        .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
+        // No relay client in tests: publish fails fast and the signed event
+        // lands in the persistent outbox (C1 publishes BEFORE the row is
+        // promoted, so an enqueue failure keeps the draft).
+        let count = |label: &str| -> usize {
+            let rows = crate::ffi::db::db_query_raw_test("SELECT id FROM outbox_queue".to_string())
+                .unwrap();
+            eprintln!("outbox[{label}]: {rows}");
+            serde_json::from_str::<Vec<serde_json::Value>>(&rows)
+                .map(|v| v.len())
+                .unwrap_or(0)
+        };
+        assert_eq!(count("before"), 0);
+        let published = scheduled_publish_due(pk.clone(), 10).await.unwrap();
+        assert_eq!(published, 1, "first run publishes the due draft");
+        assert_eq!(count("after-first"), 1, "exactly one outbox row");
+        // Second run: draft is gone, so nothing publishes and no NEW outbox
+        // row appears (outbox insert is ON CONFLICT(id) keyed on event_id —
+        // re-publish attempts would collapse to the same row, never a dup).
+        let published2 = scheduled_publish_due(pk.clone(), 10).await.unwrap();
+        assert_eq!(published2, 0, "second run must not re-publish");
+        assert_eq!(
+            count("after-second"),
+            1,
+            "outbox must not accumulate duplicates"
+        );
+        super::super::signer::signer_lock().unwrap();
+    }
 }

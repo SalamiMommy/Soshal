@@ -536,7 +536,7 @@ class _DatingScreenState extends State<DatingScreen>
                     tooltip: 'Pass',
                     onPressed: () async {
                       await api.pass(pubkey, card.pubkey);
-                      if (mounted) setState(() => _cardIndex++);
+                      if (mounted) setState(() {});
                     },
                   ),
                   const SizedBox(width: 24),
@@ -547,7 +547,7 @@ class _DatingScreenState extends State<DatingScreen>
                     tooltip: 'Like',
                     onPressed: () async {
                       await api.like(pubkey, card.pubkey);
-                      if (mounted) setState(() => _cardIndex++);
+                      if (mounted) setState(() {});
                       await _checkMatch(api, pubkey, card);
                     },
                   ),
@@ -559,7 +559,7 @@ class _DatingScreenState extends State<DatingScreen>
                     tooltip: 'Superlike',
                     onPressed: () async {
                       await api.superlike(pubkey, card.pubkey);
-                      if (mounted) setState(() => _cardIndex++);
+                      if (mounted) setState(() {});
                       await _checkMatch(api, pubkey, card);
                     },
                   ),
@@ -826,8 +826,10 @@ class _DatingScreenState extends State<DatingScreen>
       return;
     }
     if (!mounted) return;
+    // block() removed the card from the deck, so the next card slid into
+    // `_cardIndex` — do NOT increment (an increment would skip it).
     final removedIndex = _cardIndex;
-    setState(() => _cardIndex++);
+    setState(() {});
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Text('Blocked'),
