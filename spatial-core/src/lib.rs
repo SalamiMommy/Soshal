@@ -1,3 +1,6 @@
+//! Spatial core: geohash encode/decode, distance, and the WGPU mesh-layout
+//! engine.
+
 // Re-export json utilities from common-core
 pub use soshal_common_core::json_util::{json_in, json_out};
 

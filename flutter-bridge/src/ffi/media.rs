@@ -79,6 +79,8 @@ pub struct MediaResult {
     pub size: u64,
 }
 
+/// Decoded image as uncompressed 32-bit RGBA pixels
+/// (width × height × 4 bytes).
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct DecodedImageRgbaDto {
     pub width: u32,

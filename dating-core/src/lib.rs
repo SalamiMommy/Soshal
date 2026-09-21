@@ -277,7 +277,7 @@ pub struct FilterDatingProfilesInput {
 }
 
 // ---------------------------------------------------------------------------
-// Public JSON API (replaces WASM FFI)
+// Public JSON API (consumed by the FFI bridge)
 // ---------------------------------------------------------------------------
 
 /// Computes one-directional dating compatibility (0–100).

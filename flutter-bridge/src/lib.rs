@@ -1,6 +1,6 @@
 //! Soshal Flutter Bridge - FFI layer exposing Rust core functionality to Flutter
 //!
-//! This crate provides a thin FFI wrapper around the 26 Soshal core crates,
+//! This crate provides a thin FFI wrapper around the 32 Soshal core crates,
 //! enabling Flutter to access business logic via flutter_rust_bridge.
 
 mod codecs;

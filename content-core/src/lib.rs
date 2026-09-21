@@ -1,3 +1,6 @@
+//! Content processing core: hashtag/mention/URL extraction, safe-JSON and
+//! sanitization, link previews, custom profiles, story content, FTS5 helpers.
+
 pub mod ast_parser;
 pub mod chunk;
 pub mod compress;

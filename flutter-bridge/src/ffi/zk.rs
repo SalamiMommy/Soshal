@@ -3,7 +3,8 @@
 use flutter_rust_bridge::frb;
 use soshal_sync_core::zk_rollup::{verify_zk_rollup_json, CommitmentRollup};
 
-/// Verify a Zero-Knowledge STARK state rollup proof for feed threads
+/// Verify a Zero-Knowledge state-rollup commitment for feed threads
+/// (SHA-256 commitment, not a STARK proof).
 #[frb(sync, serialize)]
 pub fn zk_verify_rollup(rollup_json: String) -> Result<String, String> {
     Ok(verify_zk_rollup_json(&rollup_json))
@@ -12,7 +13,8 @@ pub fn zk_verify_rollup(rollup_json: String) -> Result<String, String> {
 /// Maximum allowed rollup JSON size (1 MB) to prevent memory exhaustion DoS.
 const MAX_ROLLUP_JSON_BYTES: usize = 1024 * 1024;
 
-/// Apply a verified ZK state rollup directly to the database cache
+/// Apply a verified ZK state-rollup commitment directly to the database
+/// cache.
 #[frb(sync, serialize)]
 pub fn zk_apply_rollup(db_path: String, rollup_json: String) -> Result<bool, String> {
     if rollup_json.len() > MAX_ROLLUP_JSON_BYTES {

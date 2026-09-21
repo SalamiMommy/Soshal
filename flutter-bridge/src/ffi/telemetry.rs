@@ -127,6 +127,7 @@ pub fn telemetry_info_json() -> Result<String, String> {
     .into()
 }
 
+/// Whether the local telemetry store is sealed (immutable snapshot).
 #[frb(sync, serialize)]
 pub fn telemetry_is_sealed() -> bool {
     let guard = lock().ok();

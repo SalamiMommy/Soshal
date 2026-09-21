@@ -1,3 +1,8 @@
+//! Network core: relay health/pool, P2P transports (mDNS, TCP HMAC LAN,
+//! QUIC streams/datagrams), swarm downloads, mesh re-exports
+//! (freenet/i2p/reticulum/ble/wifi_direct), edge transports (plumtree,
+//! skademlia, multi-bearer), eBPF shaping, and power-aware scheduling.
+
 // Re-export json utilities from common-core
 pub use soshal_common_core::json_util::{json_in, json_out};
 

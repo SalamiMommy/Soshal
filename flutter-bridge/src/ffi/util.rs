@@ -198,10 +198,12 @@ pub fn json_ok<T: serde::Serialize>(v: T) -> Result<String, String> {
     serde_json::to_string(&v).map_err(|e| format!("serialize: {e}"))
 }
 
+/// Convert any `Display` error into a `String` (shared by bridge fns).
 pub fn to_err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+/// Serialize `v` to JSON, or return an empty string if serialization fails.
 pub fn json_ok_or_empty<T: serde::Serialize>(v: T) -> String {
     serde_json::to_string(&v).unwrap_or_else(|_| "[]".to_string())
 }

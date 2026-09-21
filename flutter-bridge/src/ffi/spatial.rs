@@ -4,6 +4,8 @@
 use flutter_rust_bridge::frb;
 use soshal_spatial_core::geohash::encode_geohash;
 
+/// Encode lat/lon to a 9-char geohash string (feeds the hashtag-form
+/// distance filter).
 #[frb(sync, serialize)]
 pub fn spatial_encode_geohash(lat: f64, lon: f64) -> Result<String, String> {
     encode_geohash(lat, lon, 9)

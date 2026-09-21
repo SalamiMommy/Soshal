@@ -268,6 +268,9 @@ struct SearchIndexRow<'a> {
     kind: u64,
 }
 
+/// Validate and publish a text note (kind 1): content validation, custom
+/// word-filter verdict, and the hashtag/mention/media pipeline through the
+/// FTS index. Returns the signed event JSON.
 #[frb(serialize)]
 pub async fn feed_publish_text_note(content: String, tags_json: String) -> Result<String, String> {
     soshal_feed_core::publish::validate_note_content(&content).map_err(super::util::to_err)?;

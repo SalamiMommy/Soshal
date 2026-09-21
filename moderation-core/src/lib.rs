@@ -1,3 +1,7 @@
+//! Moderation core: word/check filters, CSAM/glitter/gore media detection,
+//! hybrid AI classifier, PDQ hashing, spam, normalization, and jury
+//! (voting) scaffolding.
+
 pub mod ai_classifier;
 pub mod ai_media;
 pub mod check;

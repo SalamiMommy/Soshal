@@ -841,6 +841,8 @@ pub fn marketplace_release_escrow(
     })
 }
 
+/// Mark an escrow as buyer-confirmed; `caller` must match the buyer
+/// identity.
 #[frb(sync, serialize)]
 pub fn marketplace_escrow_confirm_buyer(escrow_id: String, caller: String) -> Result<bool, String> {
     super::db::with_db_result(|db| {
@@ -860,6 +862,8 @@ pub fn marketplace_escrow_confirm_buyer(escrow_id: String, caller: String) -> Re
     })
 }
 
+/// Mark an escrow as seller-confirmed; `caller` must match the seller
+/// identity.
 #[frb(sync, serialize)]
 pub fn marketplace_escrow_confirm_seller(
     escrow_id: String,

@@ -13,6 +13,8 @@ use soshal_network_core::discovery::{
 /// cached per pubkey for 60 s so repeated opens don't redo the scan.
 const SUGGESTIONS_TTL_SECS: i64 = 60;
 
+/// Friend suggestions from the Web of Trust contact graph (kind-3 follows),
+/// cached per pubkey for 60 s. Returns suggested pubkeys.
 #[frb(sync, serialize)]
 pub fn social_friend_suggestions() -> Result<Vec<String>, String> {
     use std::sync::{Mutex, OnceLock};

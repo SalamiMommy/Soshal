@@ -568,7 +568,7 @@ pub fn p2p_swarm_cancel(id: String) -> Result<bool, String> {
 
 /// Push OS power/connectivity state into the seeding scheduler. Returns the
 /// resulting mode snapshot. Call this whenever the OS battery or network
-/// status changes (Dart polls battery_plus / connectivity_plus).
+/// status changes (Dart syncs via `power_sample_os_state`, `ffi/power.rs`).
 #[frb(sync, serialize)]
 pub fn p2p_power_update(
     charging: bool,

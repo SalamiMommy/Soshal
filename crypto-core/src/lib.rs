@@ -1,3 +1,7 @@
+//! Cryptography core: NIP-44 v2 messaging, at-rest encryption, PQC
+//! (ML-KEM/ML-DSA) + hybrid ratchet, key derivation, hashing/hardware
+//! acceleration, FROST scaffolding, and zero-knowledge trust helpers.
+
 pub mod at_rest;
 pub mod base64;
 pub mod base64url;

@@ -1,3 +1,6 @@
+//! Media core: Blossom client, content-addressed storage (CAS), chunking,
+//! decode, thumbhash, identicon fallback, and media prefetch/source.
+
 // Re-export json utilities from common-core
 pub use soshal_common_core::json_util::{json_in, json_out};
 

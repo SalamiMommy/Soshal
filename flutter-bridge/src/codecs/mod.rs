@@ -17,6 +17,7 @@ mod ndk;
 /// state mutex compiles on both targets.
 #[cfg(target_os = "android")]
 pub struct NativeCodec(*mut ndk::AMediaCodec);
+/// Raw AAudio stream handle (only valid on Android).
 #[cfg(target_os = "android")]
 pub struct NativeStream(*mut ndk::AAudioStream);
 #[cfg(not(target_os = "android"))]
@@ -176,6 +177,8 @@ pub fn dvr_write_video(
     crate::platform::live_recorder_write_video(nal, is_key, is_config, width, height)
 }
 
+/// Host stub: DVR muxing runs on Android only (JNI → Kotlin `LiveRecorder`;
+/// see the android cfg of this fn); off-Android this returns `Err`.
 #[cfg(not(target_os = "android"))]
 #[allow(dead_code)]
 pub fn dvr_write_video(_nal: &[u8], _k: bool, _c: bool, _w: i32, _h: i32) -> Result<(), String> {
@@ -188,6 +191,8 @@ pub fn dvr_write_audio(blob: &[u8], is_config: bool) -> Result<(), String> {
     crate::platform::live_recorder_write_audio(blob, is_config)
 }
 
+/// Host stub: DVR muxing runs on Android only (JNI → Kotlin `LiveRecorder`;
+/// see the android cfg of this fn); off-Android this returns `Err`.
 #[cfg(not(target_os = "android"))]
 #[allow(dead_code)]
 pub fn dvr_write_audio(_blob: &[u8], _c: bool) -> Result<(), String> {

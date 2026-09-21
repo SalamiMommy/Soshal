@@ -14,6 +14,9 @@ struct AnalyticsStatsDto {
     total_zap_msat: i64,
 }
 
+/// Compute engagement/social statistics for the active account (SQL
+/// aggregates over posts, reactions, and interactions). Returns a JSON
+/// object string.
 #[frb(serialize)]
 pub async fn analytics_compute_stats() -> Result<String, String> {
     tokio::task::spawn_blocking(move || {

@@ -474,6 +474,8 @@ fn fetch_profiles_internal(
     ))
 }
 
+/// Fetch dating discovery-profile cards for `user_pubkey`, up to `limit`
+/// rows, filtered by `audience`. Returns a JSON array of cards.
 #[frb(sync, serialize)]
 pub fn dating_fetch_profiles(
     user_pubkey: String,

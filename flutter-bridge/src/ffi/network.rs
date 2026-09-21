@@ -91,6 +91,7 @@ pub struct RelayInfo {
     pub last_event_at: u64,
 }
 
+/// Raw HTTP response: status code plus body bytes.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct HttpResponseDto {
     pub status: u16,

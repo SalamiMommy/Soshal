@@ -1,3 +1,5 @@
+//! Nostr protocol core: keys, event models/encoding, and relay client.
+
 pub mod keys;
 pub mod models;
 pub mod relay;
