@@ -45,19 +45,23 @@ class _ScheduledScreenState extends State<ScheduledScreen> {
       return;
     }
     // Publish anything that came due while the app was closed / on another
-    // screen, then keep scanning every ~60 s.
+    // screen, then keep scanning every ~60 s. Use the cached service ref:
+    // `context.read` across an await gap violates lint
+    // `use_build_context_synchronously`.
+    final scheduled = _scheduled;
+    if (scheduled == null) return;
     try {
-      await context.read<ScheduledService>().publishDue(pubkey);
+      await scheduled.publishDue(pubkey);
     } catch (e) {
       debugPrint('scheduled publish-on-open: $e');
     }
     try {
-      await context.read<ScheduledService>().list(pubkey);
+      await scheduled.list(pubkey);
     } catch (e) {
       debugPrint('scheduled load: $e');
     }
     if (mounted) {
-      context.read<ScheduledService>().startAutoPublish(pubkey);
+      scheduled.startAutoPublish(pubkey);
       setState(() => _loading = false);
     }
   }

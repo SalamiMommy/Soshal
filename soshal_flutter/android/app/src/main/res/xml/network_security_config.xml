@@ -36,7 +36,7 @@
          To intercept debug traffic with a proxy (Charles, mitmproxy), inject
          the proxy CA via ADB rather than trusting all user-installed CAs:
            adb shell "am broadcast -a android.intent.action.INSTALL_CERT \
-             --es cert /sdcard/proxy.crt"
+             -e cert /sdcard/proxy.crt"
          Trusting user CAs here would allow any distributed debug/beta APK
          to be intercepted by anyone who installs a matching CA certificate. -->
     <debug-overrides>

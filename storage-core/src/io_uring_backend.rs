@@ -20,7 +20,10 @@ pub struct IoUringEngine {
     pub mode: IoEngineMode,
 }
 
-/// Queue depth for the io_uring ring.
+/// Queue depth for the io_uring ring. io_uring is a Linux-only syscall
+/// family; on Android (target_os = "android") the engine always falls back
+/// to mmap so the depth is unused there.
+#[cfg(target_os = "linux")]
 const RING_DEPTH: u32 = 8;
 
 impl IoUringEngine {

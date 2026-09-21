@@ -812,43 +812,6 @@ mod android {
         .map_err(|e| e.0)
     }
 
-    /// OS-level location services master switch (GPS or Network provider
-    /// enabled).
-    pub fn location_services_enabled() -> Result<bool, String> {
-        let mut env = attach()?;
-        env.with_local_frame(16, |env| -> Result<bool, JniErr> {
-            let activity = activity(env)?;
-            let svc = env.new_string("location")?;
-            let manager = env
-                .call_method(
-                    &activity,
-                    "getSystemService",
-                    "(Ljava/lang/String;)Ljava/lang/Object;",
-                    &[jni::objects::JValue::Object(&svc)],
-                )?
-                .l()?;
-            if manager.is_null() {
-                return Ok(false);
-            }
-            for provider in ["gps", "network"] {
-                let p = env.new_string(provider)?;
-                let value = env.call_method(
-                    &manager,
-                    "isProviderEnabled",
-                    "(Ljava/lang/String;)Z",
-                    &[jni::objects::JValue::Object(&p)],
-                )?;
-                if let jni::objects::JValueOwned::Bool(b) = value {
-                    if b != 0 {
-                        return Ok(true);
-                    }
-                }
-            }
-            Ok(false)
-        })
-        .map_err(|e| e.0)
-    }
-
     const BATTERY_PROPERTY_CAPACITY: i32 = 4;
     const BATTERY_PROPERTY_STATUS: i32 = 5;
     const BATTERY_STATUS_CHARGING: i32 = 2;
