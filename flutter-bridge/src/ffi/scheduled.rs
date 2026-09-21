@@ -7,6 +7,10 @@
 use flutter_rust_bridge::frb;
 use soshal_db_core::repos::post::{PostRepo, PostRow};
 
+/// How long a moderation-blocked scheduled draft is nudged forward so a page
+/// full of blocked drafts can't starve later valid drafts from publishing.
+const SCHEDULE_BLOCKED_RETRY_SECS: i64 = 900;
+
 fn hashtags_to_json(hashtags: &[String]) -> String {
     serde_json::to_string(hashtags).unwrap_or_else(|_| "[]".into())
 }
@@ -127,7 +131,7 @@ pub async fn scheduled_publish_due(pubkey: String, limit: i32) -> Result<u32, St
     let drafts =
         super::db::with_db_result(|db| PostRepo::new(db).get_due_scheduled(&pubkey, now, limit))?;
     let mut published = 0u32;
-    for draft in drafts {
+    for mut draft in drafts {
         let content = draft.content.trim().to_string();
         if content.is_empty() {
             continue; // empty draft: skip, stays scheduled
@@ -138,10 +142,15 @@ pub async fn scheduled_publish_due(pubkey: String, limit: i32) -> Result<u32, St
         let verdict = soshal_moderation_core::check::check_with_custom_words(&content, &filters);
         if !verdict.passed {
             // Blocked draft: keep the row (stays scheduled so the user can
-            // edit/delete it) instead of aborting the whole due-batch loop.
+            // edit/delete it) instead of aborting the whole due-batch loop —
+            // but nudge its schedule forward so a page full of blocked
+            // drafts can't starve later valid drafts (get_due_scheduled
+            // returns the first N due drafts ordered by scheduled_at).
+            draft.scheduled_at = Some(now + SCHEDULE_BLOCKED_RETRY_SECS);
+            let _ = super::db::with_db_result(|db| PostRepo::new(db).upsert(&draft));
             eprintln!(
-                "scheduled publish skipped (moderation blocked): {} {:?}",
-                draft.id, verdict.reason
+                "scheduled publish skipped (moderation blocked, retry in {}s): {} {:?}",
+                SCHEDULE_BLOCKED_RETRY_SECS, draft.id, verdict.reason
             );
             continue;
         }
@@ -174,6 +183,13 @@ pub async fn scheduled_publish_due(pubkey: String, limit: i32) -> Result<u32, St
         let hashtags: Vec<String> = soshal_content_core::hashtag::extract(&content)
             .into_iter()
             .collect();
+        // Publish (or enqueue into the persistent offline outbox) BEFORE
+        // promoting the draft row. If this fails, `?` aborts and the draft
+        // stays `sync_status='scheduled'` so the next scheduled run retries
+        // it — previously the row was upserted as `synced` + the draft
+        // deleted first, so a queue failure left a post that looked sent but
+        // was never published (lost post).
+        super::sync::publish_or_enqueue("post", &signed_json).await?;
         if let Ok(rows) = serde_json::to_string(&[ScheduledIndexRow {
             id: signed.id,
             pubkey: signed.pubkey,
@@ -208,7 +224,6 @@ pub async fn scheduled_publish_due(pubkey: String, limit: i32) -> Result<u32, St
             PostRepo::new(db).delete(&draft.id)?;
             Ok(())
         })?;
-        super::sync::publish_or_enqueue("post", &signed_json).await?;
         published += 1;
     }
     Ok(published).into()
@@ -511,6 +526,68 @@ mod tests {
         assert!(
             found.contains("due post #soshal"),
             "published post missing: {found}"
+        );
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_blocked_draft_no_longer_starves_valid_due_batch() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = tmp_db("starvation");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        db::insert_test_user(&pk);
+        // A blocked word filter makes the blocked draft fail moderation.
+        super::super::db::with_db_result(|db| {
+            soshal_db_core::repos::settings::SettingsRepo::new(db)
+                .set("moderation_word_filters", r#"["blockme"]"#)
+        })
+        .unwrap();
+        let due_now = soshal_common_core::format::now_secs() + 2;
+        let _blocked = scheduled_create(
+            pk.clone(),
+            "post contains blockme flagged word".to_string(),
+            due_now,
+            vec![],
+        )
+        .unwrap();
+        let _valid = scheduled_create(
+            pk.clone(),
+            "valid post #soshal".to_string(),
+            due_now,
+            vec![],
+        )
+        .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
+        // The blocked draft used to occupy the due-page limit forever; the
+        // valid draft must publish on the SAME run while the blocked draft
+        // stays scheduled (nudged forward for retry).
+        let published = scheduled_publish_due(pk.clone(), 10).await.unwrap();
+        assert_eq!(published, 1, "only the valid draft publishes");
+        let rows = crate::ffi::db::db_query_raw_test(format!(
+            "SELECT content, sync_status, scheduled_at FROM posts WHERE pubkey = '{pk}'"
+        ))
+        .unwrap();
+        assert!(
+            rows.contains("valid post #soshal"),
+            "valid post not published: {rows}"
+        );
+        assert!(
+            !rows.contains("blocked word"),
+            "blocked draft must not be published as a post: {rows}"
+        );
+        // Blocked draft still listed (user can edit/delete it) and was nudged
+        // forward out of the immediate due window.
+        let arr = parse_arr(&scheduled_list(pk.clone()).unwrap());
+        assert_eq!(arr.len(), 1, "blocked draft must stay scheduled: {arr:?}");
+        let nudged = arr[0]["scheduled_at"].as_i64().unwrap();
+        let now = soshal_common_core::format::now_secs();
+        assert!(
+            nudged >= now + SCHEDULE_BLOCKED_RETRY_SECS - 1,
+            "blocked draft should be nudged ~{SCHEDULE_BLOCKED_RETRY_SECS}s out, got {nudged} vs now {now}"
         );
         super::super::signer::signer_lock().unwrap();
     }

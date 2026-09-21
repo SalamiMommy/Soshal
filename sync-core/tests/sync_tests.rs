@@ -968,6 +968,63 @@ fn ingest_reply_to_my_post_writes_reply_notification() {
 }
 
 #[test]
+fn ingest_batch_reply_to_same_batch_parent_writes_notification() {
+    let db = soshal_test_util::test_db();
+    let me = Keys::generate();
+    let replier = Keys::generate();
+    soshal_test_util::seed_user(&db, &me.public_key().to_hex());
+    soshal_test_util::seed_user(&db, &replier.public_key().to_hex());
+    // Parent post authored by ME and the reply arrive in the SAME batch —
+    // the reply notification must be written because the parent is visible
+    // after upsert_batch_in (previously the notify ran mid-loop against a
+    // transaction that didn't yet contain same-batch parents → dropped).
+    let parent =
+        soshal_test_util::signed_event_tagged(&me, Kind::TextNote, "my original post", vec![]);
+    let reply = soshal_test_util::signed_event_tagged(
+        &replier,
+        Kind::TextNote,
+        "nice post!",
+        vec![
+            vec![
+                "e".to_string(),
+                parent.id.to_hex(),
+                "".to_string(),
+                "root".to_string(),
+            ],
+            vec!["p".to_string(), me.public_key().to_hex()],
+        ],
+    );
+    let (tx, _rx) = channel();
+    let ok = handle_batch(
+        &db,
+        &me.public_key().to_hex(),
+        &[parent.clone(), reply.clone()],
+        &tx,
+    )
+    .unwrap();
+    assert_eq!(ok.len(), 2, "both events must apply, got {ok:?}");
+    // Parent stored.
+    assert!(PostRepo::new(&db)
+        .get_by_id(&parent.id.to_hex())
+        .unwrap()
+        .is_some());
+    // Reply notification written for MY user.
+    let unread = NotificationRepo::new(&db)
+        .get_unread(&me.public_key().to_hex(), 10)
+        .unwrap();
+    assert_eq!(unread.len(), 1, "unread: {unread:?}");
+    assert_eq!(unread[0].type_, "reply");
+    assert_eq!(
+        unread[0].event_id.as_deref(),
+        Some(parent.id.to_hex().as_str())
+    );
+    assert_eq!(
+        unread[0].from_pubkey.as_deref(),
+        Some(replier.public_key().to_hex().as_str())
+    );
+}
+
+#[test]
 fn ingest_new_follow_writes_follow_notification() {
     let db = soshal_test_util::test_db();
     let me = Keys::generate();

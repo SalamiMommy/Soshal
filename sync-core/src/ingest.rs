@@ -945,6 +945,12 @@ pub fn handle_batch(
     soshal_db_core::query::with_tx(&conn, |t| async move {
         let mut rows: Vec<PostRow> = Vec::with_capacity(events.len());
         let mut ok_pos: Vec<usize> = Vec::with_capacity(events.len());
+        // Reply/mention/friend-request notifications are deferred until AFTER
+        // upsert_batch_in commits the batch rows: a reply whose parent post
+        // arrives in the SAME batch must see the parent's author. Running the
+        // notify during the loop queried a transaction that didn't yet
+        // contain same-batch parents, so these notifications were dropped.
+        let mut notify_queue: Vec<(Event, PostRow)> = Vec::new();
         let mut seen_authors: std::collections::HashSet<String> = std::collections::HashSet::new();
         for (pos, event) in events.iter().enumerate() {
             if !verified_mask[pos] {
@@ -1010,14 +1016,7 @@ pub fn handle_batch(
                                                 eprintln!("sync engine: hashtag upsert: {e}");
                                             }
                                         }
-                                        match maybe_notify_text_note(db, my_pubkey, &t, event, &row)
-                                            .await
-                                        {
-                                            Ok(()) => {}
-                                            Err(e) => eprintln!(
-                                                "sync engine: batch text-note notify: {e}"
-                                            ),
-                                        }
+                                        notify_queue.push((event.clone(), row.clone()));
                                     }
                                     rows.push(row);
                                     ok_pos.push(pos);
@@ -1035,6 +1034,13 @@ pub fn handle_batch(
             }
         }
         PostRepo::new(db).upsert_batch_in(&t, &rows).await?;
+        // Notifications now that the batch rows (incl. same-batch parents)
+        // are visible inside this transaction (committed on `t.commit`).
+        for (event, row) in &notify_queue {
+            if let Err(e) = maybe_notify_text_note(db, my_pubkey, &t, event, row).await {
+                eprintln!("sync engine: batch text-note notify: {e}");
+            }
+        }
         t.commit().await?;
         for row in &rows {
             if row.kind == Kind::TextNote.as_u16() as i64

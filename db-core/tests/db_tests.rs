@@ -452,6 +452,70 @@ fn test_notification_repo_upsert_and_get_unread() {
 }
 
 #[test]
+fn test_notification_single_upsert_refreshes_on_newer_replay() {
+    let db = Database::open_in_memory().unwrap();
+    db.migrate().unwrap();
+    insert_test_user(&db, "target_user");
+    let repo = NotificationRepo::new(&db);
+    let base = NotificationRow {
+        id: "n1".into(),
+        pubkey: "target_user".into(),
+        type_: "reply".into(),
+        event_id: Some("old-event".into()),
+        from_pubkey: Some("sender1".into()),
+        content: Some("old body".into()),
+        created_at: 2000,
+        is_read: false,
+    };
+    repo.upsert(&base).unwrap();
+    // Replay the SAME id with a newer created_at (e.g. the edited reply
+    // re-ingested after a relay resend). The single upsert must refresh
+    // content/created_at/event_id just like upsert_batch_in — previously it
+    // only freshened is_read, so the on-disk row stayed stale.
+    let newer = NotificationRow {
+        id: "n1".into(),
+        pubkey: "target_user".into(),
+        type_: "reply".into(),
+        event_id: Some("new-event".into()),
+        from_pubkey: Some("sender1".into()),
+        content: Some("updated body".into()),
+        created_at: 3000,
+        is_read: false,
+    };
+    repo.upsert(&newer).unwrap();
+    let rows = repo.get_unread("target_user", 10).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].content.as_deref(), Some("updated body"));
+    assert_eq!(rows[0].created_at, 3000);
+    assert_eq!(rows[0].event_id.as_deref(), Some("new-event"));
+    // Reading an already-read row stays read (read-state preserved on replay).
+    let read = NotificationRow {
+        id: "n2".into(),
+        pubkey: "target_user".into(),
+        type_: "mention".into(),
+        event_id: Some("e2".into()),
+        from_pubkey: Some("sender1".into()),
+        content: Some("first".into()),
+        created_at: 4000,
+        is_read: true,
+    };
+    repo.upsert(&read).unwrap();
+    let replayed = NotificationRow {
+        id: "n2".into(),
+        pubkey: "target_user".into(),
+        type_: "mention".into(),
+        event_id: Some("e2".into()),
+        from_pubkey: Some("sender1".into()),
+        content: Some("later".into()),
+        created_at: 5000,
+        is_read: false,
+    };
+    repo.upsert(&replayed).unwrap();
+    let all = repo.get_unread("target_user", 10).unwrap();
+    assert!(all.iter().all(|n| n.id != "n2"), "read row must stay read");
+}
+
+#[test]
 fn test_upsert_batch() {
     let db = Database::open_in_memory().unwrap();
     db.migrate().unwrap();
