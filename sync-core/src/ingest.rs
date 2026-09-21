@@ -447,6 +447,64 @@ pub fn handle(
     })
 }
 
+/// Text-note notifications for events touching the local user:
+/// friend-request (tag), reply (targets our post), else mention (p-tag
+/// references us). Precedence mirrors the aggregator. Shared by the
+/// single-event path (`handle_impl`) and the batch path (`handle_batch`) so
+/// batch-ingested text notes emit the same notifications as single ingest.
+async fn maybe_notify_text_note(
+    db: &Database,
+    my_pubkey: &str,
+    t: &libsql::Transaction,
+    event: &Event,
+    row: &PostRow,
+) -> Result<(), DbError> {
+    let author = event.pubkey.to_hex();
+    if !author.eq_ignore_ascii_case(my_pubkey) {
+        let friend_request = event.tags.iter().any(|t| {
+            t.kind() == "t"
+                && t.content()
+                    .is_some_and(|c| c.eq_ignore_ascii_case("friend-request"))
+        });
+        let reply_target = row.reply_to.as_deref().or(row.root_id.as_deref());
+        let reply_to_me = match reply_target {
+            Some(rt) => post_author_id(t, rt)
+                .await?
+                .is_some_and(|a| a.eq_ignore_ascii_case(my_pubkey)),
+            None => false,
+        };
+        if friend_request && has_p_tag(event, my_pubkey) {
+            notify_me(
+                db,
+                my_pubkey,
+                t,
+                event,
+                "friend_request",
+                &row.id,
+                &row.content,
+            )
+            .await?;
+        } else if reply_to_me {
+            notify_me(
+                db,
+                my_pubkey,
+                t,
+                event,
+                "reply",
+                reply_target.unwrap_or(&row.id),
+                &row.content,
+            )
+            .await?;
+        } else if has_p_tag(event, my_pubkey) {
+            let target = first_e_tag(event)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| event.id.to_hex());
+            notify_me(db, my_pubkey, t, event, "mention", &target, &row.content).await?;
+        }
+    }
+    Ok(())
+}
+
 async fn handle_impl(
     db: &Database,
     my_pubkey: &str,
@@ -808,53 +866,10 @@ async fn handle_impl(
                         )
                         .await?;
                 }
-                // Notifications for text notes touching the local user:
-                // friend-request (tag), reply (targets our post), else mention
-                // (p-tag references us). Precedence mirrors the aggregator.
-                let author = event.pubkey.to_hex();
-                if !author.eq_ignore_ascii_case(my_pubkey) {
-                    let friend_request = event.tags.iter().any(|t| {
-                        t.kind() == "t"
-                            && t.content()
-                                .is_some_and(|c| c.eq_ignore_ascii_case("friend-request"))
-                    });
-                    let reply_target = row.reply_to.as_deref().or(row.root_id.as_deref());
-                    let reply_to_me = match reply_target {
-                        Some(rt) => post_author_id(t, rt)
-                            .await?
-                            .is_some_and(|a| a.eq_ignore_ascii_case(my_pubkey)),
-                        None => false,
-                    };
-                    if friend_request && has_p_tag(event, my_pubkey) {
-                        notify_me(
-                            db,
-                            my_pubkey,
-                            t,
-                            event,
-                            "friend_request",
-                            &row.id,
-                            &row.content,
-                        )
-                        .await?;
-                    } else if reply_to_me {
-                        notify_me(
-                            db,
-                            my_pubkey,
-                            t,
-                            event,
-                            "reply",
-                            reply_target.unwrap_or(&row.id),
-                            &row.content,
-                        )
-                        .await?;
-                    } else if has_p_tag(event, my_pubkey) {
-                        let target = first_e_tag(event)
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| event.id.to_hex());
-                        notify_me(db, my_pubkey, t, event, "mention", &target, &row.content)
-                            .await?;
-                    }
-                }
+                // Notifications for text notes touching the local user are
+                // delegated to the shared helper so batch-ingested text notes
+                // emit the same friend-request / reply / mention alerts.
+                maybe_notify_text_note(db, my_pubkey, t, event, &row).await?;
                 if tx
                     .try_send(SyncUpdate::Feed {
                         id: row.id,
@@ -994,6 +1009,14 @@ pub fn handle_batch(
                                             {
                                                 eprintln!("sync engine: hashtag upsert: {e}");
                                             }
+                                        }
+                                        match maybe_notify_text_note(db, my_pubkey, &t, event, &row)
+                                            .await
+                                        {
+                                            Ok(()) => {}
+                                            Err(e) => eprintln!(
+                                                "sync engine: batch text-note notify: {e}"
+                                            ),
                                         }
                                     }
                                     rows.push(row);

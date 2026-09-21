@@ -56,18 +56,19 @@ const MAX_DATAGRAM: usize = 1200;
 const MAX_DATAGRAM_CONNS: usize = 64;
 const REGISTRATION_KIND: &str = "__peer_key__";
 
-/// SHA-256 fingerprint registry of HMAC-authenticated peer TLS certificates.
+/// SHA-256 fingerprint registry of peer TLS certificates seen over an HMAC
+/// beacon exchange.
 ///
-/// When a peer successfully completes the HMAC beacon exchange (proving they
-/// hold the shared LAN key), their TLS certificate fingerprint is inserted here.
-/// `HybridCertVerifier` allows self-signed certs ONLY for peers in this set —
-/// a first-contact attacker presenting an unknown self-signed cert is rejected.
-///
-/// The first connection to a new peer requires a successful HMAC exchange before
-/// QUIC fully authenticates. This is correct security behaviour: the HMAC check
-/// happens in the datagram handler after the TLS handshake, so first-contact
-/// peers receive a connection-closed error from TLS and must retry after HMAC
-/// succeeds on a subsequent attempt. mDNS-discovered LAN peers will retry quickly.
+/// The registry is ADVISORY/diagnostic, not a TLS gate. QUIC reachability
+/// cannot depend on it: a first-contact TLS handshake must succeed before the
+/// HMAC beacon (which travels INSIDE the established connection) can ever be
+/// exchanged, so requiring a pre-registered pin for every TLS handshake
+/// creates a circular dependency that deadlocks every cross-device first
+/// contact. Authorization is enforced by the HMAC beacon gate at the app
+/// layer instead (see `spawn_conn_task` for datagrams and `auth_stream` for
+/// the stream channel) — the same trust model as the TCP LAN transport, where
+/// TLS does not gate access either. The registry is kept to record which
+/// fingerprints have authenticated via HMAC (telemetry/audit only).
 const MAX_TRUSTED_PEER_CERTS: usize = 1024;
 
 struct TrustedCertRegistry {
@@ -112,9 +113,11 @@ fn cert_fingerprint(cert: &CertificateDer<'_>) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-/// Register a peer's TLS certificate as trusted after a successful HMAC beacon
-/// exchange. Once registered, subsequent TLS connections from this peer are
-/// accepted by `HybridCertVerifier` without re-running the HMAC check.
+/// Register a peer's TLS certificate fingerprint after a successful HMAC beacon
+/// exchange. This is a diagnostic/audit record: the HMAC beacon gate at the app
+/// layer is what actually authorizes the peer's traffic (see the note on
+/// `TRUSTED_PEER_CERTS`). It is NOT consulted by TLS handshake acceptance —
+/// first-contact handshakes must succeed before a beacon can ever arrive.
 ///
 /// Called from the datagram auth path after `beacon_seq().check_and_record` succeeds.
 pub(crate) fn register_trusted_cert(cert: &CertificateDer<'_>) {
@@ -146,33 +149,32 @@ impl ServerCertVerifier for HybridCertVerifier {
             return Ok(verified);
         }
 
-        // Fallback: allow self-signed certificates ONLY for peers that have
-        // previously passed HMAC beacon authentication. Their certificate
-        // fingerprint was pinned by `register_trusted_cert` at that point.
-        //
-        // A fresh attacker presenting an unknown self-signed cert is rejected.
-        // First-contact LAN peers must complete an HMAC beacon exchange first;
-        // mDNS discovery + the beacon retry loop handles this automatically.
+        // Mesh fallback: accept self-signed certificates from first contact.
+        // The `verify_tls13_signature`/`verify_tls12_signature` handlers below
+        // still cryptographically bind the handshake to the presented cert's
+        // public key, proving key possession — a passive injection MITM
+        // remains defeated. Authorization (who may send/receive what) is
+        // enforced by the HMAC beacon gate, which lives INSIDE the TLS
+        // connection: the datagram channel drops every un-authed datagram
+        // until a valid beacon arrives, and the stream channel refuses every
+        // stream until the HMAC beacon line verifies. Requiring a
+        // pre-registered cert pin for the handshake itself is impossible for
+        // first contact (see `TRUSTED_PEER_CERTS` docs); the old registry
+        // check deadlocked every cross-device first connection.
         let fp = cert_fingerprint(end_entity);
-        let is_trusted = TRUSTED_PEER_CERTS
+        let already_seen = TRUSTED_PEER_CERTS
             .lock()
             .map(|g| g.contains(&fp))
             .unwrap_or(false);
 
-        if is_trusted {
-            log::debug!("QUIC: accepting HMAC-pinned self-signed cert");
-            Ok(ServerCertVerified::assertion())
+        if already_seen {
+            log::debug!("QUIC: accepting mesh self-signed cert (registered via HMAC beacon)");
         } else {
-            log::warn!(
-                "QUIC: rejecting unknown self-signed cert (not in HMAC-pinned registry); \
-                 peer must complete HMAC beacon exchange first"
+            log::debug!(
+                "QUIC: accepting first-contact mesh self-signed cert; HMAC beacon gate applies"
             );
-            Err(rustls::Error::General(
-                "self-signed cert not in HMAC-pinned registry; \
-                 complete HMAC beacon exchange first"
-                    .into(),
-            ))
         }
+        Ok(ServerCertVerified::assertion())
     }
 
     fn verify_tls12_signature(
@@ -228,7 +230,7 @@ fn verify_signature(
 /// Server verifier anchored at the bundled Mozilla root store (webpki-roots).
 /// Hosted/public endpoints presenting a real CA chain validate here. Mesh-
 /// internal self-signed certs have no CA anchor and fail this check, falling
-/// through to the HMAC-pinned acceptance path in HybridCertVerifier.
+/// through to the mesh self-signed acceptance path in HybridCertVerifier.
 static WEBPKI_VERIFIER: LazyLock<Arc<WebPkiServerVerifier>> = LazyLock::new(|| {
     let mut roots = rustls::RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
@@ -250,7 +252,7 @@ fn try_system_cert_validation(
 ) -> Result<ServerCertVerified, rustls::Error> {
     // Chain validation against the bundled Mozilla roots: rejects expired or
     // wrong-host public certificates. Mesh self-signed certs (no CA chain)
-    // fail here and fall through to the HMAC-pinned acceptance path in
+    // fail here and fall through to the mesh acceptance path in
     // HybridCertVerifier::verify_server_cert.
     //
     // Pass the actual OCSP staple bytes so that public endpoints presenting a
@@ -314,6 +316,8 @@ pub fn spawn_quic_datagram_channel(
     let stop = Arc::new(AtomicBool::new(false));
     let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel::<Command>(1024);
     let (evt_tx, evt_rx) = std::sync::mpsc::sync_channel::<MicroEvent>(1024);
+    // The runtime reports the real bound address (socket port 0 → ephemeral).
+    let (bound_tx, bound_rx) = std::sync::mpsc::channel::<SocketAddr>();
 
     let thread_stop = stop.clone();
     let thread = std::thread::Builder::new()
@@ -336,13 +340,14 @@ pub fn spawn_quic_datagram_channel(
                 cmd_rx,
                 evt_tx,
                 thread_stop,
+                bound_tx,
             ));
         })
         .map_err(|e| format!("quic thread: {e}"))?;
 
-    // The runtime path fills the handle's addr via its own mpsc; derive the
-    // bound port synchronously instead:
-    let addr = SocketAddr::from(([0, 0, 0, 0], bind_port));
+    let addr = bound_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], bind_port)));
     let _ = thread; // keeps runtime alive; stopped via `stop`
     Ok(QuicDatagramHandle {
         addr,
@@ -359,6 +364,7 @@ async fn run_channel(
     mut cmd_rx: tokio::sync::mpsc::Receiver<Command>,
     evt_tx: std::sync::mpsc::SyncSender<MicroEvent>,
     stop: Arc<AtomicBool>,
+    bound_tx: std::sync::mpsc::Sender<SocketAddr>,
 ) {
     let (server_config, client_config) = match tls_configs() {
         Ok(c) => c,
@@ -376,6 +382,11 @@ async fn run_channel(
         }
     };
     let bound = socket.local_addr().ok();
+    // Report the real bound address (bind_port 0 → ephemeral) so callers can
+    // derive discoverable addresses without the runtime-renumber race.
+    if let Some(b) = bound {
+        let _ = bound_tx.send(b);
+    }
     socket.set_nonblocking(true).ok();
     let runtime = Arc::new(quinn::TokioRuntime);
     let mut server_config = server_config;
@@ -542,9 +553,10 @@ fn spawn_conn_task(
                                     if let Ok(mut g) = authed.lock() {
                                         g.insert(remote);
                                     }
-                                    // Pin the peer's TLS cert fingerprint so
-                                    // HybridCertVerifier accepts subsequent
-                                    // self-signed connections from this peer.
+                                    // Record the peer's TLS cert fingerprint in
+                                    // the advisory registry (HMAC-authenticated
+                                    // peer audit). Diagnostic only — TLS
+                                    // acceptance is not gated on it.
                                     // `peer_certificate()` is Some for verified
                                     // QUIC connections; skip if unavailable.
                                     if let Some(cert) = conn.peer_identity()
@@ -640,10 +652,9 @@ fn tls_configs() -> Result<(ServerConfig, ClientConfig), String> {
         client_config,
     );
     let _ = CFG.set(pair.clone());
-    // Pre-register the locally generated cert so the node can connect to
-    // itself on loopback (used by stream tests and local chunk fetches).
-    // Remote peer certs are only registered after a successful HMAC beacon
-    // exchange — this line does not relax that invariant for inbound strangers.
+    // Record the locally generated cert in the advisory registry (diagnostic
+    // only; TLS accepts first-contact self-signed certs regardless, gated at
+    // the app layer by the HMAC beacon).
     register_trusted_cert(&cert_der);
     Ok(pair)
 }
@@ -651,6 +662,15 @@ fn tls_configs() -> Result<(ServerConfig, ClientConfig), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Picks a free UDP port using a bind-probe socket. Small TOCTOU window
+    /// (matched by the host transport tests), acceptable in tests.
+    fn free_port() -> u16 {
+        let s = std::net::UdpSocket::bind(("0.0.0.0", 0)).unwrap();
+        let port = s.local_addr().unwrap().port();
+        drop(s);
+        port
+    }
 
     #[test]
     fn micro_event_serde_roundtrip() {
@@ -661,6 +681,62 @@ mod tests {
         let bytes = serde_json::to_vec(&ev).unwrap();
         let back: MicroEvent = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(ev, back);
+    }
+
+    /// Regression (2026-09-20, HIGH #1): QUIC cross-device first contact used
+    /// to deadlock. `HybridCertVerifier` required the peer's self-signed cert
+    /// to already be in the HMAC-pinned registry, but a peer's fingerprint can
+    /// only be registered AFTER a successful HMAC beacon exchange — which
+    /// requires a live TLS connection — so no first TLS handshake could ever
+    /// succeed between two devices. The verifier now accepts first-contact
+    /// self-signed certs (signature validation still proves key possession);
+    /// authorization is enforced by the HMAC beacon gate at the app layer.
+    #[test]
+    fn hybrid_verifier_accepts_unpinned_first_contact_cert() {
+        // Fresh cert NOT in the process registry: simulates a brand-new peer.
+        let cert = rcgen::generate_simple_self_signed(vec!["soshal.local".to_string()]).unwrap();
+        let end_entity = CertificateDer::from(cert.cert.der().to_vec());
+        let name = rustls::pki_types::ServerName::try_from("soshal.local").unwrap();
+        let now = rustls::pki_types::UnixTime::now();
+
+        let result = HybridCertVerifier.verify_server_cert(&end_entity, &[], &name, &[], now);
+        assert!(
+            result.is_ok(),
+            "first-contact self-signed cert must be accepted (HMAC gate enforces auth): {result:?}"
+        );
+    }
+
+    /// Cross-device-shaped first contact over the datagram channel: peer A
+    /// sends to peer B that it has never "met" before, with only the shared
+    /// LAN key. Before the fix this failed the TLS handshake (cert not pinned);
+    /// now the HMAC beacon inside completes and the micro-event is delivered.
+    #[test]
+    fn quic_datagram_first_contact_delivers() {
+        let port_a = free_port();
+        let port_b = free_port();
+        let a = spawn_quic_datagram_channel(port_a, "a".repeat(64), [7u8; 32]).unwrap();
+        let b = spawn_quic_datagram_channel(port_b, "b".repeat(64), [7u8; 32]).unwrap();
+        let b_addr = SocketAddr::from(([127, 0, 0, 1], port_b));
+        let ev = MicroEvent {
+            kind: "typing".to_string(),
+            payload: r#"{"to":"b"}"#.to_string(),
+        };
+        a.send_to(b_addr, ev.clone()).unwrap();
+
+        // Poll for the delivered event (datagrams are lossy; bounded wait).
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if let Some(got) = b.try_recv() {
+                assert_eq!(got, ev);
+                break;
+            }
+            if std::time::Instant::now() > deadline {
+                panic!("micro-event never delivered on first contact");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        a.stop();
+        b.stop();
     }
 }
 
