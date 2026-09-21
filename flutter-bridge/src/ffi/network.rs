@@ -258,10 +258,24 @@ pub async fn network_get_relay_status() -> Result<String, String> {
 
 /// Summary of relay connectivity: `{connected, total}` — drives the app-wide
 /// offline banner. One relay connected means we are online.
+///
+/// Non-nostr transports (reticulum/freenet/i2p, probed by `resolved_kind`)
+/// carry traffic without the wss relay client, so a satisfied transport
+/// counts as online even when zero relays are connected — the offline banner
+/// must not lie just because the relay client is idle or uninitialized.
 #[frb(serialize)]
 pub async fn network_relay_connection_status() -> Result<String, String> {
-    let relays = relay_status_snapshot().await?;
-    let connected = relays.iter().filter(|r| r.connected).count();
+    let (kind, satisfied) = resolved_kind();
+    let relays = match relay_status_snapshot().await {
+        Ok(relays) => relays,
+        // No relay client but a mesh transport is up: still online.
+        Err(_) if kind != TransportKind::Nostr && satisfied => Vec::new(),
+        Err(e) => return Err(e),
+    };
+    let mut connected = relays.iter().filter(|r| r.connected).count();
+    if connected == 0 && kind != TransportKind::Nostr && satisfied {
+        connected = 1;
+    }
     super::util::json_ok(serde_json::json!({
         "connected": connected,
         "total": relays.len(),
@@ -312,7 +326,9 @@ pub async fn network_unsubscribe(subscription_id: String) -> Result<bool, String
 }
 
 /// Publish an already-signed event (JSON) to all connected relays.
-/// Returns the number of relays that accepted it.
+/// Returns the number of relays that accepted it; Err when no relay
+/// accepted (event never reached the network — callers must surface or
+/// retry, never claim success).
 /// Mesh transports publish via the mesh relay node (flood) first.
 #[frb(serialize)]
 pub async fn network_publish_event(event_json: String) -> Result<i32, String> {
@@ -330,7 +346,14 @@ pub async fn network_publish_event(event_json: String) -> Result<i32, String> {
         None => return Err("relay client not initialized".to_string()),
     };
     match client.send_event(&event).await {
-        Ok(out) => Ok(out.success.len() as i32).into(),
+        Ok(out) => {
+            let n = out.success.len() as i32;
+            if n > 0 {
+                Ok(n).into()
+            } else {
+                Err("event rejected by all relays — check the relay connection".to_string()).into()
+            }
+        }
         Err(e) => Err(format!("publish failed: {e}")).into(),
     }
 }
