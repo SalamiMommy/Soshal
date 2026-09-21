@@ -81,6 +81,10 @@ impl AutoInterface {
         let local_dest = self.local_destination;
         let interval = Duration::from_millis(self.config.discovery_interval_ms);
 
+        // Set running BEFORE spawning (mirrors TcpServerInterface::start):
+        // otherwise the thread can observe `false` and exit immediately,
+        // leaving a dead interface that can't be restarted (bind conflict).
+        self.running.store(true, Ordering::Relaxed);
         let socket_clone = socket_arc.clone();
         let handle = thread::spawn(move || {
             let mut buf = [0u8; 2048];
@@ -122,7 +126,6 @@ impl AutoInterface {
 
         self.socket = Some(socket_arc);
         self.discovery_thread = Some(handle);
-        self.running.store(true, Ordering::Relaxed);
 
         Ok(())
     }

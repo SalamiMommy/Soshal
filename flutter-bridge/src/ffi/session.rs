@@ -63,9 +63,12 @@ fn lock_session() -> Result<std::sync::MutexGuard<'static, Option<SessionData>>,
 /// Validate that `pubkey` is a 64-character lowercase hex string.
 pub(crate) fn validate_pubkey_hex(pubkey: &str) -> Result<(), String> {
     if pubkey.len() != 64 || !pubkey.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')) {
+        // Truncate on a char boundary — a raw byte slice can land mid-character
+        // (e.g. 15 ASCII + multibyte char) and panic on untrusted input.
+        let shown: String = pubkey.chars().take(16).collect();
         return Err(format!(
             "invalid pubkey: expected 64 lowercase hex chars, got {:?}",
-            &pubkey[..pubkey.len().min(16)]
+            shown
         ));
     }
     Ok(())
@@ -74,9 +77,11 @@ pub(crate) fn validate_pubkey_hex(pubkey: &str) -> Result<(), String> {
 /// Validate that `npub` has the `npub1` prefix and a minimum length.
 fn validate_npub(npub: &str) -> Result<(), String> {
     if !npub.starts_with("npub1") || npub.len() < 10 {
+        // Char-boundary-safe truncation (see validate_pubkey_hex).
+        let shown: String = npub.chars().take(12).collect();
         return Err(format!(
             "invalid npub: must start with 'npub1' and be at least 10 chars, got {:?}",
-            &npub[..npub.len().min(12)]
+            shown
         ));
     }
     Ok(())
@@ -375,8 +380,14 @@ pub(crate) fn load_session_from_disk(db_path: &str) -> Result<SessionData, Strin
     let session = serde_json::from_str::<SessionData>(&content)
         .map_err(|e| format!("Failed to parse session: {e}"))?;
     let session_key = load_or_create_session_key(&session_path)?;
-    if !session_sig_valid(&session_key, &session) && session.sig.is_some() {
-        return Err("session file failed integrity check".to_string());
+    if !session_sig_valid(&session_key, &session) {
+        // Deny-by-default: unsigned files (the legacy pre-upgrade shape) and
+        // forged tags are BOTH rejected. Accepting an unsigned file and
+        // re-signing it made an attacker's forged session durable.
+        return match &session.sig {
+            None => Err("session file is unsigned; re-import your account".to_string()),
+            Some(_) => Err("session file failed integrity check".to_string()),
+        };
     }
     let now = soshal_common_core::format::now_secs() as u64;
     if let Some(loaded_at) = session.loaded_at {
@@ -397,12 +408,17 @@ pub fn session_load(db_path: String) -> Result<String, String> {
             Ok(content) => match serde_json::from_str::<SessionData>(&content) {
                 Ok(session) => {
                     let session_key = load_or_create_session_key(&session_path)?;
-                    // Integrity: a signed file must verify. An unsigned file
-                    // is the legacy pre-upgrade shape — accepted once, then
-                    // re-signed on this load so every later load enforces the
-                    // tag. A present-but-mismatched tag is forged/tampered.
-                    if !session_sig_valid(&session_key, &session) && session.sig.is_some() {
-                        return Err("session file failed integrity check".to_string());
+                    // Integrity: only a VALID tag is accepted. Unsigned files
+                    // (legacy pre-upgrade shape) are rejected — accepting them
+                    // and re-signing made a forged session durable. A
+                    // present-but-mismatched tag is forged/tampered.
+                    if !session_sig_valid(&session_key, &session) {
+                        return match &session.sig {
+                            None => {
+                                Err("session file is unsigned; re-import your account".to_string())
+                            }
+                            Some(_) => Err("session file failed integrity check".to_string()),
+                        };
                     }
                     // Enforce session max age: reject sessions older than
                     // SESSION_MAX_AGE_SECS to limit exposure from stolen files.
@@ -427,8 +443,7 @@ pub fn session_load(db_path: String) -> Result<String, String> {
                             }
                         }
                     }
-                    // loaded_at changed (or the file was legacy/unsigned):
-                    // re-sign and persist so the on-disk tag stays valid.
+                    // loaded_at changed: re-sign and persist so the on-disk tag stays valid.
                     let _ = write_session_file(&session_path, &session_key, &session);
                     let json = super::util::json_ok(&session)?;
                     let mut session_lock = lock_session()?;
@@ -761,6 +776,28 @@ mod tests {
     use super::*;
     use crate::ffi::db;
 
+    /// Regression: a 64-byte string with a multibyte char near byte 16 used to
+    /// panic `&pubkey[..16]` (mid-character slice) on the error path.
+    #[test]
+    fn test_validate_pubkey_hex_char_boundary_no_panic() {
+        // 15 ASCII + 2-byte 'é' + 47 ASCII = 64 bytes, invalid hex.
+        let evil = format!("{}é{}", "0".repeat(15), "z".repeat(47));
+        assert_eq!(evil.len(), 64);
+        assert!(validate_pubkey_hex(&evil).is_err());
+        let evil2 = format!("{}é{:x}", "a".repeat(16), u64::MAX); // 16 bytes + 'é'... non-hex mid-string
+        assert!(validate_pubkey_hex(&evil2).is_err());
+        assert!(validate_pubkey_hex(&"ab".repeat(32)).is_ok());
+    }
+
+    /// Regression: short npub with multibyte char used to slice mid-character.
+    #[test]
+    fn test_validate_npub_char_boundary_no_panic() {
+        assert!(validate_npub("npub1é").is_err());
+        assert!(validate_npub("npub1😀").is_err());
+        assert!(validate_npub("npub1").is_err());
+        assert!(validate_npub("npub1validchars").is_ok());
+    }
+
     static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
     fn tmp_session_dir(label: &str) -> (std::path::PathBuf, String) {
@@ -978,27 +1015,34 @@ mod tests {
     }
 
     #[test]
-    fn test_unsigned_legacy_file_healed_and_bound() {
+    fn test_unsigned_file_rejected() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
-        let (dir, db_path) = tmp_session_dir("legacy");
-        // Pre-upgrade shape: no `sig` field at all.
-        let legacy = format!(
+        let (dir, db_path) = tmp_session_dir("unsigned");
+        // Forged pre-upgrade shape: no `sig` field at all. Must be REJECTED —
+        // accepting + re-signing an unsigned file made forgeries durable.
+        let unsigned = format!(
+            r#"{{"active_pubkey":"attacker-pk","accounts":[{{"pubkey":"attacker-pk","npub":"npub1evil","last_used":{},"relay_list":["wss://evil.relay"]}}]}}"#,
+            soshal_common_core::format::now_secs()
+        );
+        std::fs::write(dir.join("session.json"), unsigned).unwrap();
+        let err = session_load(db_path.clone()).unwrap_err();
+        assert!(err.contains("unsigned"), "got {err}");
+        // The forged file must NOT have been healed/re-signed on disk.
+        let on_disk = std::fs::read_to_string(dir.join("session.json")).unwrap();
+        assert!(
+            !on_disk.contains("\"sig\""),
+            "forgery was re-signed: {on_disk}"
+        );
+        // load_session_from_disk agrees.
+        let err = load_session_from_disk(&db_path).unwrap_err();
+        assert!(err.contains("unsigned"), "got {err}");
+        // Signed files still load fine (sanity, covers regressions).
+        let data = format!(
             r#"{{"active_pubkey":"pk1","accounts":[{{"pubkey":"pk1","npub":"npub1pk1","last_used":{},"relay_list":[]}}]}}"#,
             soshal_common_core::format::now_secs()
         );
-        std::fs::write(dir.join("session.json"), legacy).unwrap();
+        assert!(session_save(db_path.clone(), data).unwrap());
         assert!(session_load(db_path.clone()).is_ok());
-        // Load must have healed the file: a `sig` is now present.
-        let healed = std::fs::read_to_string(dir.join("session.json")).unwrap();
-        assert!(healed.contains("\"sig\""), "healed: {healed}");
-        // And that healed tag binds the content: later tampering is rejected.
-        let mut v: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(dir.join("session.json")).unwrap())
-                .unwrap();
-        v["loaded_at"] = serde_json::json!(1);
-        std::fs::write(dir.join("session.json"), v.to_string()).unwrap();
-        let err = session_load(db_path.clone()).unwrap_err();
-        assert!(err.contains("integrity"), "got {err}");
         std::fs::remove_dir_all(&dir).ok();
     }
 

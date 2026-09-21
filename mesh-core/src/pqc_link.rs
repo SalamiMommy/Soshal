@@ -51,6 +51,11 @@ const KEYGEN_WINDOW_SECS: u64 = 60;
 pub struct PqcLinkCrypto {
     states: Mutex<HashMap<String, RatchetOutput>>,
     keygens: Mutex<HashMap<String, (u32, u64)>>, // peer -> (count, window start)
+    /// Serializes each get→derive→put ratchet step. Without this, two
+    /// concurrent `encrypt` calls for the same peer read the SAME state and
+    /// both overwrite it — one ratchet advance is silently lost (duplicate
+    /// message key + dropped plaintext on the peer).
+    step: Mutex<()>,
 }
 
 impl Default for PqcLinkCrypto {
@@ -64,6 +69,7 @@ impl PqcLinkCrypto {
         Self {
             states: Mutex::new(HashMap::new()),
             keygens: Mutex::new(HashMap::new()),
+            step: Mutex::new(()),
         }
     }
 
@@ -131,6 +137,7 @@ impl PqcLinkCrypto {
         if peer_pk.trim().is_empty() {
             return Err("empty peer public key".to_string());
         }
+        let _step = self.step.lock().unwrap_or_else(|e| e.into_inner());
         let mut state = self.get(peer)?;
         state.peer_pk = peer_pk.to_string();
         self.put(peer, state);
@@ -236,6 +243,9 @@ impl PqcLinkCrypto {
         if payload.len() > MAX_LINK_PAYLOAD {
             return Err("payload too large for ratchet link frame".to_string());
         }
+        // Hold the step lock across get→derive→put so concurrent encrypts for
+        // the same peer can't lose a ratchet advance (see struct docs).
+        let _step = self.step.lock().unwrap_or_else(|e| e.into_inner());
         let state = self.get(peer)?;
         if state.peer_pk.is_empty() {
             return Err("ratchet handshake incomplete: no peer public key".to_string());
@@ -279,6 +289,9 @@ impl PqcLinkCrypto {
             .map_err(|_| "ciphertext not utf8".to_string())?
             .to_string();
 
+        // Same step lock as encrypt: interleaved decrypts must not overwrite
+        // each other's ratchet advances.
+        let _step = self.step.lock().unwrap_or_else(|e| e.into_inner());
         let state = self.get(peer)?;
         let (new_state, plaintext) = decrypt_ratchet(&state, &header, &ct)?;
         self.put(peer, new_state);
@@ -342,6 +355,62 @@ mod tests {
         assert_ne!(cipher, payload);
         let plain = b.decrypt("peer1", ctx, &cipher).unwrap();
         assert_eq!(plain, payload);
+    }
+
+    #[test]
+    fn concurrent_encrypts_lose_no_ratchet_advance() {
+        // Regression: encrypts used get→derive→put as separate lock ops, so
+        // two threads encrypting for the SAME peer could both read state n,
+        // both overwrite with state n+1, and drop the other thread's message
+        // key (peer decrypt then fails). The step lock must serialize them.
+        let a = std::sync::Arc::new(PqcLinkCrypto::new());
+        let b = PqcLinkCrypto::new();
+        let ctx = "test:conc";
+        let pk_a = a.begin_handshake("conc", ctx).unwrap();
+        let (_sid_b, pk_b) = b
+            .accept_handshake(ctx, "conc", &PqcLinkCrypto::handshake_frame("conc", &pk_a))
+            .unwrap();
+        a.complete_handshake("conc", &pk_b).unwrap();
+
+        const N: usize = 40;
+        let s1 = std::sync::Arc::clone(&a);
+        let t1 = std::thread::spawn(move || {
+            let mut out = Vec::new();
+            for i in 0..N {
+                let cipher = s1
+                    .encrypt("conc", ctx, format!("t1-{i}").as_bytes())
+                    .unwrap();
+                out.push(cipher);
+            }
+            out
+        });
+        let s2 = std::sync::Arc::clone(&a);
+        let t2 = std::thread::spawn(move || {
+            let mut out = Vec::new();
+            for i in 0..N {
+                let cipher = s2
+                    .encrypt("conc", ctx, format!("t2-{i}").as_bytes())
+                    .unwrap();
+                out.push(cipher);
+            }
+            out
+        });
+        let out1 = t1.join().unwrap();
+        let out2 = t2.join().unwrap();
+
+        // Every frame must decrypt in order on the peer: any lost ratchet
+        // advance shows up as a failed/wrong decrypt midway.
+        for (i, cipher) in out1.iter().enumerate() {
+            let plain = b.decrypt("conc", ctx, cipher).unwrap();
+            assert_eq!(plain, format!("t1-{i}").as_bytes());
+        }
+        for (i, cipher) in out2.iter().enumerate() {
+            let plain = b.decrypt("conc", ctx, cipher).unwrap();
+            assert_eq!(plain, format!("t2-{i}").as_bytes());
+        }
+        // And the session still works for fresh traffic afterwards.
+        let cipher = a.encrypt("conc", ctx, b"after").unwrap();
+        assert_eq!(b.decrypt("conc", ctx, &cipher).unwrap(), b"after");
     }
 
     #[test]

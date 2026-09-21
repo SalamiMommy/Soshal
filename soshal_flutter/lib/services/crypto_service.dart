@@ -98,7 +98,8 @@ class CryptoService extends ChangeNotifier with LastErrorMixin {
       );
 
   /// Hintless PIR: encrypted query vector for `targetIndex` in a `dimension`
-  /// database.
+  /// database. UNAVAILABLE — the implemented scheme is a non-cryptographic
+  /// toy (index recoverable by the host); real hintless PIR is a roadmap item.
   Future<String> pirGenerateQuery({
     required int targetIndex,
     required int dimension,
@@ -111,6 +112,7 @@ class CryptoService extends ChangeNotifier with LastErrorMixin {
       );
 
   /// Hintless PIR: evaluate `queryJson` over hex-encoded `recordHexList`.
+  /// UNAVAILABLE — see `pirGenerateQuery`.
   Future<String> pirEvaluateQuery({
     required String queryJson,
     required List<String> recordHexList,

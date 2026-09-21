@@ -406,6 +406,13 @@ async fn run_channel(
     endpoint.set_default_client_config(client_config);
 
     let mut conns: HashMap<SocketAddr, Connection> = HashMap::new();
+    // Peers with an in-flight or recently-failed connect attempt. Skipped
+    // until the TTL elapses so a blackholed peer address can't stall the
+    // datagram loop on a fresh handshake per micro-event (quinn's handshake
+    // timeout is ~10 s).
+    let mut pending_conns: HashMap<SocketAddr, std::time::Instant> = HashMap::new();
+    const CONNECT_ATTEMPT_TTL: std::time::Duration = std::time::Duration::from_secs(15);
+    const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
     // Serialized HMAC registration blob per peer, reused across datagrams —
     // previously a fresh HMAC + JSON serialize ran on EVERY datagram send
     // (the beacon is only re-announced for loss recovery; peers re-verify it
@@ -426,6 +433,7 @@ async fn run_channel(
                 // Evict dead connections (closed by peer or idle timeout) so
                 // the map cannot grow unboundedly over long sessions.
                 conns.retain(|_, c| c.close_reason().is_none());
+                pending_conns.retain(|_, at| at.elapsed() < CONNECT_ATTEMPT_TTL);
                 reg_cache.retain(|addr, (at, _)| {
                     conns.contains_key(addr) && at.elapsed() < REG_CACHE_TTL
                 });
@@ -466,18 +474,41 @@ async fn run_channel(
                         let conn = match conns.get(&peer) {
                             Some(c) => c.clone(),
                             None => {
+                                if let Some(at) = pending_conns.get(&peer) {
+                                    if at.elapsed() < CONNECT_ATTEMPT_TTL {
+                                        continue; // avoid the 10 s handshake
+                                    }
+                                    pending_conns.remove(&peer);
+                                }
                                 let connecting = endpoint.connect(peer, "soshal");
                                 let conn = match connecting {
                                     Ok(c) => c,
-                                    Err(_) => continue,
+                                    Err(_) => {
+                                        pending_conns.insert(peer, std::time::Instant::now());
+                                        continue;
+                                    }
                                 };
-                                match conn.await {
-                                    Ok(c) => {
+                                pending_conns.insert(peer, std::time::Instant::now());
+                                match tokio::time::timeout(CONNECT_TIMEOUT, conn).await {
+                                    Ok(Ok(c)) => {
+                                        pending_conns.remove(&peer);
                                         conns.insert(peer, c.clone());
-                                        spawn_conn_task(c.clone(), evt_tx.clone(), bound, key, authed.clone());
+                                        spawn_conn_task(
+                                            c.clone(),
+                                            evt_tx.clone(),
+                                            bound,
+                                            key,
+                                            authed.clone(),
+                                        );
                                         c
                                     }
-                                    Err(_) => continue,
+                                    // Timeout or handshake failure: cache the
+                                    // failure so the next datagram skips it,
+                                    // and drop this one (datagrams are lossy).
+                                    _ => {
+                                        pending_conns.insert(peer, std::time::Instant::now());
+                                        continue;
+                                    }
                                 }
                             }
                         };
@@ -511,6 +542,7 @@ async fn run_channel(
                         }
                         if conn.send_datagram(payload.into()).is_err() {
                             conns.remove(&peer);
+                            pending_conns.insert(peer, std::time::Instant::now());
                         }
                     }
                 }
@@ -1330,6 +1362,15 @@ async fn auth_stream(recv: &mut quinn::RecvStream, key: &[u8; 32]) -> Result<Vec
                     if let Some(pos) = buf[..n].iter().position(|&b| b == b'\n') {
                         line.extend_from_slice(&buf[..pos]);
                         leftover.extend_from_slice(&buf[pos + 1..n]);
+                        // Final chunk carries the newline terminator — enforce
+                        // the same caps here as the non-terminated branch below.
+                        total_bytes += pos;
+                        if total_bytes > MAX_AUTH_BYTES {
+                            return Err("auth too large".into());
+                        }
+                        if line.len() > 512 {
+                            return Err("handshake line too long".to_string());
+                        }
                         break;
                     }
                     line.extend_from_slice(&buf[..n]);

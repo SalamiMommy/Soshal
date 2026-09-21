@@ -90,36 +90,27 @@ pub fn crypto_random_bytes(len: i32) -> Result<String, String> {
 }
 
 /// Hintless PIR: generate an encrypted query vector for database target index.
+/// Disabled: the scheme in crypto-core is a TOY (a deterministic linear
+/// function of the index — trivially recoverable by the host, zero real
+/// hiding). Real hintless PIR (e.g. simplepir) is a roadmap item.
 #[frb(serialize)]
 pub async fn crypto_pir_generate_query(
-    target_index: usize,
-    dimension: usize,
-    client_pubkey: String,
+    _target_index: usize,
+    _dimension: usize,
+    _client_pubkey: String,
 ) -> Result<String, String> {
-    let client = soshal_crypto_core::pir::HintlessPirClient::new(dimension);
-    let query = client.generate_query(target_index, &client_pubkey)?;
-    serde_json::to_string(&query)
-        .map_err(|e| format!("json encode error: {e}"))
-        .into()
+    Err("pir is a non-cryptographic simulation, disabled".to_string()).into()
 }
 
 /// Hintless PIR: evaluate homomorphic query over host database record payload bytes.
+/// Disabled: see `crypto_pir_generate_query` — the toy scheme provides no
+/// cryptographic hiding and must not be presented as privacy.
 #[frb(serialize)]
 pub async fn crypto_pir_evaluate_query(
-    query_json: String,
-    record_hex_list: Vec<String>,
+    _query_json: String,
+    _record_hex_list: Vec<String>,
 ) -> Result<String, String> {
-    let query: soshal_crypto_core::pir::PirQuery =
-        serde_json::from_str(&query_json).map_err(|e| format!("invalid query json: {e}"))?;
-    let mut db_records = Vec::new();
-    for hex_str in record_hex_list {
-        let bytes = hex::decode(&hex_str).map_err(|e| format!("invalid record hex: {e}"))?;
-        db_records.push(bytes);
-    }
-    let response = soshal_crypto_core::pir::HintlessPirServer::evaluate_query(&query, &db_records);
-    serde_json::to_string(&response)
-        .map_err(|e| format!("json encode error: {e}"))
-        .into()
+    Err("pir is a non-cryptographic simulation, disabled".to_string()).into()
 }
 
 /// FROST: generate jury key shares for t-of-n community moderation.
@@ -232,44 +223,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_pir_query_generate_and_evaluate_roundtrip() {
-        let query_json = crypto_pir_generate_query(3, 8, "npub_client".to_string())
-            .await
-            .unwrap();
-        let query: serde_json::Value = serde_json::from_str(&query_json).unwrap();
-        assert_eq!(query["target_dimension"].as_u64(), Some(8));
-        assert_eq!(query["client_pubkey"], "npub_client");
-        assert_eq!(query["encrypted_vector"].as_array().unwrap().len(), 8);
-        let mut records = vec![format!("{:02x}", 10u8); 8];
-        records[3] = format!("{:02x}", 42u8);
-        let resp = crypto_pir_evaluate_query(query_json, records)
-            .await
-            .unwrap();
-        let resp: serde_json::Value = serde_json::from_str(&resp).unwrap();
-        assert_eq!(resp["record_found"].as_bool(), Some(true));
-        assert_eq!(resp["response_vector"].as_array().unwrap().len(), 8);
-    }
-
-    #[tokio::test]
-    async fn test_pir_generate_query_out_of_bounds() {
-        let err = crypto_pir_generate_query(8, 8, "npub".to_string())
+    async fn test_pir_disabled_non_cryptographic() {
+        // PIR is a toy scheme (index trivially recoverable by the host);
+        // both FFI surfaces must be hard-disabled like frost/pqc-kem.
+        let err = crypto_pir_generate_query(3, 8, "npub_client".to_string())
             .await
             .unwrap_err();
-        assert!(err.contains("out of bounds"), "{err}");
-    }
-
-    #[tokio::test]
-    async fn test_pir_evaluate_query_errors() {
-        let err = crypto_pir_evaluate_query("not json".to_string(), vec![])
+        assert!(err.contains("non-cryptographic simulation"), "{err}");
+        let err = crypto_pir_evaluate_query("{\"x\":1}".to_string(), vec![])
             .await
             .unwrap_err();
-        assert!(err.contains("invalid query json"), "{err}");
-        let query_json = crypto_pir_generate_query(0, 4, "npub".to_string())
-            .await
-            .unwrap();
-        let resp = crypto_pir_evaluate_query(query_json, vec![]).await.unwrap();
-        let resp: serde_json::Value = serde_json::from_str(&resp).unwrap();
-        assert_eq!(resp["record_found"].as_bool(), Some(false));
+        assert!(err.contains("non-cryptographic simulation"), "{err}");
     }
 
     #[tokio::test]

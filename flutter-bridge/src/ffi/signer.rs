@@ -420,14 +420,18 @@ pub fn signer_remove_from_keyring(pubkey: String) -> Result<bool, String> {
 /// the signer so key bytes never cross FFI.
 ///
 /// # Lock ordering
-/// This function acquires `LAN_KEY_CACHE` first, then `SIGNER`. All callers
-/// that touch both statics must follow this order to prevent deadlocks.
+/// Never hold a cache lock while acquiring `SIGNER`. The cache lock is used
+/// only for a fast-path read (released immediately) and for the final store
+/// while `SIGNER` is already held (`SIGNER → CACHE`). `signer_lock`/`unlock`
+/// clear the caches while holding `SIGNER` with the same ordering, so no
+/// ABBA cycle exists (the old `CACHE → SIGNER` order deadlocked against it).
 pub(crate) fn lan_key() -> Result<[u8; 32], String> {
-    // LOCK ORDER: LAN_KEY_CACHE → SIGNER (must not be reversed).
-    let mut cache = crate::ffi::util::lock(&LAN_KEY_CACHE);
-    if let Some(lan) = cache.as_ref() {
-        return Ok(*lan);
+    // Fast path: cache lock only, released on return.
+    if let Some(lan) = crate::ffi::util::lock(&LAN_KEY_CACHE).as_ref().copied() {
+        return Ok(lan);
     }
+    // Derive and store while holding SIGNER. Locking the cache AFTER SIGNER is
+    // safe: no code path holds the cache while waiting for SIGNER.
     let guard = crate::ffi::util::lock(&SIGNER);
     let keys = match guard.as_ref() {
         Some(k) => k,
@@ -447,7 +451,7 @@ pub(crate) fn lan_key() -> Result<[u8; 32], String> {
     let mut out = [0u8; 32];
     out.copy_from_slice(&derived);
     derived.zeroize();
-    *cache = Some(out);
+    *crate::ffi::util::lock(&LAN_KEY_CACHE) = Some(out);
     Ok(out)
 }
 
@@ -455,14 +459,15 @@ pub(crate) fn lan_key() -> Result<[u8; 32], String> {
 /// used by domain modules to seal key material persisted in SQLite.
 ///
 /// # Lock ordering
-/// This function acquires `AT_REST_KEY_CACHE` first, then `SIGNER`.
-/// Must follow the same order as `lan_key` to prevent deadlocks.
+/// Same discipline as `lan_key`: only fast-path reads plus the final store
+/// touch the cache lock, the store while `SIGNER` is held. No `CACHE → SIGNER`
+/// acquisition anywhere — no ABBA with `signer_lock`/`signer_unlock`.
 pub(crate) fn signer_at_rest_key() -> Result<[u8; 32], String> {
-    // LOCK ORDER: AT_REST_KEY_CACHE → SIGNER (must not be reversed).
-    let mut cache = crate::ffi::util::lock(&AT_REST_KEY_CACHE);
+    let cache = crate::ffi::util::lock(&AT_REST_KEY_CACHE);
     if let Some(rest) = cache.as_ref() {
         return Ok(*rest);
     }
+    drop(cache);
     let guard = crate::ffi::util::lock(&SIGNER);
     let keys = match guard.as_ref() {
         Some(k) => k,
@@ -473,7 +478,10 @@ pub(crate) fn signer_at_rest_key() -> Result<[u8; 32], String> {
         hex::decode(&*secret_hex).map_err(|e| format!("secret decode: {e}"))?,
     );
     let rest = soshal_crypto_core::at_rest::at_rest_key(&secret)?;
-    *cache = Some(rest);
+    // Store while still holding SIGNER (see lan_key lock-order note): this
+    // serializes against signer_lock/unlock's cache clear, so no stale key
+    // survives past a lock.
+    *crate::ffi::util::lock(&AT_REST_KEY_CACHE) = Some(rest);
     Ok(rest)
 }
 
@@ -528,6 +536,8 @@ fn sign_event_core(keys: &Keys, unsigned: UnsignedEvent) -> Result<String, Strin
 /// Sign a fully-formed `EventBuilder` with the unlocked key. Internal helper
 /// for the domain modules (feed, messaging, relations).
 pub(crate) fn sign_builder(builder: nostr::event::EventBuilder) -> Result<String, String> {
+    // Rate-limit the signing oracle uniformly with the other sign surfaces.
+    SIGN_RATE.check()?;
     let guard = crate::ffi::util::lock(&SIGNER);
     match guard.as_ref() {
         Some(keys) => sign_event_core(keys, builder.finalize_unsigned(keys.public_key())),
@@ -540,6 +550,7 @@ pub(crate) fn sign_builder(builder: nostr::event::EventBuilder) -> Result<String
 /// Returns the fully signed event JSON including `id` and `sig`.
 #[frb(sync, serialize)]
 pub fn signer_sign_unsigned(event_json: String) -> Result<String, String> {
+    SIGN_RATE.check()?;
     let guard = crate::ffi::util::lock(&SIGNER);
     match guard.as_ref() {
         Some(keys) => {
@@ -802,6 +813,34 @@ mod tests {
         clear_derived_cache();
         assert_eq!(lan_key().unwrap(), lan1, "lan key stable across cache wipe");
         assert_eq!(signer_at_rest_key().unwrap(), rest1, "at-rest key stable");
+        signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_lock_order_no_deadlock_concurrent() {
+        // Regression: lan_key/signer_at_rest_key used to hold the cache mutex
+        // while acquiring SIGNER, while signer_unlock held SIGNER and cleared
+        // the caches — an ABBA deadlock that only showed under concurrent
+        // P2P + account-switch traffic. The stress below must complete.
+        let _g = TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let hex = keys.secret_key().to_secret_hex();
+        signer_unlock(hex.clone()).unwrap();
+        let hex2 = hex.clone();
+        let a = std::thread::spawn(move || {
+            for _ in 0..500 {
+                let _ = lan_key();
+                let _ = signer_at_rest_key();
+            }
+        });
+        let b = std::thread::spawn(move || {
+            for _ in 0..50 {
+                let _ = signer_unlock(hex2.clone());
+            }
+        });
+        a.join().expect("lan_key thread must not deadlock");
+        b.join().expect("unlock thread must not deadlock");
         signer_lock().unwrap();
     }
 

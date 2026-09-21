@@ -1,6 +1,6 @@
 //! Freenet WebSocket client for contract operations and node communication.
 
-use crate::pqc_link::PQ_LINK_CRYPTO;
+use crate::pqc_link::{FRAME_TAG_RATCHET, PQ_LINK_CRYPTO};
 use freenet_stdlib::client_api::{
     ClientError as FnetClientError, ClientRequest as FnetClientRequest,
     ContractRequest as FnetContractRequest, HostResponse as FnetHostResponse,
@@ -105,6 +105,24 @@ impl FreenetWebSocketClient {
                 PQ_LINK_CRYPTO.decrypt(peer, &context, &payload)
             }
             None => Ok(payload),
+        }
+    }
+
+    /// Decides whether a fetched contract state should be unsealed. Only a
+    /// payload tagged as a ratchet frame is decrypted; plain payloads (from
+    /// non-ratchet peers, or unratcheted reads) pass through untouched, and a
+    /// failed unseal keeps the raw state instead of dropping the read.
+    fn maybe_unseal_state(&self, state: Vec<u8>) -> Vec<u8> {
+        if self.ratchet_peer.is_some() && state.first() == Some(&FRAME_TAG_RATCHET) {
+            match self.unseal(state.clone()) {
+                Ok(plain) => plain,
+                Err(e) => {
+                    eprintln!("freenet state unseal failed, returning raw state: {e}");
+                    state
+                }
+            }
+        } else {
+            state
         }
     }
 
@@ -344,7 +362,7 @@ impl FreenetWebSocketClient {
 
         match response {
             FreenetResponse::GetResult(mut result) => {
-                result.state.state = self.unseal(result.state.state)?;
+                result.state.state = self.maybe_unseal_state(result.state.state);
                 Ok(result.state)
             }
             FreenetResponse::Error(err) => Err(format!("Get failed: {}", err.message)),
@@ -651,6 +669,26 @@ mod tests {
         assert_eq!(parse_instance_id(&encoded).unwrap(), id);
         assert!(parse_instance_id("soshal-mesh-v1").is_err());
         assert!(parse_instance_id("&&&").is_err());
+    }
+
+    #[test]
+    fn test_unseal_never_drops_plain_or_bad_ratchet_state() {
+        // Regression: get_contract unsealed unconditionally when a ratchet
+        // peer was configured, so a PLAIN contract from a non-ratchet peer
+        // failed decrypt and the whole read was dropped (contract invisible).
+        let plain = FreenetWebSocketClient::new("ws://127.0.0.1:9".to_string(), String::new())
+            .with_ratchet_peer("peer-x", "00");
+        // Non-ratchet payload: must come back byte-identical.
+        let raw = vec![0x02, 1, 2, 3, 4];
+        assert_eq!(plain.maybe_unseal_state(raw.clone()), raw);
+        // Ratchet-tagged payload with no session: unseal fails, but the raw
+        // state is still returned (never dropped).
+        let tagged = vec![FRAME_TAG_RATCHET, 0x00, 0x02, 0x01, 0x01];
+        let out = plain.maybe_unseal_state(tagged.clone());
+        assert_eq!(out, tagged, "failed unseal must not drop the read");
+        // Unconfigured client: plain payload untouched.
+        let none = FreenetWebSocketClient::new("ws://127.0.0.1:9".to_string(), String::new());
+        assert_eq!(none.maybe_unseal_state(raw.clone()), raw);
     }
 
     #[test]

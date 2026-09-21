@@ -66,6 +66,12 @@ impl I2pBackend {
                     peers.remove(&oldest_key);
                 }
             }
+            // Reconnecting to an already-known destination must close the old
+            // socket — otherwise the old reader thread never sees EOF and the
+            // fd leaks. shutdown() wakes it with an error right away.
+            if let Some((old, _)) = peers.remove(destination) {
+                let _ = old.shutdown(std::net::Shutdown::Both);
+            }
             peers.insert(destination.to_string(), (stream, Instant::now()));
         }
         let received = self.received.clone();
@@ -99,6 +105,7 @@ impl MeshBackend for I2pBackend {
                 match session_thread.accept_connection() {
                     Ok(stream) => {
                         let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+                        let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(30)));
                         if active_inbound.load(Ordering::Relaxed) >= MAX_INBOUND_STREAMS {
                             drop(stream); // reject beyond cap
                             continue;
@@ -123,6 +130,12 @@ impl MeshBackend for I2pBackend {
         self.running.store(false, Ordering::Relaxed);
         if let Some(session) = &self.session {
             session.stop();
+        }
+        // Join the listener thread: `session.stop()` unblocks an in-flight
+        // STREAM ACCEPT (dup-fd shutdown), so this returns promptly instead of
+        // waiting out the SAM bridge's read timeout.
+        if let Some(handle) = self.listener.take() {
+            let _ = handle.join();
         }
         self.peers.lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
@@ -189,6 +202,9 @@ impl Drop for I2pBackend {
         self.running.store(false, Ordering::Relaxed);
         if let Some(session) = &self.session {
             session.stop();
+        }
+        if let Some(handle) = self.listener.take() {
+            let _ = handle.join();
         }
     }
 }

@@ -4,6 +4,7 @@ use crate::pqc_link::{parse_handshake_frame, PqcLinkCrypto, PQ_LINK_CRYPTO};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
+use std::sync::Arc;
 use std::time::Duration;
 
 const SAM_DEFAULT_HOST: &str = "127.0.0.1";
@@ -11,6 +12,9 @@ const SAM_DEFAULT_PORT: u16 = 7656;
 const SAM_VERSION: &str = "3.1";
 const SAM_SIGNATURE_TYPE: &str = "7"; // Ed25519
 const SAM_MAX_REPLY_LINE: u64 = 8192;
+/// Extra bytes drained from a hostile oversized reply line before giving up
+/// and resetting the session (bounds the drain; keeps the stream aligned).
+const SAM_MAX_OVERSIZE_DRAIN: u64 = 64 * 1024;
 const SAM_ENCRYPTION_TYPE: &str = "4"; // ECIES-X25519
 
 /// I2P SAM V3 client for anonymous networking
@@ -22,6 +26,10 @@ pub struct I2PSamClient {
     /// (read-ahead) are never discarded between commands — a per-call
     /// `BufReader` would drop them and desync the next reply.
     reader: Option<BufReader<TcpStream>>,
+    /// Dup handle on the control socket. `shutdown` on the dup wakes any
+    /// in-flight blocking read/write on the original immediately, letting a
+    /// foreign thread unblock a stuck command (see `force_close`).
+    socket: Option<Arc<TcpStream>>,
     session_id: Option<String>,
     destination: Option<String>,
 }
@@ -33,6 +41,7 @@ impl I2PSamClient {
             host,
             port,
             reader: None,
+            socket: None,
             session_id: None,
             destination: None,
         }
@@ -66,8 +75,27 @@ impl I2PSamClient {
             .set_write_timeout(Some(Duration::from_secs(30)))
             .map_err(|e| format!("Set write timeout failed: {e}"))?;
 
-        self.reader = Some(BufReader::new(stream));
+        self.reader = Some(BufReader::new(
+            stream
+                .try_clone()
+                .map_err(|e| format!("SAM socket dup failed: {e}"))?,
+        ));
+        self.socket = Some(Arc::new(stream));
         Ok(())
+    }
+
+    /// Shuts the control socket down without a SESSION CLOSE round-trip.
+    /// Safe to call from another thread: `shutdown` on the dup fd wakes any
+    /// in-flight blocking read/write on the original immediately.
+    pub fn force_close(&self) {
+        if let Some(s) = &self.socket {
+            let _ = s.shutdown(std::net::Shutdown::Both);
+        }
+    }
+
+    /// Returns a handle to the control socket dup (for cross-thread unblock).
+    pub fn socket_handle(&self) -> Option<Arc<TcpStream>> {
+        self.socket.clone()
     }
 
     /// Disconnects from the SAM bridge
@@ -117,6 +145,48 @@ impl I2PSamClient {
                 .map_err(|e| format!("Response read failed: {e}"))?;
         }
         if response.len() as u64 >= SAM_MAX_REPLY_LINE {
+            // A hostile/glitchy router sent a reply longer than the cap. The
+            // `take()` above consumed exactly SAM_MAX_REPLY_LINE+1 bytes, so
+            // any remainder of the giant line may still be in the socket —
+            // without draining it the NEXT command would read garbage from
+            // mid-line (protocol desync). Scan the buffered remainder with a
+            // zero-timeout read: whatever's already queued gets consumed up to
+            // the newline (bounded); a WouldBlock means there's nothing left,
+            // so the stream is already aligned again.
+            // Note: Duration::ZERO would DISABLE the timeout (infinite block)
+            // on Linux — use a small nonzero bound so a router that stalls
+            // mid-line doesn't hold us for the full command timeout.
+            let _ = reader
+                .get_ref()
+                .set_read_timeout(Some(Duration::from_millis(250)));
+            let mut drained = 0u64;
+            let mut byte = [0u8; 1];
+            loop {
+                match reader.read(&mut byte) {
+                    Ok(0) => break, // EOF — aligned
+                    Ok(_) => {
+                        drained += 1;
+                        if byte[0] == b'\n' {
+                            break; // end of oversized line: aligned
+                        }
+                        if drained > SAM_MAX_OVERSIZE_DRAIN {
+                            self.force_close();
+                            return Err(
+                                "SAM reply line exceeds drain cap; session reset".to_string()
+                            );
+                        }
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                    Err(e) => {
+                        self.force_close();
+                        return Err(format!("Oversized reply drain failed: {e}"));
+                    }
+                }
+            }
+            // Restore the normal command read timeout.
+            let _ = reader
+                .get_ref()
+                .set_read_timeout(Some(Duration::from_secs(30)));
             return Err("SAM reply line too long".to_string());
         }
 
@@ -205,8 +275,25 @@ impl I2PSamClient {
                         .parse()
                         .map_err(|e| format!("Port parse failed: {e}"))?;
 
-                    TcpStream::connect(format!("{}:{}", self.host, port))
-                        .map_err(|e| format!("Stream connection failed: {e}"))
+                    let addr = std::net::ToSocketAddrs::to_socket_addrs(&format!(
+                        "{}:{}",
+                        self.host, port
+                    ))
+                    .map_err(|e| format!("Stream addr resolve failed: {e}"))?
+                    .next()
+                    .ok_or("Stream address resolved to nothing")?;
+                    let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(10))
+                        .map_err(|e| format!("Stream connection failed: {e}"))?;
+                    // Bound the data stream: without timeouts a silent peer
+                    // stalls broadcast writes forever and its reader thread
+                    // never exits (thread/fd leak).
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(30)))
+                        .map_err(|e| format!("Set stream read timeout failed: {e}"))?;
+                    stream
+                        .set_write_timeout(Some(Duration::from_secs(30)))
+                        .map_err(|e| format!("Set stream write timeout failed: {e}"))?;
+                    Ok(stream)
                 } else {
                     Err("Failed to parse stream port".to_string())
                 }
@@ -231,8 +318,22 @@ impl I2PSamClient {
                         .parse()
                         .map_err(|e| format!("Port parse failed: {e}"))?;
 
-                    TcpStream::connect(format!("{}:{}", self.host, port))
-                        .map_err(|e| format!("Stream connection failed: {e}"))
+                    let addr = std::net::ToSocketAddrs::to_socket_addrs(&format!(
+                        "{}:{}",
+                        self.host, port
+                    ))
+                    .map_err(|e| format!("Stream addr resolve failed: {e}"))?
+                    .next()
+                    .ok_or("Stream address resolved to nothing")?;
+                    let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(10))
+                        .map_err(|e| format!("Stream connection failed: {e}"))?;
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(30)))
+                        .map_err(|e| format!("Set stream read timeout failed: {e}"))?;
+                    stream
+                        .set_write_timeout(Some(Duration::from_secs(30)))
+                        .map_err(|e| format!("Set stream write timeout failed: {e}"))?;
+                    Ok(stream)
                 } else {
                     Err("Failed to parse stream port".to_string())
                 }
@@ -257,7 +358,9 @@ impl I2PSamClient {
 
 impl Drop for I2PSamClient {
     fn drop(&mut self) {
-        let _ = self.disconnect();
+        // Never block in Drop: force-close the control socket (SESSION CLOSE
+        // round-trip could stall against an unresponsive router).
+        self.force_close();
     }
 }
 
@@ -325,6 +428,12 @@ impl I2PTunnelManager {
     pub fn client(&mut self) -> &mut I2PSamClient {
         &mut self.client
     }
+
+    /// Detaches the underlying SAM client so a session manager can serialize
+    /// command I/O separately from lifecycle operations.
+    pub fn into_client(self) -> I2PSamClient {
+        self.client
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -334,9 +443,29 @@ impl I2PTunnelManager {
 /// Process-wide manager holding one SAM session for the app lifetime, so
 /// P2P/streaming can both initiate and accept connections over i2p without
 /// rebuilding the tunnel per call.
+///
+/// Lock discipline (single direction, no ABBA):
+/// - Blocking STREAM CONNECT/ACCEPT command I/O serializes on `client` only.
+/// - Lifecycle ops (`start`/`stop`/`is_running`/`destination`) touch only
+///   `lifecycle`; `stop` unblocks an in-flight blocking op via a dup-fd
+///   `shutdown` on the control socket, so it never waits behind an accept.
 pub struct I2PSessionManager {
-    tunnel: std::sync::Mutex<Option<I2PTunnelManager>>,
+    /// The SAM control client. Held across blocking command I/O; lifecycle
+    /// ops never acquire it while a command is in flight.
+    client: std::sync::Mutex<Option<I2PSamClient>>,
+    /// Lifecycle bookkeeping, independent of command I/O.
+    lifecycle: std::sync::Mutex<I2PManagerLifecycle>,
     config: I2PTunnelConfig,
+}
+
+#[derive(Default)]
+struct I2PManagerLifecycle {
+    destination: Option<String>,
+    session_id: Option<String>,
+    running: bool,
+    /// Dup of the SAM control socket: lets `stop()` unblock an in-flight
+    /// blocking op without acquiring the `client` lock.
+    control: Option<Arc<TcpStream>>,
 }
 
 impl I2PSessionManager {
@@ -346,7 +475,8 @@ impl I2PSessionManager {
 
     pub fn with_config(config: I2PTunnelConfig) -> Self {
         Self {
-            tunnel: std::sync::Mutex::new(None),
+            client: std::sync::Mutex::new(None),
+            lifecycle: std::sync::Mutex::new(I2PManagerLifecycle::default()),
             config,
         }
     }
@@ -355,62 +485,88 @@ impl I2PSessionManager {
     /// a previous run to keep the same address; `None` creates a transient
     /// destination for this run.
     pub fn start(&self, destination: Option<&str>) -> Result<String, String> {
-        let mut guard = self.tunnel.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(mut t) = guard.take() {
-            let _ = t.stop();
-        }
         let mut config = self.config.clone();
         if let Some(d) = destination {
             config.destination = Some(d.to_string());
         }
+        // Blocking setup runs on a local tunnel — no lock is held while the
+        // SAM bridge handshakes, so concurrent connect/accept aren't stalled.
         let mut tunnel = I2PTunnelManager::new(config);
         let dest = tunnel.start()?;
-        *guard = Some(tunnel);
+        let client = tunnel.into_client();
+        {
+            let mut l = self.lifecycle.lock().unwrap_or_else(|e| e.into_inner());
+            // Addressable destination = the session destination negotiated
+            // with the SAM bridge (transient or fixed), not the generated
+            // keypair's pubkey. This is what relay peers connect to.
+            l.destination = client.get_destination();
+            l.session_id = client.get_session_id();
+            l.running = true;
+            l.control = client.socket_handle();
+            drop(l);
+        }
+        *self.client.lock().unwrap_or_else(|e| e.into_inner()) = Some(client);
         Ok(dest)
     }
 
     pub fn stop(&self) {
-        if let Some(mut t) = self.tunnel.lock().unwrap_or_else(|e| e.into_inner()).take() {
-            let _ = t.stop();
+        // 1. Unblock any in-flight blocking op right now: shutdown on the dup
+        //    fd wakes the blocked read, the op returns Err, and the client
+        //    lock frees. This is what makes relay shutdown fast even while
+        //    the listener sits in STREAM ACCEPT.
+        if let Some(sock) = self
+            .lifecycle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .control
+            .as_ref()
+        {
+            let _ = sock.shutdown(std::net::Shutdown::Both);
         }
+        // 2. Now the client lock is free — take and drop the client.
+        if let Some(client) = self.client.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            client.force_close();
+        }
+        // 3. Clear lifecycle state.
+        let mut l = self.lifecycle.lock().unwrap_or_else(|e| e.into_inner());
+        l.running = false;
+        l.destination = None;
+        l.session_id = None;
+        l.control = None;
     }
 
     pub fn is_running(&self) -> bool {
-        self.tunnel
+        self.lifecycle
             .lock()
-            .map(|g| g.as_ref().is_some())
-            .unwrap_or(false)
+            .unwrap_or_else(|e| e.into_inner())
+            .running
     }
 
     pub fn destination(&self) -> Option<String> {
-        self.tunnel
-            .lock()
-            .ok()
-            .and_then(|mut g| g.as_mut().and_then(|t| t.client().get_destination()))
-    }
-
-    /// Opens an outbound stream to a remote i2p destination.
-    pub fn connect_to_destination(&self, destination: &str) -> Result<std::net::TcpStream, String> {
-        match self
-            .tunnel
+        self.lifecycle
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .as_mut()
-        {
-            Some(t) => t.client().connect_to_destination(destination),
+            .destination
+            .clone()
+    }
+
+    /// Opens an outbound stream to a remote i2p destination. Blocks while the
+    /// SAM bridge establishes the tunnel, but only serializes with other
+    /// command I/O — lifecycle ops (`stop`/`start`) are never blocked.
+    pub fn connect_to_destination(&self, destination: &str) -> Result<std::net::TcpStream, String> {
+        let mut guard = self.client.lock().unwrap_or_else(|e| e.into_inner());
+        match guard.as_mut() {
+            Some(c) => c.connect_to_destination(destination),
             None => Err("i2p session not running".to_string()),
         }
     }
 
-    /// Blocks until an inbound connection arrives on the session.
+    /// Blocks until an inbound connection arrives on the session. Same lock
+    /// discipline as `connect_to_destination`: command I/O only.
     pub fn accept_connection(&self) -> Result<std::net::TcpStream, String> {
-        match self
-            .tunnel
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_mut()
-        {
-            Some(t) => t.client().accept_connection(),
+        let mut guard = self.client.lock().unwrap_or_else(|e| e.into_inner());
+        match guard.as_mut() {
+            Some(c) => c.accept_connection(),
             None => Err("i2p session not running".to_string()),
         }
     }
@@ -618,6 +774,7 @@ mod tests {
     use super::*;
     use std::net::TcpListener;
     use std::thread;
+    use std::time::Instant;
 
     struct MockBridge {
         listener: TcpListener,
@@ -882,6 +1039,101 @@ mod tests {
         );
         // Close our side so the bridge's trailing read_line sees EOF.
         drop(client);
+        handle.join().expect("bridge thread");
+    }
+
+    /// Regression: an oversized reply line used to leave the remainder of the
+    /// line in the persistent reader, so the NEXT command on the same session
+    /// read garbage from mid-line (protocol desync). The drain must keep the
+    /// stream aligned.
+    #[test]
+    fn overlong_reply_does_not_desync_next_command() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("local addr").port();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+            let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+            // cmd1 -> hostile oversized line (cap + extra body + newline).
+            let mut line = String::new();
+            reader.read_line(&mut line).expect("read cmd1");
+            let huge = "x".repeat(SAM_MAX_REPLY_LINE as usize);
+            let _ = stream.write_all(huge.as_bytes());
+            let _ = stream.write_all(&"y".repeat(1024).into_bytes());
+            let _ = stream.write_all(b"\n");
+            let _ = stream.flush();
+            // cmd2 on the SAME session -> must still read a clean reply.
+            line.clear();
+            reader.read_line(&mut line).expect("read cmd2");
+            let _ = stream.write_all(b"SESSION STATUS RESULT=OK\n");
+            let _ = stream.flush();
+        });
+
+        let mut client = I2PSamClient::new("127.0.0.1".to_string(), port);
+        client.connect().expect("connect");
+        // First command gets the oversized reply.
+        let err = client
+            .create_session("aligned-session", Some("dest-aligned"))
+            .unwrap_err();
+        assert!(err.contains("too long"), "expected too-long, got: {err}");
+        // The persistent reader must now be aligned: the next command gets
+        // the normal reply, not a garbage response.
+        let r = client
+            .send_command("STREAM CONNECT ID=aligned-session DESTINATION=x SILENT=false")
+            .expect("second command must parse cleanly");
+        assert_eq!(r, "SESSION STATUS RESULT=OK");
+        drop(client);
+        handle.join().expect("bridge thread");
+    }
+
+    /// Regression: `stop()` must unblock an in-flight blocking `accept` and
+    /// return promptly instead of waiting out the SAM bridge's 30 s read
+    /// timeout (which wedged relay shutdown).
+    #[test]
+    fn manager_stop_unblocks_inflight_accept() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("local addr").port();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+            let mut line = String::new();
+            // HELLO
+            reader.read_line(&mut line).expect("read hello");
+            let _ = stream.write_all(b"HELLO REPLY VERSION=3.1\n");
+            line.clear();
+            // DEST GENERATE
+            reader.read_line(&mut line).expect("read dest");
+            let _ = stream.write_all(b"DEST REPLY DEST=gen-x\n");
+            line.clear();
+            // SESSION CREATE (transient)
+            reader.read_line(&mut line).expect("read session");
+            let _ = stream.write_all(b"SESSION STATUS RESULT=OK DESTINATION=trans-x\n");
+            line.clear();
+            // STREAM ACCEPT — never reply; holds the accept open until the
+            // client's dup-fd shutdown wakes this read (EOF/reset).
+            let _ = reader.read_line(&mut line);
+        });
+
+        let manager = std::sync::Arc::new(I2PSessionManager::with_config(I2PTunnelConfig {
+            sam_port: port,
+            ..I2PTunnelConfig::default()
+        }));
+        manager.start(None).expect("start");
+        // Listener thread parks in accept_connection (server never replies).
+        let session = std::sync::Arc::clone(&manager);
+        let t = thread::spawn(move || {
+            let _ = session.accept_connection();
+        });
+        thread::sleep(Duration::from_millis(200));
+        let t0 = Instant::now();
+        manager.stop();
+        let elapsed = t0.elapsed();
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "stop took {elapsed:?} — in-flight accept was not unblocked"
+        );
+        assert!(!manager.is_running());
+        let _ = t.join();
         handle.join().expect("bridge thread");
     }
 }
