@@ -30,6 +30,7 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Timer? _callTimer;
+  Timer? _relayTimer;
   Timer? _lockoutTimer;
   int? _lastLockoutNotified;
   bool _isPaused = false;
@@ -44,6 +45,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   void _startTimers() {
     _callTimer?.cancel();
+    _relayTimer?.cancel();
     // Poll relay kind-20001 call signals addressed to the active account.
     _callTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted || _isPaused) return;
@@ -51,6 +53,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       if (pubkey != null) {
         context.read<ShellService>().pollCallSignals(pubkey);
       }
+    });
+    // Re-poll relay/tunnel connectivity so the offline banner follows
+    // late i2p/freenet tunnel-up and relay reconnects — the bootstrap poll
+    // in _bootstrap runs once and goes stale otherwise.
+    _relayTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!mounted || _isPaused) return;
+      context.read<ShellService>().refreshRelayStatus();
     });
   }
 
@@ -79,6 +88,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void _stopTimers() {
     _callTimer?.cancel();
     _callTimer = null;
+    _relayTimer?.cancel();
+    _relayTimer = null;
     _lockoutTimer?.cancel();
     _lockoutTimer = null;
   }

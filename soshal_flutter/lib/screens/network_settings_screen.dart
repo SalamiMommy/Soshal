@@ -7,6 +7,7 @@ import '../services/ebpf_service.dart';
 import '../services/network_service.dart';
 import '../services/permissions_service.dart';
 import '../services/session_service.dart';
+import '../services/shell_service.dart';
 import '../utils/format.dart';
 import '../widgets/error_state_text.dart';
 
@@ -187,11 +188,15 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
 
   Future<void> _reinitRelays() async {
     try {
+      final shell = context.read<ShellService>();
       await context.read<NetworkService>().reinitRelays();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: SelectableText('Relays reconnected')));
       }
+      // Reconnect may take seconds; refresh the banner immediately instead of
+      // waiting up to 15 s for the periodic poll.
+      shell.refreshRelayStatus();
       await _refresh();
     } catch (e) {
       debugPrint('reinit relays: $e');
@@ -700,6 +705,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
 
   Future<void> _daemonsStart() async {
     setState(() => _daemonBusy = true);
+    final shell = context.read<ShellService>();
     final ok = await DaemonService.startDaemons();
     if (mounted) {
       setState(() {
@@ -707,6 +713,9 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
         _daemonBusy = false;
       });
       await _daemonsRefresh();
+      // i2pd up now → transport may resolve to i2p; re-poll so the banner
+      // flips online instead of waiting for the periodic poll.
+      shell.refreshRelayStatus();
     }
   }
 
