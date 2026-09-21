@@ -57,13 +57,23 @@ impl SharedRing {
             ));
         }
         let cap = capacity_bytes.max(64 * 1024).div_ceil(4096) * 4096;
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(path)
-            .map_err(|e| format!("ring open: {e}"))?;
+        let mut opts = OpenOptions::new();
+        opts.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            // O_APPEND-style default would leave the ring world-readable
+            // (0644) — telemetry payloads are sensitive; force owner-only.
+            opts.mode(0o600);
+        }
+        let file = opts.open(path).map_err(|e| format!("ring open: {e}"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // Covers files created earlier with looser perms (mode only
+            // applies at creation time).
+            let _ = file.set_permissions(std::fs::Permissions::from_mode(0o600));
+        }
         let total = RING_HEADER_LEN + cap;
         // Read existing capacity before any resize to prevent silent data loss
         // when reopening with a smaller requested capacity.
@@ -492,5 +502,26 @@ mod tests {
         ring.drain(|_, _| {});
         let tail = read_u64(&ring.map, 8);
         assert!(tail >= 36 * 1024);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ring_file_is_owner_only_and_tightens_existing() {
+        use std::os::unix::fs::PermissionsExt;
+        let p = soshal_test_util::tmp_path("ring", "ring_perms.bin");
+        // Pre-create with loose 0644 (e.g. old version) — init must tighten it.
+        std::fs::write(&p, b"").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let ring = SharedRing::init(&p, 64 * 1024).unwrap();
+        assert_eq!(ring.capacity(), 64 * 1024);
+        drop(ring);
+        let mode = std::fs::metadata(&p).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "ring file mode {mode:o}");
+        // Fresh create path also lands at 0600.
+        let p2 = soshal_test_util::tmp_path("ring", "ring_perms2.bin");
+        let ring = SharedRing::init(&p2, 64 * 1024).unwrap();
+        drop(ring);
+        let mode2 = std::fs::metadata(&p2).unwrap().permissions().mode();
+        assert_eq!(mode2 & 0o777, 0o600, "fresh ring file mode {mode2:o}");
     }
 }

@@ -2,8 +2,13 @@
 //!
 //! Lightning Network Zaps (NIP-57), LNURL parsing, NWC (Nostr Wallet
 //! Connect) connection state, and DB-backed zap totals. Invoice issuance is
-//! delegated to the NWC provider; the bridge never sees the NWC secret after
-//! `zap_connect_nwc` stores it (kv-backed, blocked on export).
+//! delegated to the NWC provider. The NWC connection secret never leaves this
+//! module: it is held in-memory in a `ZeroizingString` for the process
+//! lifetime only (never written to disk, never exported to Dart) and a fresh
+//! NWC connection must be established after an app restart. A future
+//! hardening step could persist the secret in the OS keychain (sealed with
+//! the device key), but that is deliberately NOT done today to keep the blast
+//! radius of a disk theft to zero.
 
 use flutter_rust_bridge::frb;
 use nostr::event::{AsyncSignEvent, Event, UnsignedEvent};

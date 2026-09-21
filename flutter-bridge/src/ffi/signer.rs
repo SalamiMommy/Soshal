@@ -203,12 +203,21 @@ fn save_local_sealed_key(pubkey: &str, secret: &str) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
+        // O_NOFOLLOW: never write through a symlink substituted for the key
+        // file. mode(0o600) applies at creation only; existing files with
+        // looser perms are re-tightened explicitly after open below.
+        opts.custom_flags(libc::O_NOFOLLOW);
         opts.mode(0o600);
     }
     use std::io::Write;
     let mut f = opts
         .open(&path)
         .map_err(|e| format!("failed to open local key file: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
+    }
     f.write_all(sealed.as_bytes())
         .map_err(|e| format!("failed to write local key file: {e}"))?;
     f.flush()
@@ -220,8 +229,10 @@ fn save_local_sealed_key(pubkey: &str, secret: &str) -> Result<(), String> {
 fn read_local_sealed_key(pubkey: &str) -> Result<String, String> {
     let key = get_device_session_key()?;
     let path = local_sealed_key_path(pubkey)?;
-    let content =
-        std::fs::read_to_string(&path).map_err(|e| format!("local key file unreadable: {e}"))?;
+    // read via O_NOFOLLOW: a symlink swapped in for the key file must be
+    // rejected, not followed (sealed key material would leak to the target).
+    let content = crate::ffi::util::read_to_string_nofollow(&path)
+        .map_err(|e| format!("local key file unreadable: {e}"))?;
     let unsealed = soshal_crypto_core::at_rest::open_at_rest(&key, content.trim())?;
     let secret = String::from_utf8(unsealed).map_err(|e| format!("invalid utf-8 secret: {e}"))?;
     Ok(secret)
@@ -648,6 +659,63 @@ mod tests {
         assert!(ev.get("sig").is_some());
         assert!(ev.get("id").is_some());
         signer_lock().unwrap();
+    }
+
+    #[test]
+    fn sealed_key_write_rejects_symlink_target() {
+        let _g = TEST_LOCK.lock().unwrap();
+        // Lock order DB→SIGNER: matches session tests (session.rs locks them
+        // DB→SIGNER); the reverse order deadlocks under parallel test threads.
+        let _d = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk_hex = keys.public_key().to_hex();
+        let dir = std::env::temp_dir().join(format!("soshal_signer_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        crate::ffi::db::db_init(dir.join("session.json").to_string_lossy().to_string()).unwrap();
+        let keys_dir = dir.join("keys");
+        std::fs::create_dir_all(&keys_dir).unwrap();
+        // Plant a symlink where the sealed key would land.
+        let outside = dir.join("outside-target");
+        std::fs::write(&outside, b"do not touch").unwrap();
+        std::os::unix::fs::symlink(&outside, keys_dir.join(format!("{pk_hex}.key"))).unwrap();
+        let err = save_local_sealed_key(&pk_hex, "nsec-test").unwrap_err();
+        assert!(
+            err.contains("failed to open local key file"),
+            "expected O_NOFOLLOW open rejection, got: {err}"
+        );
+        assert_eq!(std::fs::read(&outside).unwrap(), b"do not touch");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sealed_key_write_tightens_existing_loose_perms() {
+        let _g = TEST_LOCK.lock().unwrap();
+        // Lock order DB→SIGNER: matches session tests to avoid ABBA deadlock.
+        let _d = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let pk_hex = keys.public_key().to_hex();
+        let dir =
+            std::env::temp_dir().join(format!("soshal_signer_test_perms_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        crate::ffi::db::db_init(dir.join("session.json").to_string_lossy().to_string()).unwrap();
+        let key_path = dir.join("keys").join(format!("{pk_hex}.key"));
+        std::fs::create_dir_all(key_path.parent().unwrap()).unwrap();
+        // Pre-create with looser perms (e.g. restored from a bad backup).
+        std::fs::write(&key_path, "stale").unwrap();
+        std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        save_local_sealed_key(&pk_hex, "nsec-test").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&key_path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "sealed key file must be 0600");
+        // Roundtrip through the O_NOFOLLOW read path.
+        let unsealed = read_local_sealed_key(&pk_hex).unwrap();
+        assert_eq!(unsealed, "nsec-test");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

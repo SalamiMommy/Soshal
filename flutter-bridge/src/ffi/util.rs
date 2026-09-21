@@ -48,6 +48,31 @@ pub(crate) fn lock_critical<T>(m: &Mutex<T>) -> Result<MutexGuard<'_, T>, String
     })
 }
 
+/// Read a text file with `O_NOFOLLOW` (Unix): a symlink planted at `path`
+/// between resolution and open is rejected by the kernel instead of followed
+/// (TOCTOU / symlink-race hardening, same pattern as
+/// `media.rs::open_allowed_read`). Used for secret-bearing files (sealed key,
+/// session key) where following a substituted symlink exfiltrates/corrupts
+/// key material.
+pub(crate) fn read_to_string_nofollow(path: &std::path::Path) -> std::io::Result<String> {
+    #[cfg(unix)]
+    {
+        use std::io::Read;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)?;
+        let mut s = String::new();
+        f.read_to_string(&mut s)?;
+        Ok(s)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::read_to_string(path)
+    }
+}
+
 /// Lock-free token-bucket rate limiter backed by a single `AtomicU64`.
 ///
 /// The u64 packs two u32 fields: the high 32 bits hold the current 1-second

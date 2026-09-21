@@ -241,7 +241,7 @@ pub(crate) fn load_or_create_session_key(
     session_path: &std::path::Path,
 ) -> Result<Vec<u8>, String> {
     let key_path = session_key_path(session_path);
-    if let Ok(content) = std::fs::read_to_string(&key_path) {
+    if let Ok(content) = crate::ffi::util::read_to_string_nofollow(&key_path) {
         let key =
             hex::decode(content.trim()).map_err(|_| "session.key is not valid hex".to_string())?;
         if key.len() != 32 {
@@ -270,7 +270,7 @@ pub(crate) fn load_or_create_session_key(
             // Concurrent creator (or a stale/garbage key file) won the race.
             // Re-read once; a non-32-byte key is refused, not overwritten, so
             // an attacker-supplied key file can never silently rotate the key.
-            let content = std::fs::read_to_string(&key_path)
+            let content = crate::ffi::util::read_to_string_nofollow(&key_path)
                 .map_err(|_| format!("session.key exists but is unreadable: {e}"))?;
             let k = hex::decode(content.trim())
                 .map_err(|_| "session.key is not valid hex (existing file)".to_string())?;
@@ -1021,6 +1021,23 @@ mod tests {
                 .mode();
             assert_eq!(mode & 0o777, 0o600, "session.key mode {mode:o}");
         }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_session_key_rejects_symlink_on_read() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let (dir, _db_path) = tmp_session_dir("keysymlink");
+        let outside = dir.join("outside-key-target");
+        std::fs::write(&outside, "attacker data").unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("session.key")).unwrap();
+        let err = super::load_or_create_session_key(&dir.join("session.json")).unwrap_err();
+        assert!(
+            err.contains("unreadable"),
+            "expected O_NOFOLLOW rejection of symlinked session.key, got: {err}"
+        );
+        // The symlink target must not have been read/written as key material.
+        assert_eq!(std::fs::read(&outside).unwrap(), b"attacker data");
         std::fs::remove_dir_all(&dir).ok();
     }
 

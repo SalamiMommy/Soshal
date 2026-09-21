@@ -324,6 +324,8 @@ unsafe fn drain_decoder(codec: *mut AMediaCodec) -> Vec<Vec<u8>> {
                     buf.offset(info.offset as isize),
                     info.size as usize,
                 );
+                let (rw, rh, x_step, y_step) =
+                    render_footprint(w as usize, h as usize, MAX_DECODE_OUTPUT_PIXELS);
                 if let Ok(jpeg) = yuv420_to_jpeg(
                     payload,
                     w as usize,
@@ -331,6 +333,10 @@ unsafe fn drain_decoder(codec: *mut AMediaCodec) -> Vec<Vec<u8>> {
                     stride as usize,
                     slice_height as usize,
                     color_fmt,
+                    rw,
+                    rh,
+                    x_step,
+                    y_step,
                 ) {
                     out.push(jpeg);
                 }
@@ -344,6 +350,46 @@ unsafe fn drain_decoder(codec: *mut AMediaCodec) -> Vec<Vec<u8>> {
     out
 }
 
+/// Cap on the DECODED output footprint for software YUV→JPEG conversion.
+/// An 8K hostile frame would otherwise allocate a ~100 MB `RgbImage` (8K²
+/// × 3 bytes). Frames larger than this are downsampled by sampling the
+/// source plane; 8 MP ≈ 4K at 2x density, plenty for a viewer thumbnail.
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+pub const MAX_DECODE_OUTPUT_PIXELS: usize = 8 * 1024 * 1024;
+
+/// Pure policy: given source dims, return `(render_w, render_h, x_step,
+/// y_step)` such that `render_w * render_h <= max_pixels`. The render grid
+/// downsamples the source YUV plane by taking one pixel every `step` on
+/// each axis — no resampler allocation, so hostile (huge, untrusted) decode
+/// input cannot force a multi-hundred-MB heap spike in the codec fast path.
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+fn render_footprint(w: usize, h: usize, max_pixels: usize) -> (usize, usize, usize, usize) {
+    if w == 0 || h == 0 || max_pixels == 0 {
+        return (0, 0, 1, 1);
+    }
+    let mut rw = w;
+    let mut rh = h;
+    let total = w * h;
+    if total > max_pixels {
+        let scale = (total as f64 / max_pixels as f64).sqrt();
+        rw = ((w as f64 / scale).floor() as usize).max(1);
+        rh = ((h as f64 / scale).floor() as usize).max(1);
+        // Exact aspect-preserving trim onto the pixel budget.
+        while rw * rh > max_pixels && rw > 1 && rh > 1 {
+            if rw as f64 / rh as f64 >= w as f64 / h as f64 {
+                rw -= 1;
+            } else {
+                rh -= 1;
+            }
+        }
+    }
+    // Integer steps guarantee (step-1 index) * ... stays within the source
+    // plane: x_step = w / rw => (rw - 1) * x_step <= w - 1.
+    let x_step = (w / rw).max(1);
+    let y_step = (h / rh).max(1);
+    (rw, rh, x_step, y_step)
+}
+
 /// YUV420 buffer (I420, NV12, or NV21) → JPEG q60.
 #[cfg(target_os = "android")]
 unsafe fn yuv420_to_jpeg(
@@ -353,8 +399,12 @@ unsafe fn yuv420_to_jpeg(
     stride: usize,
     slice_h: usize,
     color_format: i32,
+    rw: usize,
+    rh: usize,
+    x_step: usize,
+    y_step: usize,
 ) -> Result<Vec<u8>, String> {
-    if w == 0 || h == 0 || yuv.is_empty() {
+    if w == 0 || h == 0 || yuv.is_empty() || rw == 0 || rh == 0 {
         return Err("empty dims or buffer".to_string());
     }
     const MAX_DIM: usize = 7680;
@@ -363,15 +413,17 @@ unsafe fn yuv420_to_jpeg(
         return Err("dims too large".to_string());
     }
 
-    let mut rgb = image::RgbImage::new(w as u32, h as u32);
+    let mut rgb = image::RgbImage::new(rw as u32, rh as u32);
     let y_plane_size = stride * slice_h;
     let is_semi_planar = color_format != 19; // 19 is COLOR_FormatYUV420Planar (I420)
-    for row in 0..h {
-        for col in 0..w {
-            let y_idx = row * stride + col;
+    for row in 0..rh {
+        let src_row = row * y_step;
+        for col in 0..rw {
+            let src_col = col * x_step;
+            let y_idx = src_row * stride + src_col;
             let yv = *yuv.get(y_idx).unwrap_or(&16) as i32;
-            let uv_row = row / 2;
-            let uv_col = col / 2;
+            let uv_row = src_row / 2;
+            let uv_col = src_col / 2;
             let (uv, vv) = if is_semi_planar {
                 let uv_idx = y_plane_size + uv_row * stride + uv_col * 2;
                 let u = *yuv.get(uv_idx).unwrap_or(&128) as i32;
@@ -438,6 +490,69 @@ fn bgra_to_i420_into(bgra: &[u8], width: i32, height: i32, i420: &mut [u8]) {
                 i420[v_pos] = (((112 * r - 94 * g - 18 * b + 128) >> 8) + 128) as u8;
                 u_pos += 1;
                 v_pos += 1;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn footprint_small_frames_pass_through_unchanged() {
+        let (rw, rh, xs, ys) = render_footprint(320, 240, MAX_DECODE_OUTPUT_PIXELS);
+        assert_eq!((rw, rh), (320, 240));
+        assert_eq!((xs, ys), (1, 1));
+    }
+
+    #[test]
+    fn footprint_8k_frame_capped_to_8mp() {
+        // 8K > 8 MP: must downscale, never exceed the pixel budget.
+        let (rw, rh, xs, ys) = render_footprint(7680, 4320, MAX_DECODE_OUTPUT_PIXELS);
+        assert!(rw * rh <= MAX_DECODE_OUTPUT_PIXELS, "{rw}*{rh}");
+        assert!(rw > 0 && rh > 0);
+        // Near-16:9 aspect is preserved.
+        assert!((rw as f64 / rh as f64 - 7680.0 / 4320.0).abs() < 0.02);
+        // Steps stay in-bounds: last sampled index < source dim.
+        assert!((rw - 1) * xs < 7680);
+        assert!((rh - 1) * ys < 4320);
+    }
+
+    #[test]
+    fn footprint_4k_1080p_fits_budget_unchanged() {
+        // 3840*2160 = 8.29 MP <= 8.39 MP budget: no downscale needed.
+        let (rw, rh, xs, ys) = render_footprint(3840, 2160, MAX_DECODE_OUTPUT_PIXELS);
+        assert_eq!((rw, rh), (3840, 2160));
+        assert_eq!((xs, ys), (1, 1));
+        // Slightly over budget forces downscale.
+        let (rw2, rh2, _, _) = render_footprint(4000, 2400, MAX_DECODE_OUTPUT_PIXELS);
+        // 4000*2400 = 9.6 MP > 8.39 MP budget.
+        assert!(rw2 * rh2 <= MAX_DECODE_OUTPUT_PIXELS);
+        assert!(rw2 < 4000 && rh2 < 2400);
+    }
+
+    #[test]
+    fn footprint_respects_smaller_custom_budgets() {
+        let (rw, rh, xs, ys) = render_footprint(1920, 1080, 250_000);
+        assert!(rw * rh <= 250_000);
+        assert!(rw >= 1 && rh >= 1);
+        assert!(xs >= 1 && ys >= 1);
+        // Degenerate inputs.
+        let (rw2, rh2, _, _) = render_footprint(0, 100, 1000);
+        assert_eq!((rw2, rh2), (0, 0));
+        let (rw3, rh3, _, _) = render_footprint(100, 0, 1000);
+        assert_eq!((rw3, rh3), (0, 0));
+    }
+
+    #[test]
+    fn footprint_steps_never_sample_out_of_bounds() {
+        for (w, h) in [(1, 1), (2, 2), (7, 5), (6, 6), (17, 9), (100, 100), (5, 5)] {
+            let (rw, rh, xs, ys) = render_footprint(w, h, 20);
+            assert!(rw <= w && rh <= h);
+            if rw > 0 {
+                assert!((rw - 1) * xs < w, "x last sample OOB for {w}x{h}");
+                assert!((rh - 1) * ys < h, "y last sample OOB for {w}x{h}");
             }
         }
     }

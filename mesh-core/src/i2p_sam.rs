@@ -17,7 +17,11 @@ const SAM_ENCRYPTION_TYPE: &str = "4"; // ECIES-X25519
 pub struct I2PSamClient {
     host: String,
     port: u16,
-    stream: Option<TcpStream>,
+    /// Persistent line reader over the control stream. Kept across
+    /// `send_command` calls so bytes the router buffers past a reply line
+    /// (read-ahead) are never discarded between commands — a per-call
+    /// `BufReader` would drop them and desync the next reply.
+    reader: Option<BufReader<TcpStream>>,
     session_id: Option<String>,
     destination: Option<String>,
 }
@@ -28,7 +32,7 @@ impl I2PSamClient {
         Self {
             host,
             port,
-            stream: None,
+            reader: None,
             session_id: None,
             destination: None,
         }
@@ -62,7 +66,7 @@ impl I2PSamClient {
             .set_write_timeout(Some(Duration::from_secs(30)))
             .map_err(|e| format!("Set write timeout failed: {e}"))?;
 
-        self.stream = Some(stream);
+        self.reader = Some(BufReader::new(stream));
         Ok(())
     }
 
@@ -72,8 +76,9 @@ impl I2PSamClient {
             self.send_command(&format!("SESSION CLOSE STYLE=STREAM ID={}", session_id))?;
         }
 
-        if let Some(stream) = self.stream.take() {
-            stream
+        if let Some(reader) = self.reader.take() {
+            reader
+                .get_ref()
                 .shutdown(std::net::Shutdown::Both)
                 .map_err(|e| format!("Stream shutdown failed: {e}"))?;
         }
@@ -85,23 +90,32 @@ impl I2PSamClient {
 
     /// Sends a SAM command and reads the response
     fn send_command(&mut self, command: &str) -> Result<String, String> {
-        let stream = self.stream.as_mut().ok_or("Not connected to SAM bridge")?;
+        let reader = self.reader.as_mut().ok_or("Not connected to SAM bridge")?;
 
-        stream
+        reader
+            .get_mut()
             .write_all(command.as_bytes())
             .map_err(|e| format!("Command send failed: {e}"))?;
-        stream
+        reader
+            .get_mut()
             .write_all(b"\n")
             .map_err(|e| format!("Newline send failed: {e}"))?;
-        stream.flush().map_err(|e| format!("Flush failed: {e}"))?;
-
-        let mut reader = BufReader::new(stream).take(SAM_MAX_REPLY_LINE);
-        let mut response = String::new();
         reader
-            // Hostile SAM router must not be able to grow memory without
-            // bound: cap the accepted reply line.
-            .read_line(&mut response)
-            .map_err(|e| format!("Response read failed: {e}"))?;
+            .get_mut()
+            .flush()
+            .map_err(|e| format!("Flush failed: {e}"))?;
+
+        // Read one reply line from the PERSISTENT reader. `by_ref().take()`
+        // caps the line (hostile router cannot grow memory without bound)
+        // but does not consume the BufReader's read-ahead buffer, so bytes
+        // the router pipelined after this reply survive for the next call.
+        let mut response = String::new();
+        {
+            let mut limited = reader.by_ref().take(SAM_MAX_REPLY_LINE + 1);
+            limited
+                .read_line(&mut response)
+                .map_err(|e| format!("Response read failed: {e}"))?;
+        }
         if response.len() as u64 >= SAM_MAX_REPLY_LINE {
             return Err("SAM reply line too long".to_string());
         }
@@ -792,6 +806,82 @@ mod tests {
             Some("trans-2"),
             "running tunnel arm should return current transient destination"
         );
+        handle.join().expect("bridge thread");
+    }
+
+    #[test]
+    fn pipelined_reply_bytes_survive_between_commands() {
+        // A well-behaved router never sends unsolicited control lines, but a
+        // hostile/glitchy one may pipeline several reply lines while the
+        // client is between commands. A per-call BufReader would swallow the
+        // read-ahead bytes after the first reply line; the persistent reader
+        // must deliver them to the next command.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("local addr").port();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+            let mut line = String::new();
+            let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+            reader.read_line(&mut line).expect("read cmd1");
+            // Reply with TWO lines in a single segment (forces read-ahead
+            // past the first reply line).
+            stream
+                .write_all(b"HELLO REPLY VERSION=3.1\nSESSION STATUS RESULT=OK\n")
+                .expect("write pipelined replies");
+            line.clear();
+            reader.read_line(&mut line).expect("read cmd2");
+            // Unblock a broken (per-call-BufReader) client whose second read
+            // drained the socket: it would observe this line instead.
+            let _ = stream.write_all(b"SESSION STATUS RESULT=DUPLICATED\n");
+            let _ = stream.flush();
+        });
+
+        let mut client = I2PSamClient::new("127.0.0.1".to_string(), port);
+        client.connect().expect("connect");
+        let r1 = client
+            .send_command("HELLO VERSION=3.1 MIN=3.0 MAX=3.3")
+            .expect("cmd1");
+        assert_eq!(r1, "HELLO REPLY VERSION=3.1");
+        let r2 = client
+            .send_command("SESSION CREATE STYLE=STREAM ID=s")
+            .expect("cmd2");
+        assert_eq!(r2, "SESSION STATUS RESULT=OK");
+        handle.join().expect("bridge thread");
+    }
+
+    #[test]
+    fn overlong_reply_line_is_rejected() {
+        // Regression guard: the reply-line cap must reject a hostile router
+        // line without hanging or unbounded memory growth.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("local addr").port();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+            let mut line = String::new();
+            let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+            reader.read_line(&mut line).expect("read cmd");
+            let huge = "x".repeat(SAM_MAX_REPLY_LINE as usize);
+            let _ = stream.write_all(huge.as_bytes());
+            let _ = stream.write_all(b"\n");
+            let _ = stream.flush();
+            // Read until the client closes.
+            let mut sink = String::new();
+            let _ = reader.read_line(&mut sink);
+        });
+
+        let mut client = I2PSamClient::new("127.0.0.1".to_string(), port);
+        client.connect().expect("connect");
+        let err = client
+            .send_command("HELLO VERSION=3.1 MIN=3.0 MAX=3.3")
+            .unwrap_err();
+        assert!(
+            err.contains("too long"),
+            "expected too-long error, got: {err}"
+        );
+        // Close our side so the bridge's trailing read_line sees EOF.
+        drop(client);
         handle.join().expect("bridge thread");
     }
 }
