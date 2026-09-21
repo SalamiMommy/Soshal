@@ -96,7 +96,10 @@ pub fn permissions_location_request() -> bool {
     crate::platform::request_permissions(&[FINE_LOCATION]).is_ok()
 }
 
-/// Any location provider (GPS or network) enabled.
+/// OS-level location service enabled (independent of app permission).
+/// Android: any provider (GPS/network/passive) on. Linux: desktop location
+/// switch via gsettings (`org.gnome.system.location enabled`) — when off
+/// the XDG portal rejects without prompting, so pre-check before portal.
 #[frb(sync, serialize)]
 pub fn permissions_location_enabled() -> bool {
     crate::platform::location_enabled().unwrap_or(false)

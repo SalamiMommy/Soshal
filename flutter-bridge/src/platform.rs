@@ -1072,7 +1072,33 @@ mod android {
     }
 
     pub fn location_enabled() -> Result<bool, String> {
-        Err("platform bridge unavailable off-Android".to_string())
+        #[cfg(target_os = "linux")]
+        {
+            // Desktop location switch (GNOME/standard desktops). When this
+            // is off the XDG location portal rejects with
+            // NotAllowed: Location services disabled BEFORE any permission
+            // dialog can appear — surfacing an actionable message beats a
+            // raw portal error. Unknown state (gsettings missing, schema
+            // absent, non-GNOME desktop) reports Ok(true): the portal
+            // attempt still shows its per-app dialog whenever the OS
+            // service is on, and off it errors with the guided message.
+            match std::process::Command::new("gsettings")
+                .args(["get", "org.gnome.system.location", "enabled"])
+                .output()
+            {
+                Ok(out) => {
+                    if !out.status.success() {
+                        return Ok(true); // schema/desktop unknown — portal decides
+                    }
+                    Ok(String::from_utf8_lossy(&out.stdout).trim() == "true")
+                }
+                Err(_) => Ok(true), // gsettings unavailable — portal decides
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            Err("platform bridge unavailable off-Android".to_string())
+        }
     }
 
     pub fn battery_state() -> Result<(bool, i32), String> {

@@ -217,6 +217,15 @@ class PermissionsService {
       }
     }
     if (isLinux) {
+      // Desktop location switch off → the XDG portal rejects with
+      // "NotAllowed: Location services disabled" before any permission
+      // dialog can appear. Pre-check for an actionable message.
+      if (!ffi.permissionsLocationEnabled()) {
+        return const LocationResult.failed(
+            'Location services are off — enable Location Services in '
+            'system settings (e.g. Settings \u2192 Privacy \u2192 Location '
+            'Services), then retry.');
+      }
       try {
         final fix = await ffi.permissionsLocationPortalFix();
         if (fix == null) {
