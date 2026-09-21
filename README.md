@@ -119,10 +119,10 @@ Soshal provides complete feature parity with leading social media references ("e
 |-------|-----------|
 | UI Framework | Flutter (Dart) — the only client |
 | App Backend | Rust via `flutter-bridge` FFI adapter (auto-generated `frb_generated.dart` bindings) |
-| Core Logic & Domain | Rust Native Workspace (27 crates: `crypto-core`, `db-core`, `nostr-core`, `network-core`, `pqc-core`, etc.) |
+| Core Logic & Domain | Rust Native Workspace (32 `*-core` crates + `flutter-bridge`; 34 workspace members) |
 | Database | SQLite (Turso `libsql`) with FTS5 (`db-core`) |
 | Nostr & Cryptography | `nostr-sdk`, `ring`, `pqc-core` post-quantum crypto (ML-KEM-768 / ML-DSA-65) |
-| Mesh Networking | Native Reticulum Mesh Stack (`soshal-network-core::reticulum`) |
+| Mesh Networking | Native Reticulum Mesh Stack + exotic/mesh transports (`mesh-core`, re-exported via `soshal-network-core::…`) |
 | Mobile Support | Android (multi-ABI) + iOS |
 
 ## Supported Nostr NIPs
@@ -152,22 +152,25 @@ Soshal provides complete feature parity with leading social media references ("e
 ### Prerequisites
 
 - Rust (latest stable toolchain)
-- Flutter SDK (3.x) with Android toolchain (SDK + NDK 27.x for bridge `.so` builds)
-- **Linux**: GStreamer libraries for media playback (optional, for advanced media features):
-  - Ubuntu/Debian: `sudo apt install libgstreamer1.0-dev gstreamer1.0-plugins-base-apps gstreamer1.0-plugins-good`
-  - Fedora: `sudo dnf install gstreamer1-devel gstreamer1-plugins-base`
-  - Arch: `sudo pacman -S gst-plugins-base gst-plugins-good`
+- Flutter SDK (3.x) with Android toolchain (SDK + NDK 27.1.12297006 for bridge `.so` builds)
+- **Linux**: `libmpv.so.2` for media playback (media_kit backend; `builds/linux/build.sh`
+  bundles a host copy into the AppImage when present):
+  - Debian/Ubuntu: `sudo apt install libmpv2`
+  - Fedora: `sudo dnf install mpv-libs`
+  - Arch: `sudo pacman -S mpv`
 
 ### Optional Dependencies
 
-- **i2pd**: I2P router for anonymous networking (install via system package manager; status surfaces in Settings → Network)
-- **freenet**: Freenet node for decentralized storage (install manually)
-- **rnsd**: Reticulum mesh network daemon (optional — run `scripts/build-reticulum.sh` to build)
+- **Networking daemons** are bundled into the Android APK at build time
+  (`builds/android/build.sh`): i2pd per-ABI, rnsd in-process via Chaquopy
+  (`rnspure`). Freenet has no official Android binary — an error stub ships
+  instead (no APK binary). See `DAEMON_BUNDLING.md`. Desktop users can run
+  their own i2pd/freenet/rnsd; status surfaces in Settings → Network.
 
 ### Build & Run Commands
 
 ```bash
-# Type-check all workspace Rust crates (27 cores + flutter-bridge)
+# Type-check all workspace Rust crates (32 cores + flutter-bridge)
 cargo check --workspace
 
 # Run all Rust unit tests
@@ -185,15 +188,17 @@ cd ..
 
 ```
 Soshal/
-├── soshal_flutter/         # Flutter UI + services + routes (the only client)
-├── flutter-bridge/         # FFI adapter: 30 modules calling into *-core
+├── soshal_flutter/         # Flutter UI + services + routes (the only client; 41 providers)
+├── flutter-bridge/         # FFI adapter: 55 modules calling into *-core
 ├── crypto-core/            # ring sha256/hmac/hkdf, NIP-44 & PQC
 ├── db-core/                # SQLite (libsql) migrations & repositories
 ├── nostr-core/             # Nostr keys, events, relay engine (nostr-sdk)
+├── sync-core/              # Background sync engine, outbox replay, watermark
 ├── media-core/             # Blossom media client & session management
 ├── content-core/           # Hashtag/mention/URL parsing & compression
 ├── identity-core/          # Web of Trust, NIP-05, key & seed management
-├── network-core/           # Relay health, outbox ranking, Reticulum mesh stack & BLE sync
+├── network-core/           # Relay pool, P2P (TCP HMAC + QUIC), battle-tested mesh re-exports
+├── mesh-core/              # Exotic/mesh transports: freenet, I2P SAM, Reticulum, BLE, Wi-Fi Direct, PQC link
 ├── storage-core/           # Audio waveform & cache eviction
 ├── feed-core/              # Post ranking & feed algorithms
 ├── groups-core/            # NIP-29 membership & channels
@@ -208,10 +213,16 @@ Soshal/
 ├── analytics-core/         # Analytics & audit helpers
 ├── webrtc-core/            # ICE/WebRTC helpers
 ├── spatial-core/           # Spatial helpers
+├── zap-core/               # LNURL/NWC + BOLT-11 (NIP-47)
+├── streaming-core/         # Live video/chat (MoQ groups, WebRTC/RTMP)
+├── minis-core/             # Short-form video (kind 31020) + WASM filters
+├── audio-core/             # Voice notes, waveform (AAC capture/decode)
+├── telemetry-core/         # Local telemetry store
+├── layout-core/            # Profile/mesh canvas layout
+├── relay-core/             # Local relay node
 ├── pqc-core/               # Post-quantum crypto (KEM, DSA) & Freenet identity
-├── scripts/                # Tooling (check-core-compliance.sh, build-reticulum.sh)
-└── Cargo.toml              # Cargo workspace definition (28 members)
-```
+├── scripts/                # Tooling (check-core-compliance.sh, build-reticulum.sh, trim-ffi-glue.sh)
+└── Cargo.toml              # Cargo workspace definition (34 members: 32 cores + bridge + test-util)
 ```
 
 ## Privacy

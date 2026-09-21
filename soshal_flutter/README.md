@@ -5,8 +5,8 @@ direct `flutter_rust_bridge` FFI bridge. This is the only client UI.
 
 ## Architecture
 
-- **Rust backend**: 27 `*-core` crates, pure logic, no platform deps
-- **FFI adapter**: `flutter-bridge` (30 modules) delegates to cores; generated
+- **Rust backend**: 32 `*-core` crates, pure logic, no platform deps
+- **FFI adapter**: `flutter-bridge` (55 modules) delegates to cores; generated
   bindings in `lib/frb_generated.dart`
 - **Flutter frontend**: Material 3 UI, go_router navigation, Provider
   (ChangeNotifier services); screens never call the bridge directly — only
@@ -21,9 +21,9 @@ soshal_flutter/
 ├── lib/
 │   ├── main.dart           # App root, provider registration
 │   ├── frb_generated.dart    # Generated FFI bindings (do not hand-edit)
-│   ├── services/             # 16 ChangeNotifier services (auth, feed, session, …)
-│   ├── screens/              # ~24 screens
-│   ├── routes/               # go_router configuration (~30 routes)
+│   ├── services/             # 41 ChangeNotifier providers (+ codec/FFI glue services)
+│   ├── screens/              # 50 screens
+│   ├── routes/               # go_router configuration (56 routes)
 │   └── widgets/              # Shared widgets
 ├── android/app/src/main/jniLibs/  # libsoshal_flutter_bridge.so (3 ABIs)
 └── pubspec.yaml
@@ -41,17 +41,21 @@ soshal_flutter/
 
 ```bash
 ./builds/android/build.sh            # 3-ABI bridge + debug APK (add --release)
-./builds/linux/build.sh              # host bridge + Linux bundle (add --release)
+./builds/linux/build.sh              # host bridge + Linux debug bundle (no options)
 flutter analyze                      # lint gate: 0 errors / 0 warnings
 ```
 
 ## Status
 
-- FFI surface fully wired: every real Rust function has a UI path; no callable
-  stale codegen artifacts (network relay/publish fns exist only as leftover
-  wire stubs in `frb_generated.rs` — never call them).
-- Backend-gated surfaces (stubs, honest UI): NWC zap invoice fetch, push
-  notifications, friend requests/suggestions, minis, WebRTC voice/video.
+- FFI surface fully wired: every real Rust function has a UI path. The old
+  "leftover wire stubs" (`network_*` relay fns, `zap_fetch_invoice`,
+  friend suggestions/requests, `minis_fetch`) are now implemented and
+  callable — confirm any fn with `rg "pub fn <module>_" flutter-bridge/src/ffi/`.
+- Backend-gated surfaces (honest "unavailable (roadmap)" UI, no fake
+  success): FCM push (Firebase `google-services.json`), TURN provisioning,
+  WebRTC voice/video media transport, WASI wasm runtime in minis, ZK provers
+  (SHA-256 commitments), real FROST, eBPF kernel modes, freenet seednode
+  announce.
 - Legacy Tauri 2.0 + Dioxus WASM client deleted (2026-08); Flutter is the only
   client.
 

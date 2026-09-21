@@ -4,7 +4,7 @@ One command each. The final artifact lands next to its script.
 
 | Run | Output |
 |-----|--------|
-| `./builds/android/build.sh [--release]` | `builds/android/soshal_flutter[. -release].apk` |
+| `./builds/android/build.sh [--release] [--split-per-abi]` | `builds/android/soshal_flutter[. -release].apk` (or `app-<abi>-…apk` per ABI with `--split-per-abi`) |
 | `./builds/linux/build.sh` | `builds/linux/soshal_flutter-linux-x64.AppImage` (dev AppImage) |
 
 That's it. Each script builds the Rust bridge for the target, wires it into
@@ -16,7 +16,8 @@ terminal so compile errors surface immediately.
 Notes:
 
 - Run from anywhere — scripts resolve the repo root themselves.
-- Android accepts `--release`; the Linux script has no options.
+- Android accepts `--release` (release APK) and `--split-per-abi` (one APK
+  per ABI); the Linux script has no options.
 - Cached bridge `.so`s live under `$HOME/.cache/soshal-targets/` (override
   with `SOSHAL_TARGET_DIR`) — they speed up reruns and are rebuilt
   automatically when sources change. Forget they exist.

@@ -3,7 +3,7 @@
 
 use soshal_nostr_core::models::NostrEvent;
 
-/// Maps a vouch (31989) / guestbook (31925) event to its webview JSON.
+/// Maps a vouch (31989) / guestbook (31925) event to its wire JSON.
 pub fn relation_entry_from_event(ev: &NostrEvent) -> serde_json::Value {
     serde_json::json!({
         "id": ev.id,

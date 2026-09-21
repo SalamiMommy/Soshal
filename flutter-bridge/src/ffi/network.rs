@@ -4,7 +4,7 @@
 //! networking (WebSocket keepalive, retries, backpressure) lives in
 //! nostr-sdk; Dart only passes relay URLs, filters, and event JSON.
 //! I2P/Freenet daemon-awareness is a Rust-side probe; per-relay transport
-//! proxying stays a desktop (Tauri) concern for now.
+//! proxying stays a desktop-only concern for now.
 
 use flutter_rust_bridge::frb;
 use nostr_sdk::client::Client;

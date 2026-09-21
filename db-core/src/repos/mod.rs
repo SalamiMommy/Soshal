@@ -57,13 +57,13 @@ pub mod zap;
 /// Maximum rows any paged query may return.
 pub const MAX_PAGE_LIMIT: i64 = 2000;
 
-/// Clamps a webview-supplied limit to `1..=MAX_PAGE_LIMIT`. A negative limit
+/// Clamps an FFI-supplied limit to `1..=MAX_PAGE_LIMIT`. A negative limit
 /// would map to SQLite `LIMIT -1` (no bound at all) and return the whole table.
 pub fn clamp_limit(limit: i64) -> i64 {
     limit.clamp(1, MAX_PAGE_LIMIT)
 }
 
-/// Clamps a webview-supplied page to sane bounds. Besides the unbounded-limit
+/// Clamps an FFI-supplied page to sane bounds. Besides the unbounded-limit
 /// case above, a negative offset would skip backwards into the result set.
 pub fn clamp_page(limit: i64, offset: i64) -> (i64, i64) {
     (clamp_limit(limit), offset.max(0))

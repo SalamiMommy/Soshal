@@ -1,7 +1,7 @@
 # Soshal Quick Start
 
 Soshal is a fully native Flutter app (Android/iOS/desktop) backed by a Rust
-core: 27 platform-agnostic `*-core` crates + one `flutter-bridge` FFI adapter,
+core: 32 platform-agnostic `*-core` crates + one `flutter-bridge` FFI adapter,
 exposed to Dart through auto-generated bindings (`frb_generated.dart`). The
 legacy Dioxus/Tauri client was removed; Flutter is the only UI.
 
@@ -27,11 +27,11 @@ Android `.so` builds for the bridge use the NDK per-ABI link recipe (see
 ## Architecture
 
 ```rust
-// Cores (27 crates, all platform-agnostic, pure Rust)
+// Cores (32 crates, all platform-agnostic, pure Rust)
 soshal_identity_core::mnemonic::generate_mnemonic()  // Pure Rust
 soshal_crypto_core::nip44::NIP44::encrypt(...)        // Pure Rust
 soshal_network_core::relay::RelayPool::new(...)       // Async Rust
-soshal_db_core::repo::Database::open(...)             // SQLite
+soshal_db_core::repo::Database::open(...)             // SQLite (libsql)
 
 // Platform Adapter (thin marshaling only)
 // flutter-bridge/src/ffi/auth.rs → calls core → generated Dart (frb_generated.dart)
@@ -61,7 +61,7 @@ Dart: `final data = await ffi.zapFetchInvoice(...)`.
 
 | File | Purpose |
 |------|---------|
-| `flutter-bridge/src/ffi/*.rs` | 30 FFI modules (auth, feed, messaging, …) |
+| `flutter-bridge/src/ffi/*.rs` | 55 FFI modules (auth, feed, messaging, permissions, power, daemon, …) |
 | `flutter-bridge/FFI_BRIDGE_GUIDE.md` | FFI patterns |
 | `ARCHITECTURE_PLATFORM_AGNOSTIC.md` | Core organization + design principles |
 | `scripts/check-core-compliance.sh` | Automated compliance checker |
@@ -85,10 +85,11 @@ cargo clippy --workspace -- -D warnings
 cd soshal_flutter && flutter analyze
 ```
 
-Hooks: pre-commit runs `cargo fmt --check` + clippy; pre-push runs
-`cargo check --workspace && cargo test --workspace` (+ `cargo audit` when
-installed). CI mirrors these plus `fff-bridge-test`, `core-compliance`,
-and `flutter-lint` jobs.
+Hooks: pre-commit runs `cargo fmt --check` + clippy (+ `guard-lib-platform.sh`);
+pre-push runs `cargo check --workspace && cargo test --workspace` (+ `cargo
+audit` when installed). CI mirrors these plus `ffi-bridge-tests`,
+`core-compliance`, and `flutter-lint` jobs (0 errors / 0 warnings on
+`flutter analyze`).
 
 ## Common Tasks
 
@@ -121,15 +122,26 @@ final ok = RustLib.instance.api.crateFfiFeedFeedNewFeature(param: 'x');
 3. Rebuild the Android `.so` per target ABI (NDK recipe in `AGENTS.md`)
    and replace them under `jniLibs/`.
 
-## Backend-Gated Surfaces (not wired yet)
+## Backend-Gated Surfaces (roadmap only)
 
-These FFI/Rust sites are stubs or need backend components — UI buttons are
-honest about them:
-- `zap_fetch_invoice` — always returns `Err` until the NWC relay listener lands
+These FFI/Rust sites need external infrastructure — UI buttons are honest
+about them (explicit "unavailable (roadmap)" notes, never silent fake
+success):
 - Push notifications — need Firebase (`google-services.json`) + FCM
-- `social_friend_suggestions` / `relations_send_friend_request` — return stubs
-- `minis_fetch` — placeholder (`vec![]`)
-- Voice/video WebRTC — no call UI yet
+- TURN provisioning — `webrtc_get_turn_servers` Err until `turn_endpoint` is set
+- WebRTC voice/video media transport — relay signaling kinds 20001-20004 work,
+  media still roadmapped
+- WASI wasm runtime in minis-core (`minis_wasm_execute_filter`/`minis_wasm_rank_feed` Err)
+- ZK provers in sync-core — honest SHA-256 commitments, not proofs
+- Real FROST threshold signing in crypto-core (Err, disabled)
+- eBPF kernel modes in network-core (`KernelTcXdp`/`SocketFilterBpf` Err;
+  user-space fallback only)
+- Freenet seednode announce
+
+Everything else — `zap_fetch_invoice`/`zap_send_payment` (NIP-47 NWC), friend
+suggestions/requests, `minis_fetch`, dating reactions, scheduled publishing,
+notifications, analytics — is real (verifiable against
+`flutter-bridge/src/ffi/*.rs`; use `rg "pub fn <module>_"` to confirm).
 
 ## Troubleshooting
 

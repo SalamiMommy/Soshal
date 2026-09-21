@@ -124,7 +124,7 @@ pub fn mini_event_out(ev: &NostrEvent) -> Option<MiniEventOut> {
     })
 }
 
-/// Maps a kind-31020 mini event to wire JSON (webview format). The typed
+/// Maps a kind-31020 mini event to wire JSON. The typed
 /// struct carries the identical camelCase field set, so this just serializes
 /// [`MiniEventOut`].
 pub fn mini_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
@@ -207,7 +207,7 @@ pub fn musicloud_event_out(ev: &NostrEvent) -> Option<MusicloudEventOut> {
     })
 }
 
-/// Maps a kind-31022 musicloud event to wire JSON (webview format). The
+/// Maps a kind-31022 musicloud event to wire JSON. The
 /// typed struct carries the identical camelCase field set.
 pub fn musicloud_from_event(ev: &NostrEvent) -> Option<serde_json::Value> {
     serde_json::to_value(musicloud_event_out(ev)?).ok()
@@ -237,7 +237,7 @@ pub fn musicloud_comment_addr(track_kind: u16, track_pubkey: &str, track_d: &str
     )
 }
 
-/// Sorts webview JSON items by `createdAt` descending (newest first).
+/// Sorts wire JSON items by `createdAt` descending (newest first).
 pub fn sort_by_created_desc(items: &mut [serde_json::Value]) {
     sort_desc_by(items, |v| v["createdAt"].as_u64().unwrap_or(0));
 }

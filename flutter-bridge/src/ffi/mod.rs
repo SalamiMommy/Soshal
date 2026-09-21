@@ -1,6 +1,6 @@
 //! FFI modules for Flutter bridge
 //!
-//! Each module corresponds to a domain from the original Tauri commands,
+//! Each module corresponds to a domain from the legacy Tauri commands,
 //! exposing synchronous and asynchronous functions to Flutter.
 
 pub mod analytics;

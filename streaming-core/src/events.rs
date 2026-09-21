@@ -39,7 +39,7 @@ fn clamp_created_at(v: f64) -> u64 {
     }
 }
 
-/// Maps a kind-30078 story event to its webview JSON.
+/// Maps a kind-30078 story event to its wire JSON.
 pub fn story_from_event(ev: &NostrEvent) -> serde_json::Value {
     serde_json::json!({
         "id": ev.id,
@@ -51,7 +51,7 @@ pub fn story_from_event(ev: &NostrEvent) -> serde_json::Value {
     })
 }
 
-/// Maps a kind-1311 live chat message event to its webview JSON.
+/// Maps a kind-1311 live chat message event to its wire JSON.
 pub fn live_chat_from_event(ev: &NostrEvent) -> serde_json::Value {
     serde_json::json!({
         "id": ev.id,
@@ -102,7 +102,7 @@ pub fn stream_content(
     serde_json::to_string(&content).map_err(|e| format!("serialize: {}", e))
 }
 
-/// Maps a kind-30311 live stream event to its webview JSON.
+/// Maps a kind-30311 live stream event to its wire JSON.
 pub fn live_stream_from_event(ev: &NostrEvent) -> serde_json::Value {
     serde_json::json!({
         "id": ev.id,
@@ -147,7 +147,7 @@ pub fn chatrandom_available_content(interests: &[String], media_type: &str, mode
     .to_string()
 }
 
-/// Maps a kind-20030 chatrandom availability event to its webview JSON.
+/// Maps a kind-20030 chatrandom availability event to its wire JSON.
 pub fn chatrandom_peer_from_event(ev: &NostrEvent) -> serde_json::Value {
     serde_json::json!({
         "id": ev.id,

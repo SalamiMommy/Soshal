@@ -1,4 +1,4 @@
-//! Helpers for safely rendering untrusted data in the WASM UI.
+//! Helpers for safely rendering untrusted data in the UI.
 
 /// Validates a user-supplied CSS color: hex (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`)
 /// or functional `hsl(...)`/`hsla(...)` with numeric 0-360 hue and 0-100% components.

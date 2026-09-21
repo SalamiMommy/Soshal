@@ -2,9 +2,9 @@
 //!
 //! NIP-15 marketplaces: listings and orders live as kind 30402/30403 rows
 //! in the posts table (relay-synced like all events); escrows use the
-//! dedicated `escrows` table. Listing creation follows the Tauri flow:
-//! content built via marketplace-core, signed by the unlocked signer, and
-//! the signed event returned for relay publish.
+//! dedicated `escrows` table. Listing creation follows the legacy Tauri
+//! flow: content built via marketplace-core, signed by the unlocked signer,
+//! and the signed event returned for relay publish.
 
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};

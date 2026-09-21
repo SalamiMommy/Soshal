@@ -9,17 +9,19 @@ removed — Flutter is the only client.
 ```
 Soshal/
 ├── soshal_flutter/            # Flutter UI (the only client)
-│   ├── lib/main.dart          # app root, provider registration (13+ services)
-│   ├── lib/routes/app_router.dart  # go_router routes (~30)
+│   ├── lib/main.dart          # app root, provider registration (41 ChangeNotifier providers)
+│   ├── lib/routes/app_router.dart  # go_router routes (56)
 │   ├── lib/frb_generated.dart # auto-generated FFI bindings (flutter_rust_bridge)
-│   ├── lib/services/          # 16+ ChangeNotifier providers backing every screen
+│   ├── lib/services/          # ~49 service files, 41 ChangeNotifier providers backing every screen
 │   │                          #   (auth, feed, session, messaging+identity, notifications,
 │   │                          #    search, dating, events, groups, marketplace, zap,
 │   │                          #    streaming, moderation, network, signer, ffi_bridge)
-│   │                          #   + permissions_service.dart (static class: Android
-│   │                          #     permission_handler camera/mic + geolocator GPS;
-│   │                          #     Linux XDG portal location via com.soshal/portal)
-│   ├── lib/screens/           # ~24 screens: splash, auth, feed, composer, thread, inbox,
+│   │                          #   + permissions_service.dart + Rust runtime
+│   │                          #     permissions (ffi/permissions.rs: JNI
+│   │                          #     checkSelfPermission / XDG portal; no
+│   │                          #     permission_handler plugin; geolocator used
+│   │                          #     only for the Android GPS fix)
+│   ├── lib/screens/           # 50 screens: splash, auth, feed, composer, thread, inbox,
 │   │                          #   profile, search, dating(+profile), events(+detail),
 │   │                          #   groups(+detail), marketplace, live, stories, settings
 │   │                          #   (+accounts, backup, blocked, moderation, security,
@@ -27,7 +29,7 @@ Soshal/
 │   └── android/app/src/main/jniLibs/{arm64-v8a,x86_64,armeabi-v7a}/libsoshal_flutter_bridge.so
 ├── flutter-bridge/            # FFI adapter crate (soshal-flutter-bridge)
 │   ├── frb.toml               # flutter_rust_bridge codegen config
-│   └── src/ffi/               # 30 thin modules (auth, feed, messaging, session, …)
+│   └── src/ffi/               # 55 thin modules (auth, feed, messaging, session, …)
 │       │                      #   each #[frb(sync|serialize)] fn delegates to *-core
 │       ├── db.rs              #   SQLite access via db-core (with_db / with_db_result)
 │       ├── signer.rs          #   in-process signer (nsec via FFI at init; OS keychain
@@ -50,7 +52,7 @@ Soshal/
 
 ```bash
 cargo check --workspace                        # Type-check all crates
-cargo test --workspace                         # Run all Rust tests (~1385: cores + bridge)
+cargo test --workspace                         # Run all Rust tests (~2500: cores + bridge)
 cargo fmt --check                              # Format check (pre-commit hook)
 cargo clippy --workspace -- -D warnings        # Lint (pre-commit hook)
 cargo audit                                    # Dependency audit (pre-push + CI)
@@ -183,16 +185,16 @@ Semantics:
 - Playback quality/interop (JPEG track, keyframe gating) unverified on-device;
   build verification pending.
 
-**Feed/mini video on Linux (2026-09)**: `video_player` has no Linux impl —
-feed `_VideoPlayerWidget` + `MiniVideoPlayer` historically hard-gated to
-Android. Now: Android keeps `video_player`; Linux branches to media_kit
-(mpv) via `media_kit_video` `VideoController`/`Video` (`media_kit` +
+**Feed/mini video (2026-09)**: playback runs through **media_kit (mpv)** on
+every platform — Android included. `video_player` was dropped from pubspec;
+feed `_VideoPlayerWidget` + `MiniVideoPlayer` + Minis use
+`media_kit_video` `VideoController`/`Video` (`media_kit` +
 `media_kit_video` + `media_kit_libs_video` deps, `MediaKit.ensureInitialized()`
-in main.dart; system `libmpv.so.2` required — `builds/linux/build.sh` bundles
-host libmpv.so.2 into the AppImage alongside the plugin .sos, w/o it video
-still errors). guard-lib-platform: `PermissionsService.isLinux` gate, no
-`Platform.is*` in lib/. `mk.` prefix NOT used for `VideoController` (lives in
-media_kit_video, not media_kit); prefix only `Player`/`Media` (`as mk`).
+in main.dart; on Linux `builds/linux/build.sh` bundles a host `libmpv.so.2`
+into the AppImage alongside the plugin .sos, w/o it video errors).
+guard-lib-platform: `PermissionsService.isLinux` gate, no `Platform.is*` in
+lib/. `mk.` prefix NOT used for `VideoController` (lives in media_kit_video,
+not media_kit); prefix only `Player`/`Media` (`as mk`).
 
 **frb codegen** (only when FFI signatures change): edit `flutter-bridge/src/ffi/*.rs`,
 then run the post-regen ritual: `flutter_rust_bridge_codegen generate`
@@ -386,7 +388,8 @@ each migration SQL records its own version
   BOLT-11 invoice amount only.
 - **NIP-44 v2** (`crypto-core/src/nip44.rs`): `2 ‖ nonce ‖ ciphertext ‖ hmac`;
   legacy decode kept for stored data only, never emitted.
-- **SQLite (libsql)**: Turso `libsql` 0.6 (bundled, async API) replaced
+- **SQLite (libsql)**: Turso `libsql` 0.10 (`0.10.0-pre.4` in Cargo.toml;
+  bundled, async API) replaced
   rusqlite (2026 migration). All DB access runs through
   `soshal_db_core::block_on(async …)` (`pub` in `db-core/src/lib.rs`). API
   notes: `libsql::Connection` is an Arc-backed `Clone` struct with `&self`

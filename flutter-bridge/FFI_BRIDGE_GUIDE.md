@@ -15,13 +15,13 @@ workspace.
                ↓
 ┌──────────────────────────────────────┐
 │ soshal-flutter-bridge (Rust)         │
-│  src/ffi/*.rs — 30 thin modules      │
+│  src/ffi/*.rs — 55 thin modules      │
 │  #[frb(sync, serialize)] fns         │
 └──────────────┬───────────────────────┘
                │ direct fn calls
                ↓
 ┌──────────────────────────────────────┐
-│ 27 *-core crates (all logic)         │
+│ 32 *-core crates (all logic)         │
 └──────────────────────────────────────┘
 ```
 
@@ -39,16 +39,19 @@ Rules:
   `crateFfi<Module><Fn>` (camelCase).
 - Most fns are `#[frb(sync, serialize)]` returning `Result<…, String>` →
   Dart receives a plain value (`await` on it compiles and is a no-op).
-- A few are async-only (`pub async fn` in `protocol_handler.rs`, `zap.rs`,
-  `network.rs`, `media.rs`) → Dart receives a `Future`.
+- Async-only fns (`pub async fn`) are the exception (~30 across analytics,
+  auth, calls, chatrandom, crypto, events, feed, guestbook, headless,
+  identity, media, messaging, minis, music, network, p2p, permissions, pin,
+  power, protocol_handler, render, scheduled, search, signer, storage, sync,
+  vouch, zap) → Dart receives a `Future`.
 
 ### ⚠️ Stale codegen trap
 
 `frb_generated.rs` can carry wire fns whose Rust side was deleted (e.g.
-`network_add_relay`, `network_init_relays`, `network_get_relay_status`,
-`network_publish_event`, `network_subscribe`, `network_query_events`,
-`network_remove_relay`, `network_unsubscribe`). NEVER call a generated fn
-without verifying the Rust impl exists:
+`streaming_start_local_server`, `streaming_get_video_url`,
+`streaming_stop_local_server`, `moderation_hybrid_classify_media`,
+`search_index_post` singular — only the plural `search_index_posts`
+remains). NEVER call a generated fn without verifying the Rust impl exists:
 
 ```bash
 rg "pub fn <module>_" flutter-bridge/src/ffi/
@@ -56,16 +59,17 @@ rg "pub fn <module>_" flutter-bridge/src/ffi/
 
 An unwired call panics at runtime (undefined symbol).
 
-## Module Map (30 modules in `src/ffi/`)
+## Module Map (55 modules in `src/ffi/`)
 
 | Module | Covers |
 |--------|--------|
-| `auth` | mnemonic generate/restore, npub encode |
+| `auth` | mnemonic generate/restore, npub encode, keypair |
 | `signer` | in-process signer: pubkey, lock state, lock, keychain ops (pubkeys only) |
-| `session` | multi-account load/save/switch |
+| `session` | multi-account load/save/switch (hardened path validation) |
 | `identity` | profiles, trust score, block/unblock, follow, WoT status |
 | `crypto` | NIP-44 v2 encrypt/decrypt, PQC, signing primitives |
 | `db` | SQLite via db-core (`with_db`/`with_db_result`) |
+| `turso` | Turso Cloud replication: URL/token config, sync trigger, status |
 | `feed` | publish (kind 1, pipelines through FTS index), reactions, fetch/delete |
 | `messaging` | DM send/decrypt/fetch (NIP-44) |
 | `groups` | NIP-29 create/join/post/fetch messages |
@@ -75,12 +79,32 @@ An unwired call panics at runtime (undefined symbol).
 | `marketplace` | listings, orders, reviews |
 | `notifications` | unread, mark read, per-type |
 | `moderation` | mute lists, word filters, `should_filter` |
-| `network` | I2P/Freenet status (async) — relay API is stale-only, see trap |
+| `network` | relay pool (add/remove/subscribe/publish/query — all live), I2P/Freenet/SAM, Reticulum mesh, multi-bearer status |
+| `relay` | local relay node start/stop/status (`soshal-relay-core`) |
+| `p2p` | mDNS discovery, LAN chunk server, peer blob fetch, QUIC streams, swarm downloads |
 | `media` | local load, mime, fetch (async) |
-| `zap` | LNURL/BOLT-11 (async; `zap_fetch_invoice` is a stub → always Err until NWC) |
-| `streaming`, `webrtc` | stream status, ICE/SDP sanitize |
-| `social`, `relations` | friend suggestions (stub → `vec![]`), send friend request (stub) |
-| `analytics`, `minis`, `push`, `spatial`, `storage`, `content`, `util`, `protocol_handler` | misc utilities |
+| `zap` | LNURL/NWC (NIP-47): connect, fetch invoice, send payment, receipts, totals |
+| `streaming`, `webrtc` | live status, MoQ group encode/decode, ICE/SDP sanitize |
+| `protocol_handler` | relay events ingest / handler (avatar feeds, protocol fns) |
+| `sync` | background engine start/stop/running, outbox, watermark |
+| `scheduled` | scheduled posts (future `scheduled_at`, sync publishes on time) |
+| `social`, `relations`, `vouch`, `guestbook` | friend suggestions / friend requests (kind-3), WoT vouches (31989), guestbook entries (30080/30081) |
+| `analytics`, `audit`, `telemetry` | engagement/social stats, audit log, telemetry read |
+| `minis` | kind-31020 registry, WASM filter/rank (Err — host roadmapped) |
+| `music` | audio tracks, waveform, playlists (SoundCloud parity) |
+| `calls`, `chatrandom` | WebRTC call mgmt, chatroulette pairing/modes |
+| `ephemeral` | burn-after-read DM media (view-count capped) |
+| `bookmarks` | save/bookmark to collections |
+| `permissions` | Android/Linux runtime camera/mic/location state + requests (JNI / XDG portal) |
+| `power` | battery/connectivity power sampling for the seeding scheduler |
+| `daemon` | bundled daemon lifecycle (i2pd, freenet, rnsd): extract, spawn, liveness |
+| `ebpf` | traffic-shaper (kernel modes Err; socket-filter user-space fallback) |
+| `h264`, `audio` | Android MediaCodec H.264/AAC codecs (Rust FFI) |
+| `raster` | Impeller frame-buffer injection (`raster_signal_impeller_frame_ready` no-op) |
+| `render` | WGPU compute shaders for offscreen mesh layout |
+| `headless` | background task runner (WorkManager / BGTaskScheduler, no Flutter engine) |
+| `zk` | ZK state rollup verify/apply (honest SHA-256 commitments) |
+| `spatial`, `storage`, `content`, `util`, `pin` | geohash/geofence, blob cache, content utils, helpers, PIN lock |
 
 ## Usage Pattern
 
@@ -126,8 +150,8 @@ final id = await RustLib.instance.api.crateFfiMessagingSendDm(
   private/loopback (SSRF); zap totals come from the BOLT-11 amount only.
 - **NIP-44 v2**: wire format `2 ‖ nonce ‖ ciphertext ‖ hmac`; legacy decode
   kept only for stored data, never emitted.
-- **SQLite**: bundled rusqlite, `trusted_schema=OFF` + `secure_delete=ON`,
-  transactional migrations.
+- **SQLite**: bundled Turso `libsql`, `trusted_schema=OFF` + `secure_delete=ON`,
+  transactional migrations. All DB access runs through `soshal_db_core::block_on`.
 
 ## Debugging
 
@@ -145,5 +169,5 @@ final id = await RustLib.instance.api.crateFfiMessagingSendDm(
 | `FfiResult<T>` wrapper | `Result<…, String>` directly |
 | `lib/bridge_generated.dart` via `build_runner` | `flutter_rust_bridge_codegen generate` → `lib/frb_generated.dart` |
 | `app://media/...` webview protocol | native Flutter widgets + `media_load_local`/mime via service |
-| `network_subscribe`/`publish_event` | stale codegen — never call (relay wiring lands with backend) |
+| `network_subscribe`/`publish_event` (old wire-only fns) | **now live** async relays fns in `network.rs` — callable; see trap |
 | Tauri IPC / webview | gone (2026-08); Flutter is the only client |

@@ -4,6 +4,65 @@ Finding ledger for the periodic full-workspace bug sweeps. Each round lists
 what was found, what was fixed (with file refs), and what was examined and
 cleared. Rounds are cumulative; last-known-good state is shaded green.
 
+## Round 9 — 2026-09-21: transport/scheduler/native-surface post-sweep
+
+Scope: 3 weeks of fix batches (Sept 7-21, ~138 commits) landed since round 8 —
+docs/annotations exercise re-verified the workspace against source.
+
+### Fixed (this round, verified against git log + source)
+- **First-contact QUIC certs** (`network-core/quic.rs`, `sync-core/ingest.rs`,
+  commit `b52ab28`) — peers presenting self-signed certs on first contact are
+  accepted for mesh; no `HybridCertVerifier` regressions. Batch text-note
+  ingest now notifies (was silent).
+- **Scheduled publish engine** (`db-core` + `sync-core` + `flutter-bridge/src/ffi/scheduled.rs`,
+  commits `6aa7d85`, `14a0665`, `8899d24`) — scheduled-post isolation, FK
+  robustness, publication order, same-batch notify, upsert drift, and the
+  blocked-draft loop now continues instead of stalling (`98ff033`).
+- **Notification producer** (`db-core`, `feed-core`, `flutter-bridge`) —
+  notifications keyed by event id; nested reply counts corrected.
+- **TLS CVE bump** (`1e1d45c`) — rustls upgraded (too-early-data family);
+  broken Android XML fixed; dead code cleaned.
+- **Signer/session/P2P hardening** (`1dcf99b`, `4fadf8d`, `740726c`,
+  `e5531fa`) — signer rate limits, session/symlink integrity, p2p transport
+  races, at-rest/NIP-44 key zeroization, dating unmatch/block filtering,
+  group roles/presence reactivity, moq replay watermark, pqc bounds,
+  reticulum transport lifecycle.
+- **Flutter lifecycle + honest surfaces** (`db9374c`, `53c9a45`) —
+  lifecycle restarts, real UI feedback, honest-fied fake surfaces, dating
+  deck skip, p2p lifecycle restart.
+- **Bundled daemons** (2026-09-10/11) — freenet/i2pd/rnsd boot on Android &
+  desktop (see `DAEMON_BUNDLING.md`); `permissions.rs`/`power.rs` live
+  states re-verified.
+- Audit batches 5-20 (2026-09-15..21): sync/search/relay/streaming/audio/
+  mesh/zk, social/vouch/webrtc/zap/guestbook/chatrandom, logic/
+  authorization/case-sensitivity/input-bounds sweeps.
+
+### Cleared (verified against source this round)
+- All "stub/gated" surfaces re-audited against `flutter-bridge/src/ffi/*.rs`:
+  `zap_fetch_invoice`/`zap_send_payment` (NIP-47 NWC), friend
+  suggestions/requests, `minis_fetch`, dating reactions, scheduled publishing,
+  analytics, notifications are REAL. Still gated (honest UI): FCM push,
+  TURN provisioning, WebRTC media transport, WASI wasm host, ZK prover,
+  FROST, eBPF kernel modes, freenet seednode announce, raster no-op.
+- rusqlite: zero references in code (libsql `0.10.0-pre.4` throughout);
+  `check-core-compliance.sh` + `guard-lib-platform.sh` still enforce the
+  purity/platform-fact boundaries.
+- FFI drift re-check: `crateFfi*` tokens resolve to live Rust `pub fn`s; the
+  known-removed surfaces (`streaming_start_local_server`,
+  `streaming_get_video_url`, `streaming_stop_local_server`,
+  `moderation_hybrid_classify_media`, `search_index_post`) remain absent as
+  documented. `network_*` relay fns (`subscribe`/`publish_event`/`query_events`/
+  `init_relays`/…) are now live async fns — doc's stale-codegen trap list
+  updated accordingly.
+- Docs/annotations: webview/Tauri-era doc comments across cores rewritten
+  ("webview JSON" → FFI/wire JSON); README/QUICK_START/CONTRIBUTING/
+  ARCHITECTURE/FFI_BRIDGE_GUIDE/DAEMON_BUNDLING counts + gated lists + build
+  facts refreshed to 32 cores / 55 ffi modules / 34 members.
+
+### Verified
+- Full workspace suite green at end of round: `cargo test --workspace`
+  (2507 passed, 0 failed across 136 test binaries). Commit: `53c9a45`.
+
 ## Round 8 — 2026-09-05: sync-engine liveness (Rust truth + Dart watchdog)
 
 Finding: the background sync engine could die silently. `flutter-bridge/src/ffi/sync.rs::STOP`

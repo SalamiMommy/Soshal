@@ -52,7 +52,7 @@ pub fn build_key_distribution_content(input: &BuildKeyDistInput) -> KeyDistConte
 ///
 /// SECURITY: a legacy event may carry a plaintext `sharedKey`; it is parsed
 /// out of the wire JSON but NEVER surfaced in this output — a plaintext
-/// group key from an event must not reach the webview or any caller.
+/// The group key from an event must not reach the UI/FFI layer or any caller.
 #[derive(Serialize)]
 pub struct ParsedKeyDistContent {
     #[serde(rename = "valid")]

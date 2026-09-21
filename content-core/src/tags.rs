@@ -1,5 +1,5 @@
-//! Minimal Nostr tag helpers, free of relay/network dependencies so the
-//! WASM UI can reuse them.
+//! Minimal Nostr tag helpers, free of relay/network dependencies; the
+//! Flutter UI reuses them via the FFI bridge.
 
 /// Finds the second element of the first tag whose name matches `key`.
 pub fn find_tag_value<'a>(tags: &'a [Vec<String>], key: &str) -> Option<&'a str> {

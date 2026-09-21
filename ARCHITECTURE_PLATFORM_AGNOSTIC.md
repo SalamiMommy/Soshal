@@ -11,21 +11,22 @@ Platform bindings are **thin adapters only**—they marshal data, invoke core fu
 │  Platform Layers (Thin Adapters)                      │
 ├────────────────────────┬──────────────────────────────┤
 │  Flutter UI            │  FFI Adapter                 │
-│  (soshal_flutter)      │  (flutter-bridge, 30 modules)│
+│  (soshal_flutter)      │  (flutter-bridge, 55 modules)│
 └───────────┬────────────┴────────────┬─────────────────┘
             │                         │
             │  Generated Dart (frb)   │ #[frb(sync, serialize)] fns
             ↓                         ↓
 ┌────────────────────────────────────────────────────────┐
 │  Core Crates (All Business Logic)                      │
-│  27 pure Rust libraries                                │
+│  32 pure Rust libraries                                │
 ├────────────────────────────────────────────────────────┤
 │  Standard Rust Dependencies ONLY:                       │
 │  - tokio (async runtime)                               │
-│  - rusqlite (SQLite)                                   │
+│  - libsql (embedded SQLite, bundled)                   │
 │  - reqwest (HTTP, with rustls-tls)                     │
 │  - nostr-sdk (Nostr protocol)                          │
-│  - ring (crypto primitives)                            │
+│  - ring / rustls 0.23 (crypto + TLS)                   │
+│  - quinn (QUIC P2P streams)                            │
 │  - serde / serde_json (serialization)                  │
 │  - regex, base64, hex, url, etc. (utilities)           │
 │                                                        │
@@ -61,8 +62,8 @@ These use only crypto libraries + serde:
 
 These layer Rust data structures + DB access:
 
-- **db-core** — SQLite pool, schema, migrations
-  - Deps: `rusqlite` (bundled SQLite)
+- **db-core** — SQLite (Turso `libsql`) pool, schema, migrations
+  - Deps: `libsql` (embedded, bundled; async API via `soshal_db_core::block_on`)
   - Pragmas tuned per-platform (Android vs. desktop) but logic is same
 
 - **nostr-core** — Nostr event model, key operations
@@ -84,17 +85,25 @@ These layer Rust data structures + DB access:
 
 These use async + tokio + reqwest:
 
-- **network-core** — Relay pool, WebSocket subscriptions, I2P/Freenet routing
-  - Deps: `tokio`, `reqwest`, `nostr-sdk`, `url`
+- **network-core** — Relay pool, WebSocket subscriptions, I2P/Freenet routing,
+  P2P transports (TCP HMAC LAN + QUIC stream/datagram), mesh re-exports
+  - Deps: `tokio`, `reqwest`, `nostr-sdk`, `quinn`, `rustls`, `ring`, `url`
   - ASYNC functions return `Result<T, String>` or `Future<Output=Result<T, String>>`
   - No platform-specific code; conditionals are protocol-based only
+
+- **mesh-core** — Exotic/mesh transports split out of network-core: freenet
+  (websocket/contract/opennet/cache_router), i2p_sam, reticulum, ble,
+  wifi_direct, pqc_link, p2p_frame. Re-exported by network-core
+  (`pub use soshal_mesh_core::{…}`) so `network_core::<mesh_module>` paths
+  still resolve; only `multi_bearer.rs` crosses back into `ble`/`wifi_direct`.
 
 - **media-core** — Blossom HTTP fetch, image metadata
   - Deps: `reqwest`, `url`
   - ASYNC, cacheable results
 
-- **streaming-core** — WebRTC peer management
-  - Deps: `tokio`, depends on what WebRTC crate
+- **streaming-core** — Live media (MoQ group stream framing, MoQ publish/
+  subscribe), WebRTC peer management
+  - Deps: `tokio`, `quinn`, `reqwest`
   - ASYNC peer lifecycle
 
 - **zap-core** — LNURL fetching + BOLT-11 parsing
@@ -109,11 +118,17 @@ These use async + tokio + reqwest:
 
 - **analytics-core** — Event logging, stats
 - **moderation-core** — Content filtering, word lists
-- **pqc-core** — Post-quantum cryptography (liboqs bindings, if used)
+- **pqc-core** — Post-quantum cryptography (ML-KEM-768 / ML-DSA-65 via `ml-kem`/`ml-dsa`)
+- **sync-core** — Background sync engine, outbox replay, feed/DM ingest, watermark
+- **minis-core** — Short-form video (kind 31020) events + WASM filter hooks
+- **audio-core** — Voice notes, waveform, AAC capture/decode buffers
+- **telemetry-core** — Local telemetry store (mmap)
+- **layout-core** — Profile/mesh canvas layout
+- **relay-core** — Local relay node lifecycle
 
 ### Special: Platform Adapter (NOT a Core)
 
-- **flutter-bridge** — FFI adapter, 30 `#[frb]` modules, thin marshaling only
+- **flutter-bridge** — FFI adapter, 55 `#[frb]` modules, thin marshaling only
 - **soshal_flutter** — Flutter UI (NO business logic); services call the bridge, screens call services
 
 ## Dependency Rules
@@ -130,7 +145,8 @@ These use async + tokio + reqwest:
 - `ring` for crypto primitives
 
 **Database:**
-- `rusqlite` with `bundled` feature (SQLite is bundled, always available)
+- `libsql` (embedded SQLite, bundled, always available; async API through
+  `soshal_db_core::block_on`)
 
 **Serialization:**
 - `serde`, `serde_json`
@@ -144,6 +160,8 @@ These use async + tokio + reqwest:
 - `uuid` (ID generation)
 - `zeroize` (secure memory clearing)
 - `lazy_static` (static initialization)
+- `quinn` (QUIC transport), `rustls` 0.23 (TLS for P2P streams)
+- `mdns-sd`, `webrtc-ice`, `blake3`, `fastcdc` (LAN discovery + P2P media)
 
 ### ❌ FORBIDDEN in Core Crates
 
@@ -152,7 +170,7 @@ These use async + tokio + reqwest:
 - `tokio-desktop` or platform-specific async
 - `openssl-sys` (use ring or rustls instead)
 - ANY Android/iOS SDK bindings (NDK, JNI, Swift bridges)
-- `sqlx` (we use rusqlite for embedded DB)
+- `sqlx` (we use libsql for the embedded DB)
 - `ndk`, `android`, `objc`, `cocoa` (platform code belongs in adapters)
 
 ### ⚠️ CONDITIONAL: Platform Pragmas Only
@@ -304,10 +322,10 @@ grep -r "openssl-sys\|sqlx\|ndk\|android\|objc" Cargo.lock
 ```toml
 [workspace.lints.rust]
 unsafe_code = "deny"  # Prevent unsafe code in cores (must use safe APIs)
+unexpected_cfgs = { level = "allow", check-cfg = ["cfg(frb_expand)"] }
 
 [workspace.lints.clippy]
-todo = "warn"
-dbg_macro = "deny"  # No debug prints in production
+cloned_ref_to_slice_refs = "allow"  # noise inside #[frb]-expanded serialize glue
 ```
 
 **Each core crate:**
@@ -341,7 +359,7 @@ cd network-core && cargo build && cd ..
 cargo test --workspace
 
 # Verify the adapter is thin (calls into cores, no business logic)
-grep -c "^use soshal_" flutter-bridge/src/ffi/*.rs   # delegates to 27 cores
+grep -c "^use soshal_" flutter-bridge/src/ffi/*.rs   # delegates to 32 cores
 grep -c "logic\|algorithm\|state" flutter-bridge/src/ffi/*.rs
 ```
 

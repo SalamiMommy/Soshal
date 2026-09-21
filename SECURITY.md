@@ -28,10 +28,12 @@ Soshal implements a defense-in-depth security strategy across multiple layers:
    - Development overrides for local testing
 
 2. **QUIC Certificate Validation**
-   - Hybrid certificate verifier with system validation framework
-   - Maintains mesh-internal self-signed certificate compatibility
-   - Placeholder for full rustls-native-certs integration
-   - Proper TLS 1.2/1.3 signature verification framework
+   - Hybrid certificate verifier (`HybridCertVerifier`) actively enforcing:
+     system certificate validation framework + mesh-internal self-signed cert
+     compatibility for P2P
+   - First-contact QUIC self-signed certs accepted for mesh peers; system-cert
+     (rustls-native-certs) integration still a placeholder
+   - Proper TLS 1.2/1.3 signature verification framework in place
 
 3. **Session Path Hardening**
    - Runtime TOCTOU protection for session file operations
@@ -166,6 +168,6 @@ Soshal implements a defense-in-depth security strategy across multiple layers:
 
 ---
 
-**Last Updated**: 2026-09-04  
-**Security Review Version**: 1.0  
+**Last Updated**: 2026-09-21  
+**Security Review Version**: 1.1  
 **Next Review Date**: 2026-12-04

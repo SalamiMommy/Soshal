@@ -9,7 +9,7 @@ import java.nio.ByteBuffer
 
 /**
  * Local DVR for live broadcasts: multiplexes the in-flight H.264 + AAC
- * bleed (from `H264Codec` / `AudioCodec` drains) into an MP4 file under
+ * bleed (mirrored from the Rust FFI codecs via JNI) into an MP4 file under
  * `<filesDir>/recordings/`.
  *
  * Tracks are added lazily — video waits for the first key-frame buffer and

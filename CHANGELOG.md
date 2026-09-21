@@ -32,9 +32,53 @@ All notable changes to Soshal.
 
 ## Unreleased
 
-- Native Reticulum mesh stack integration (`soshal-network-core::reticulum`) with 128-bit destination address derivation, packet encoding, SLIP framing, mesh path routing, identity ANNOUNCE, UDP/Multicast/RNode interfaces, and Nostr event sync
-- MuteConversationService extraction from MuteService
-- Test suite reorganisation into domain directories
+### Added
+- `mesh-core` crate: exotic/mesh transports split out of `network-core`
+  (freenet, i2p_sam, reticulum, ble, wifi_direct, pqc_link, p2p_frame);
+  `network-core` re-exports them so `network_core::<mesh_module>` paths still
+  resolve
+- QUIC stream channel as the preferred P2P bulk transport (rustls 0.23 +
+  `HybridCertVerifier`, first-contact self-signed certs accepted for mesh
+  peers); mDNS advertises `quic_port` and swarm downloads negotiate QUIC with
+  TCP fallback
+- Bundled networking daemons: per-ABI i2pd, NDK cross-build of freenet-core's
+  `freenet` node (arm64), and in-process rnsd via Chaquopy (`rnspure`) —
+  Android runtime fixed (freenet `--config-dir/--data-dir/
+  --disable-auto-update`, i2pd `daemon=false`, RnsdRunner one-attempt latch),
+  daemon logs readable in-app (Network settings → Bundled Daemons → Logs)
+- Rust-runtime permissions (`ffi/permissions.rs`: JNI `checkSelfPermission` /
+  XDG location portal) and power sampling (`ffi/power.rs`); local relay node
+  (`ffi/relay.rs` + `relay-core`); Turso Cloud replication (`ffi/turso.rs`);
+  scheduled posts (`ffi/scheduled.rs`); vouch (31989) + guestbook
+  (30080/30081); PIN lock; ephemeral (burn) media; WGPU render + Impeller
+  raster hooks
+- 2-tier hybrid moderation filter; media playback unified on media_kit (mpv)
+  across Android + Linux; live media codecs in Rust FFI (MediaCodec H.264 /
+  AAC, MoQ tracks 0/1/2); 5 transport modes + device-as-relay mesh
+
+### Changed
+- Workspace: 34 members (`flutter-bridge` + 32 `*-core` crates + `test-util`);
+  ~2500 Rust tests green (`cargo test --workspace`)
+- SQLite backend on Turso `libsql` 0.10 (`0.10.0-pre.4`) — rusqlite gone;
+  `battery_plus`/`connectivity_plus`/`permission_handler` plugins removed;
+  `video_player` replaced by media_kit
+- Kotlin `H264Codec.kt`/`AudioCodec.kt` + `com.soshal/{h264,audio}`
+  MethodChannels deleted — codecs are Rust FFI now
+- `android:exported="false"` for MainActivity; network security config with
+  cleartext disabled + private-range P2P allowances
+
+### Fixed
+- Audit rounds 4-8 (docs/AUDIT.md): crash/robustness sweep, relay timestamp
+  clamp, test flakes, sync-engine liveness watchdog, FFI drift
+- Sept 16-21 hardening batches (5-20): sync/search/relay/streaming/audio/
+  mesh/zk, social/vouch/webrtc/zap/guestbook/chatrandom, logic/authorization/
+  case-sensitivity/input-bound sweeps
+- Signer rate limits, session integrity, p2p transport races, cache-crash
+  guards, scheduled publish engine (+ blocked-draft loop), notification
+  producer (event-id keyed), reaction/like semantics, cursor pagination,
+  NIP-44 legacy decode, SDP validation, base64url padding, linkpreview
+  whitespace, runstls TLS CVE bump, Android XML build break, .so resync with
+  round-3/4 Rust fixes, honest-fied simulated stubs
 
 ## [1.0.0] — 2026-07-22
 

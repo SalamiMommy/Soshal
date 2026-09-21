@@ -30,7 +30,7 @@ pub struct FreenetIdentity {
 }
 
 impl FreenetIdentity {
-    /// JSON representation used by the Tauri command layer.
+    /// JSON representation used by the FFI bridge for serialization.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "publicKey": self.public_key,

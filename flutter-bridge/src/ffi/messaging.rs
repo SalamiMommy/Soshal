@@ -1,8 +1,9 @@
 //! Messaging FFI module
 //!
 //! Direct messages (NIP-44 v2 via the unlocked signer) and conversation
-//! queries against the shared DB. Group DMs mirror the Tauri kind-1059 path
-//! at the event level only; full group key rotation stays server-side.
+//! queries against the shared DB. Group DMs mirror the legacy Tauri
+//! kind-1059 path at the event level only; full group key rotation stays
+//! server-side.
 
 use flutter_rust_bridge::frb;
 use nostr::event::EventBuilder;

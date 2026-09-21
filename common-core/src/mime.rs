@@ -85,7 +85,7 @@ pub fn sniff_mime_type(bytes: &[u8], fallback: &str) -> String {
     sniff_mime_type_str(bytes, fallback).to_string()
 }
 
-/// Input for sniff_mime_type_wasm.
+/// Input for sniff_mime_type_json.
 #[derive(serde::Deserialize)]
 struct SniffInput {
     bytes: Vec<u8>,

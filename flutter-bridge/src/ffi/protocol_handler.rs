@@ -1,7 +1,6 @@
 //! Protocol handler for app:// scheme
 //!
-//! Enables Flutter WebView to access media and other resources via custom URI scheme.
-//! Examples:
+//! Resolves app:// URIs against the relay event store for the Flutter UI:
 //!   - app://media/post-123.jpg (fetch and stream image)
 //!   - `app://avatar/<pubkey>` (fetch user avatar)
 //!   - app://relay/status (get relay pool status)
