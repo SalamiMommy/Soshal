@@ -63,7 +63,7 @@ pub fn fetch_feed_window(
             "SELECT p.id, p.pubkey, p.content, p.tags_json, p.created_at,
                     COALESCE(u.name, u.display_name), u.picture,
                     COALESCE((SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id), 0),
-                    COALESCE((SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.kind = 1 AND rp.is_deleted = 0), 0),
+                    COALESCE((SELECT COUNT(DISTINCT rp.id) FROM posts rp WHERE rp.kind = 1 AND rp.is_deleted = 0 AND (rp.root_id = p.id OR rp.reply_to = p.id)), 0),
                     COALESCE((SELECT COUNT(*) FROM reposts rt WHERE rt.event_id = p.id), 0),
                     COALESCE((SELECT MAX(CASE WHEN rl.pubkey = ?3 THEN 1 ELSE 0 END) FROM reactions rl WHERE rl.event_id = p.id), 0)
              FROM posts p

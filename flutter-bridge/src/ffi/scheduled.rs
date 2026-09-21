@@ -137,10 +137,13 @@ pub async fn scheduled_publish_due(pubkey: String, limit: i32) -> Result<u32, St
             .unwrap_or_default();
         let verdict = soshal_moderation_core::check::check_with_custom_words(&content, &filters);
         if !verdict.passed {
-            return Err(format!(
-                "scheduled post blocked by moderation filter: {}",
-                verdict.reason.unwrap_or_default()
-            ));
+            // Blocked draft: keep the row (stays scheduled so the user can
+            // edit/delete it) instead of aborting the whole due-batch loop.
+            eprintln!(
+                "scheduled publish skipped (moderation blocked): {} {:?}",
+                draft.id, verdict.reason
+            );
+            continue;
         }
         // tags: stored Nostr-format tags_json + hashtags extracted from
         // content (deduped, case-insensitive) so `#x` typed but unlisted

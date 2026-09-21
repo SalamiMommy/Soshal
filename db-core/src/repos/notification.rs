@@ -70,7 +70,7 @@ impl<'a> NotificationRepo<'a> {
         if notifications.is_empty() {
             return Ok(());
         }
-        let sql = "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET is_read = CASE WHEN notifications.is_read = 1 THEN 1 ELSE excluded.is_read END";
+        let sql = "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET is_read = CASE WHEN notifications.is_read = 1 THEN 1 ELSE excluded.is_read END, content = CASE WHEN excluded.created_at > notifications.created_at THEN excluded.content ELSE notifications.content END, created_at = CASE WHEN excluded.created_at > notifications.created_at THEN excluded.created_at ELSE notifications.created_at END, event_id = CASE WHEN excluded.created_at > notifications.created_at THEN excluded.event_id ELSE notifications.event_id END";
         let stmt = tx.prepare(sql).await?;
         for n in notifications {
             if crate::repos::limits::notification_too_big(n.content.as_deref().unwrap_or("")) {
