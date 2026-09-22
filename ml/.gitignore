@@ -1,0 +1,13 @@
+# raw corpus downloads + derived training artifacts (regenerable)
+/corpus/
+/corpus.jsonl
+/weights/
+/train.log
+/*.parquet
+/*.csv
+/*.txt
+
+# env
+/.venv/
+__pycache__/
+*.pyc

@@ -12,6 +12,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+use crate::nn::{IDX_BIGOTRY, IDX_CSAM, IDX_GORE, IDX_HARASSMENT, IDX_SPAM};
+
 /// Category scores from the AI classification model, normalized to [0.0, 1.0].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AiCategoryScores {
@@ -839,11 +841,31 @@ pub(crate) fn classify_text_with_verdicts(
     }
 
     // Probability calibrations
-    let p_spam = sigmoid(raw_spam, 2.5, 0.85);
-    let p_csam = sigmoid(raw_csam, 2.0, 1.2);
-    let p_gore = sigmoid(raw_gore, 2.2, 0.9);
-    let p_bigotry = sigmoid(raw_bigotry, 2.2, 0.95);
-    let p_harassment = sigmoid(raw_harassment, 2.5, 0.85);
+    let mut p_spam = sigmoid(raw_spam, 2.5, 0.85);
+    let mut p_csam = sigmoid(raw_csam, 2.0, 1.2);
+    let mut p_gore = sigmoid(raw_gore, 2.2, 0.9);
+    let mut p_bigotry = sigmoid(raw_bigotry, 2.2, 0.95);
+    let mut p_harassment = sigmoid(raw_harassment, 2.5, 0.85);
+
+    // Trained-NN blend: scores are max(rule-derived, neural). The NN lifts
+    // classes the heuristic tables miss (novel obfuscations, phrasings) while
+    // rule hits keep their exact behavior. NN-only uplifts record a reason.
+    let nn = crate::nn::nn_scores(trimmed);
+    const NN_CUTOFFS: [f32; 5] = [0.55, 0.45, 0.50, 0.50, 0.55]; // spam,csam,gore,bigotry,harassment
+    let nn_arr = nn.as_array();
+    let mut blended = [p_spam, p_csam, p_gore, p_bigotry, p_harassment];
+    for (i, p) in blended.iter_mut().enumerate() {
+        *p = p.max(nn_arr[i]);
+        if nn_arr[i] >= NN_CUTOFFS[i] {
+            let cat = ["spam", "csam", "gore", "bigotry", "harassment"][i];
+            reasons.insert(format!("nn_model:{cat}"));
+        }
+    }
+    p_spam = blended[IDX_SPAM];
+    p_csam = blended[IDX_CSAM];
+    p_gore = blended[IDX_GORE];
+    p_bigotry = blended[IDX_BIGOTRY];
+    p_harassment = blended[IDX_HARASSMENT];
 
     let scores = AiCategoryScores {
         spam: p_spam,

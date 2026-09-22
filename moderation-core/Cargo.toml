@@ -6,12 +6,21 @@ edition = "2021"
 [dependencies]
 hex = { workspace = true }
 image = { workspace = true }
+mp4parse = { workspace = true }
 regex = { workspace = true }
+rust_h264 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 soshal-content-core = { path = "../content-core" }
 soshal-crypto-core = { path = "../crypto-core" }
+
+# rav1d-safe requires nightly on 32-bit ARM (`stdarch_arm_feature_detection`),
+# so AV1 frame decode is compiled out on armeabi-v7a; H.264 still decodes
+# (rust_h264 is feature-free). aarch64 + x86_64 (+ x86/aarch64 desktop) keep
+# the full AV1 path — armv7 videos fall back to the hash/chrominance gate.
+[target.'cfg(not(target_arch = "arm"))'.dependencies]
+rav1d-safe = { workspace = true }
 
 
 [lints]

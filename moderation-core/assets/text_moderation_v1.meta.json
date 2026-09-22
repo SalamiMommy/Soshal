@@ -1,0 +1,72 @@
+{
+  "classes": [
+    "spam",
+    "csam",
+    "gore",
+    "bigotry",
+    "harassment"
+  ],
+  "sha256": "a9b1802ff302116cc5749318bfc96be1c1acbeb4d892e0a550e2ae12611e14fa",
+  "size_bytes": 1054276,
+  "architecture": {
+    "n_buckets": 16384,
+    "emb_dim": 8,
+    "n_hidden": 64,
+    "n_classes": 5,
+    "ngram_lo": 3,
+    "ngram_hi": 5,
+    "salt1": 8332194716322110216,
+    "salt2": 14462080914501570630
+  },
+  "evaluation": {
+    "spam": {
+      "threshold": 0.49999999999999994,
+      "recall": 1.0,
+      "precision": 1.0,
+      "fp_rate": 0.0,
+      "tp": 394,
+      "fp": 0,
+      "fn": 0
+    },
+    "csam": {
+      "threshold": 0.7,
+      "recall": 1.0,
+      "precision": 1.0,
+      "fp_rate": 0.0,
+      "tp": 186,
+      "fp": 0,
+      "fn": 0
+    },
+    "gore": {
+      "threshold": 0.2,
+      "recall": 1.0,
+      "precision": 1.0,
+      "fp_rate": 0.0,
+      "tp": 142,
+      "fp": 0,
+      "fn": 0
+    },
+    "bigotry": {
+      "threshold": 0.2,
+      "recall": 0.810368349249659,
+      "precision": 0.792,
+      "fp_rate": 0.0372848948374761,
+      "tp": 594,
+      "fp": 156,
+      "fn": 139
+    },
+    "harassment": {
+      "threshold": 0.44999999999999996,
+      "recall": 0.8852213053263316,
+      "precision": 0.8651026392961877,
+      "fp_rate": 0.05133928571428571,
+      "tp": 1180,
+      "fp": 184,
+      "fn": 153
+    }
+  },
+  "corpus": {
+    "train_rows": 43902,
+    "eval_rows": 4917
+  }
+}

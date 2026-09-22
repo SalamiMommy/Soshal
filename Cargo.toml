@@ -101,6 +101,13 @@ quinn = "0.11"
 oxidelta = "0.1"
 # Blurred image placeholders sent inside metadata.
 thumbhash = "0.1"
+# On-device video frame moderation (moderation-core): ISO-BMFF demuxing
+# (Mozilla's parser, production Firefox heritage) + pure-Rust H.264 and AV1
+# decoders so the image NN can classify sampled frames of local AND remote
+# videos. All safe-Rust first (rav1d-safe default builds forbid(unsafe)).
+mp4parse = "0.17"
+rust_h264 = "0.4"
+rav1d-safe = "0.6"
 
 # Dev-profile optimization: debug builds are what `cargo test` and the Linux
 # host bridge run under. opt-level=1 makes the ~1385-test suite and hot

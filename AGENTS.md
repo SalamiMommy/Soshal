@@ -377,6 +377,51 @@ each migration SQL records its own version
 
 ## Security Invariants (inherited from the pre-Flutter hardening audit)
 
+### On-Device Moderation NN (2026-09)
+
+- **Real trained weights, zero new deps**: `moderation-core/src/nn.rs`
+  (text micro-hash MLP, `SOSMLP1` embedded asset `assets/text_moderation_v1.nn`)
+  + `image_nn.rs` (3-conv CNN infra, `SOSIMG1` placeholder — off until all
+  3 heads have cleared training data; no legal image corpora sourced yet).
+  Forward passes hand-rolled, deterministic; `include_bytes!` — no
+  build-time generation. Training pipeline in `ml/` (README there).
+- **Deterministic rules stay authoritative**: NN max-blends into
+  `AiCategoryScores` in `ai_classifier.rs` (`classify_text_with_verdicts`).
+  CSAM: hash/PDQ blocklist remains the ONLY source of `is_csam_hazard`;
+  the image NN's `nudity × juvenile` composition only emits a
+  report/review-gate `nn_csam_risk:<score>` reason. **Adult nudity alone
+  never flags.**
+- **Wrapper damp**: text matching the trainer's reporter-wrapper prefix gets
+  NN scores × 0.4 (bag-of-ngram models can't un-fire quoted content tokens;
+  the trainer labels those constructions clean).
+- **No real CSAM material anywhere**: image CSAM signal is composed risk on
+  synthetic text positives only; model asset degraded (all-zero / NN off)
+  until legal datasets are curated.
+- **Keys/salts/format parity**: `ml/scripts/common.py` mirrors Rust
+  normalize + FNV-1a 64; keep salts + mlpack layout in sync when retraining.
+  Missing/corrupt asset → heuristic-only fallback (tests cover degradation).
+- **Video frames (2026-09, deps allowed)**: MP4 (ISO-BMFF) videos get the
+  same image NN + real chrominance run per sampled frame —
+  `moderation-core/src/video_nn.rs`: `mp4parse` (Mozilla, demux + sample
+  table + avcC/av1C) → evenly-spaced sync-sample selection (≤16 frames) →
+  pure-Rust decode → YUV→RGB → per-frame classify → `VideoFramesVerdict`
+  aggregation → `finalize_video_verdict` (same merge rules as stills; gore
+  blocks, adult nudity informative only, `nn_csam_risk:<score>` reason never
+  auto-blocks). Decoders: `rust_h264` (H.264, push-based: SPS/PPS from avcC
+  then per-sample AVCC NALs) + `rav1d-safe` (AV1, safe SIMD; threads=1
+  synchronous — `decode()` returns the frame, not `get_frame()`).
+  Containers/codecs outside H.264+AV1-MP4 (HEVC/VP9/WebM/…) fall back to the
+  hash + byte-chrominance gate. `rav1d-safe` needs nightly on 32-bit ARM
+  (`stdarch_arm_feature_detection`), so the dep + AV1 path are
+  `#[cfg(not(target_arch = "arm"))]`-gated in moderation-core/Cargo.toml
+  `[target.'cfg(not(target_arch = "arm"))'.dependencies]` — armeabi-v7a gets
+  H.264 frame NN + hash/chrom fallback for AV1; aarch64/x86_64 (host + disc +
+  Android) keep full AV1. Test fixtures are tiny ffmpeg-generated clips
+  (`tests/fixtures/h264_64x64.mp4`, `av1_64x64.mp4`, `include_bytes!`).
+  The `image` NN asset is still the all-zero placeholder → video NN runs real
+  per-frame chrominance but the NN head outputs nothing until real weights
+  land (honest degradation, not a simulation).
+
 - **Key material**: nsec enters the bridge only at signer init (mnemonic at
   onboarding, or keyring restore). OS keychain ops (`signer_*_keyring`) take
   pubkeys only — never raw keys across FFI. `zeroize` around intermediates.
