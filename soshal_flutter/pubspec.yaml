@@ -2,6 +2,7 @@ name: soshal_flutter
 description: Soshal - Native Rust social media app (Flutter port)
 publish_to: 'none'
 version: 0.1.1+2
+license: GPL-2.0-only
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

@@ -1,6 +1,6 @@
 # Soshal
 
-A decentralized social media application combining the best of Facebook and MySpace, built on Freenet, Nostr, I2P, and Reticulum Mesh. Features dating, feed, events, messenger, marketplace, and customizable profiles — all running on a peer-to-peer foundation.
+A decentralized social media application combining the best of Facebook, Myspace, Discord, Soundcloud, and Chatroulette — built on Freenet, Nostr, I2P, and Reticulum Mesh. Features dating, feed, events, messenger, marketplace, and customizable profiles — all running on a peer-to-peer foundation.
 
 ## Features & Product Guidelines
 
