@@ -381,8 +381,16 @@ each migration SQL records its own version
 
 - **Real trained weights, zero new deps**: `moderation-core/src/nn.rs`
   (text micro-hash MLP, `SOSMLP1` embedded asset `assets/text_moderation_v1.nn`)
-  + `image_nn.rs` (3-conv CNN infra, `SOSIMG1` placeholder — off until all
-  3 heads have cleared training data; no legal image corpora sourced yet).
+  + `image_nn.rs` (3-conv CNN, `SOSIMG1` embedded asset **v2** — pooling is
+  concat(GAP, **GMP**) per channel → 64 fc features; juvenile head trained on
+  UTKFace + nudity head on permissively-licensed Commons fine-art nudes;
+  **gore head has no cleared corpus and is exported all-zero → Rust marks it
+  absent and it never fires**). Held-out face-crop eval: juvenile recall 0.923
+  / precision 0.411 @ 0.5 gate (6.8% adult-face fp); nudity pos-mean 0.966 vs
+  adult-face p99 0.158; adult art-nude corpus trips `juvenile > 0.5` only
+  0.1% of the time. Rust conv volumes are dynamic-length (c1=16/c2=32/c3=32 —
+  the fixed-3-channel skeleton would OOB on real weights; regression: real
+  asset + full forward in `real_asset_loads_with_absent_gore_head`).
   Forward passes hand-rolled, deterministic; `include_bytes!` — no
   build-time generation. Training pipeline in `ml/` (README there).
 - **Deterministic rules stay authoritative**: NN max-blends into
@@ -395,8 +403,10 @@ each migration SQL records its own version
   NN scores × 0.4 (bag-of-ngram models can't un-fire quoted content tokens;
   the trainer labels those constructions clean).
 - **No real CSAM material anywhere**: image CSAM signal is composed risk on
-  synthetic text positives only; model asset degraded (all-zero / NN off)
-  until legal datasets are curated.
+  synthetic text positives only; the image model ships trained juvenile +
+  nudity heads (no legal gore corpus → gore head exported all-zero/NN off for
+  that head only; missing/corrupt asset still degrades whole-NN to
+  heuristic-only).
 - **Keys/salts/format parity**: `ml/scripts/common.py` mirrors Rust
   normalize + FNV-1a 64; keep salts + mlpack layout in sync when retraining.
   Missing/corrupt asset → heuristic-only fallback (tests cover degradation).
@@ -418,9 +428,11 @@ each migration SQL records its own version
   H.264 frame NN + hash/chrom fallback for AV1; aarch64/x86_64 (host + disc +
   Android) keep full AV1. Test fixtures are tiny ffmpeg-generated clips
   (`tests/fixtures/h264_64x64.mp4`, `av1_64x64.mp4`, `include_bytes!`).
-  The `image` NN asset is still the all-zero placeholder → video NN runs real
-  per-frame chrominance but the NN head outputs nothing until real weights
-  land (honest degradation, not a simulation).
+  The `image` NN asset ships trained juvenile+nudity heads; the gore head is
+  exported all-zero (all-zero fc row + bias → Rust's `heads_present` marks it
+  absent, sigmoid forced to 0.0) so per-frame chrominance + hash stay the
+  only gore/graphic block sources (honest degradation for gore, real NN for
+  the CSAM-risk composition).
 
 - **Key material**: nsec enters the bridge only at signer init (mnemonic at
   onboarding, or keyring restore). OS keychain ops (`signer_*_keyring`) take

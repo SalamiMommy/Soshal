@@ -5,7 +5,11 @@ Architecture must match moderation-core/src/image_nn.rs EXACTLY:
     conv3x3/2: 3 -> 16  (48x48) ReLU
     conv3x3/2: 16 -> 32 (24x24) ReLU
     conv3x3/2: 32 -> 32 (12x12) ReLU
-    GAP -> 32 -> fc -> 3 sigmoid heads  [gore, nudity, juvenile]
+    concat(GAP, GMP) -> 64 -> fc -> 3 sigmoid heads  [gore, nudity, juvenile]
+
+Pooling concatenates per-channel global mean AND max: the max branch
+preserves local/texture cues (age, gore details) that plain GAP averages
+away — measurably better juvenile-head discrimination (see ml/README.md).
 
 Data inputs (all legal/public — no CSAM material is ever part of this pipeline):
     --juvenile-dir   UTKFace aligned_cropped dir (filename "age_gender_race_..."
@@ -14,14 +18,18 @@ Data inputs (all legal/public — no CSAM material is ever part of this pipeline
                      adult nudity corpus. REQUIRED for the CSAM-risk composition
                      (nudity x juvenile). Until a data owner provides this, the
                      nudity head stays zero and the composed risk never fires.
-    --gore-manifest  CSV: <path>,<label 0/1>  — cleared-for-use gore corpus.
-                     No legal public gore corpus is bundled; without it the gore
-                     head stays zero and chrominance heuristics stay
-                     authoritative.
+    --gore-manifest  CSV: <path>,<label 0/1>  — OPTIONAL, cleared-for-use gore
+                     corpus. No legal public gore corpus is bundled; when absent
+                     the gore head is exported all-zero (Rust treats it as
+                     absent and chrominance heuristics stay authoritative for
+                     gore blocks).
 
-Missing heads degrade HONESTLY: the exported asset is a single 0x00 placeholder
-byte (Rust `image_nn_available()` returns false) until every head that the
-composed signals need has real data. Training on GPU when available.
+The CSAM-risk composition (nudity x juvenile) needs both heads real, so the
+exporter refuses to ship unless juvenile + nudity have cleared data. When a
+head is absent its export slice is zeroed and its BCE term is masked out.
+Missing everything → the asset is a single 0x00 placeholder byte (Rust
+`image_nn_available()` returns false) until required heads are cleared.
+Training on GPU when available.
 """
 
 from __future__ import annotations
@@ -48,7 +56,7 @@ class Cnn(nn.Module):
         self.conv1 = nn.Conv2d(3, 16, 3, stride=2)
         self.conv2 = nn.Conv2d(16, 32, 3, stride=2)
         self.conv3 = nn.Conv2d(32, 32, 3, stride=2)
-        self.fc = nn.Linear(32, N_HEADS)
+        self.fc = nn.Linear(2 * 32, N_HEADS)
         self._init()
 
     def _init(self) -> None:
@@ -62,8 +70,9 @@ class Cnn(nn.Module):
         x = torch.relu(self.conv1(x))
         x = torch.relu(self.conv2(x))
         x = torch.relu(self.conv3(x))
-        x = x.mean(dim=(2, 3))  # GAP
-        return self.fc(x)  # raw logits
+        gavg = x.mean(dim=(2, 3))
+        gmax = x.amax(dim=(2, 3))
+        return self.fc(torch.cat([gavg, gmax], dim=1))  # raw logits
 
 
 def load_image(path: str) -> np.ndarray | None:
@@ -120,7 +129,7 @@ def manifest_rows(manifest: str, head_idx: int) -> list[tuple[np.ndarray, np.nda
     return rows
 
 
-def export(model: nn.Module, out: Path) -> None:
+def export(model: nn.Module, out: Path, heads_present: set[str]) -> None:
     sd = model.state_dict()
     c1, c2, c3 = 16, 32, 32
     w1 = sd["conv1.weight"].permute(1, 2, 3, 0).reshape(-1).cpu().numpy().astype("<f4")
@@ -131,11 +140,21 @@ def export(model: nn.Module, out: Path) -> None:
     b3 = sd["conv3.bias"].cpu().numpy().astype("<f4")
     wh = sd["fc.weight"].T.reshape(-1).cpu().numpy().astype("<f4")
     bh = sd["fc.bias"].cpu().numpy().astype("<f4")
-    assert w1.shape[0] == c1 * 27 and w2.shape[0] == c2 * 27 * c1 and w3.shape[0] == c3 * 27 * c2
-    assert wh.shape[0] == c3 * N_HEADS
+    assert w1.shape[0] == c1 * 27 and w2.shape[0] == c2 * 9 * c1 and w3.shape[0] == c3 * 9 * c2
+    assert wh.shape[0] == 2 * c3 * N_HEADS
+    # fc layout is [2*c3, N_HEADS] flattened (head k at wh[k::N_HEADS]):
+    # slots 2c = avg(ch c), 2c+1 = max(ch c) — mirrors concat(GAP, GMP).
+    # Any head without cleared data is exported all-zero so Rust's all-zero
+    # row + bias check marks it absent → its sigmoid output is forced to 0.0
+    # and it can never fire a moderation signal.
+    for name, idx in (("gore", 0), ("nudity", 1), ("juvenile", 2)):
+        if name not in heads_present:
+            wh[idx::N_HEADS] = 0.0
+            bh[idx] = 0.0
+            print(f"head {name}: absent → exported zeroed (Rust treats as off)")
     with open(out, "wb") as f:
         f.write(b"SOSIMG1")
-        f.write(struct.pack("<B", 1))
+        f.write(struct.pack("<B", 2))  # v2 = concat(GAP, GMP) pooling
         for v in (INPUT, 3, c1, c2, c3, N_HEADS):
             f.write(struct.pack("<I", v))
         for arr in (w1, b1, w2, b2, w3, b3, wh, bh):
@@ -176,14 +195,14 @@ def main() -> None:
                                      ("gore", present[2])) if ok}
     print("heads with data:", sorted(heads_present) or "none")
 
-    # The CSAM-risk composition is nudity x juvenile: both heads must be
-    # real before the composed signal is ever emitted by Rust. Rather than
-    # ship a half-trained model that silently misjudges, we export the
-    # placeholder (NN off, deterministic layers authoritative) until every
-    # head is trained with cleared data.
-    if len(heads_present) != 3:
-        print("missing heads:", sorted({"juvenile", "nudity", "gore"} - heads_present))
-        print("writing placeholder — image NN stays off until all three heads "
+    # The CSAM-risk composition is nudity x juvenile: both heads must have
+    # real data before Rust ever emits a composed signal. Gore is optional —
+    # when absent it is exported all-zero so Rust treats it as off and the
+    # chrominance heuristic remains the sole gore block source.
+    required = {"juvenile", "nudity"}
+    if not required <= heads_present:
+        print("missing heads:", sorted(required - heads_present))
+        print("writing placeholder — image NN stays off until juvenile+nudity "
               "have cleared training data.")
         with open(args.out, "wb") as f:
             f.write(b"\x00")
@@ -199,17 +218,29 @@ def main() -> None:
     Y = np.stack([r[1] for r in rows])
     print(f"total rows {X.shape[0]}")
 
+    # Mask absent heads' columns so their BCE term is excluded (a head fed
+    # only other labels' negatives would just learn to never fire). The
+    # `yb >= 0` loss mask below skips these -1 columns.
+    HEAD_IDX = {"gore": 0, "nudity": 1, "juvenile": 2}
+    for hname in set(HEAD_IDX) - heads_present:
+        Y[:, HEAD_IDX[hname]] = -1.0
+        print(f"head {hname}: BCE masked out (no data) — exported zeroed")
+
     # sample weights emphasize rare positive labels present in the data
+    # (x8 for positives — without per-sample weighting the rare juvenile
+    # positives vanish under the adult-face majority and the head learns to
+    # never fire).
     frac = Y.mean(axis=0)
     w = np.ones(Y.shape[0], dtype=np.float32)
     for h in range(N_HEADS):
         col = Y[:, h]
         if col.sum() > 0 and col.sum() < len(col):
-            w[col == 1] *= 4.0
+            w[col == 1] *= 8.0
     print("head fractions:", np.round(frac, 3))
 
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("device:", dev)
+    torch.manual_seed(7)  # reproducible asset (Kaiming init + shuffles)
     model = Cnn().to(dev)
     Xt = torch.from_numpy(X).to(dev)
     Yt = torch.from_numpy(Y).to(dev)
@@ -230,11 +261,12 @@ def main() -> None:
             idx = tr_idx[order[s : s + bs]]
             xb, yb = Xt[idx], Yt[idx]
             logits = model(xb)
-            # masked BCE: missing heads (-1 equivalent => label 0 w/o signal)
+            # masked BCE: missing heads (-1 equivalent => label 0 w/o signal);
+            # per-sample weights emphasize rare positive labels (e.g. juvenile)
             mask = yb >= 0
             loss = torch.nn.functional.binary_cross_entropy_with_logits(
                 logits, yb, weight=None, reduction="none")
-            loss = (loss * mask).sum() / mask.sum().clamp(min=1)
+            loss = ((loss * mask).sum(dim=1) * Wt[idx]).sum() / mask.sum().clamp(min=1)
             opt.zero_grad()
             loss.backward()
             opt.step()
@@ -256,7 +288,7 @@ def main() -> None:
         print(f"epoch {epoch} loss {tot/cnt:.4f}  eval accs {accs}")
 
     if args.export:
-        export(model, Path(args.out))
+        export(model, Path(args.out), heads_present)
 
 
 if __name__ == "__main__":

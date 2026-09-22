@@ -72,11 +72,15 @@ fraction (0.50) + 43 benign hard-negative sentences teach context
 disambiguation; the reporter-wrapper damp (Rust, ×0.4) enforces the
 wrapper→clean label at inference where bag-of-ngram features can't.
 
-## Image model (`image_moderation_v1.nn`) — infra complete, weights data-gated
+## Image model (`image_moderation_v1.nn`) — real weights shipped
 
-CNN on 96×96 RGB: `conv3x3/2 3→16→32→32`, ReLU, GAP, 3 sigmoid heads
-[gore, nudity, juvenile] (~14k params, 56 KiB fp32). Rust forward in
-`moderation-core/src/image_nn.rs`; composition rules:
+CNN on 96×96 RGB: `conv3x3/2 3→16→32→32`, ReLU, pooling = concat(global
+**avg**, global **max**) per channel → 64 pooled features → 3 sigmoid heads
+[gore, nudity, juvenile] (~15k params, 64 KiB fp32). The max branch
+preserves local/texture cues (age, gore details) that plain GAP averages
+away — juvenile-head discrimination measurably improves over GAP-only.
+Rust forward in `moderation-core/src/image_nn.rs` (mlpack v2); composition
+rules:
 
 - `gore` head fuses with chrominance → blocks.
 - `nudity × juvenile` composes a **CSAM-risk score** → report/review gate only.
@@ -85,17 +89,48 @@ CNN on 96×96 RGB: `conv3x3/2 3→16→32→32`, ReLU, GAP, 3 sigmoid heads
 
 Train: `scripts/train_image.py` (masked multi-task BCE, GPU).
 
-**Weight status: placeholder (NN off).** The committed asset is a single
-`\x00` byte until all three heads have cleared-for-use training data:
+**Weight status (2026-09): SHIPPED with juvenile + nudity real, gore absent.**
+The exported `SOSIMG1` carries trained `juvenile` (UTKFace, public/academic,
+age-from-filename) and `nudity` (permissively-licensed artistic-nudity corpus
+from Wikimedia Commons fine-art categories, fetched by
+`scripts/fetch_nude_art.py`) heads. The `gore` head has **no cleared legal
+corpus** at all, so:
 
-- `--juvenile-dir` — UTKFace (public academic; age from filename).
-- `--nudity-manifest` — CSV `path,label`, **legal/cleared adult-nudity corpus**.
-  Required for the composed CSAM risk to ever fire.
-- `--gore-manifest` — CSV `path,label`, cleared gore corpus.
+- The exporter **zeroes the gore head slice** (fc row + bias) when
+  `--gore-manifest` is absent.
+- Rust's `ImageNn::from_bytes` detects an all-zero fc row + bias and marks
+  that head **absent** — its sigmoid output is forced to `0.0` and it can
+  never fire. Gore blocking therefore stays **chrominance-heuristic only**
+  (`gore_chrominance_anomaly_detected`), no NN false-gore risk.
+- The CSAM-risk composition `nudity × juvenile` is now real: adult nudity
+  alone still never flags (policy: nudity fine, CSAM not); the composed score
+  only feeds the report/review gate via `nn_csam_risk:<score>`, never
+  `is_csam_hazard` (PDQ/hash blocklist stays the only auto-block).
+- Training corpus provenance: UTKFace (research, per-owner terms) + Commons
+  files filtered to CC0/Public domain/CC BY/CC BY-SA/Attribution/FAL (NC/ND
+  excluded). Images + manifest are gitignored (`ml/corpus/`); trainer only
+  needs `--juvenile-dir` + `--nudity-manifest`.
+- If the required heads ever lack data the exporter falls back to the single
+  `\x00` placeholder and `classify_image_bytes` returns `None` — deterministic
+  layers stay authoritative, the NN never silently simulates.
 
-Until all three exist the exporter writes the placeholder and
-`classify_image_bytes` returns `None` — deterministic chrominance + hash
-layers stay authoritative and the NN never silently simulates.
+**Final image model (2026-09, seed 7, 30 epochs, positives ×8 weighted):**
+held-out UTKFace face-crop eval (209 kids / 4096 adults, independent split):
+
+| head | toy metric | value |
+|---|---|---|
+| juvenile | recall @ 0.5 gate (face crops) | 0.923 |
+| juvenile | precision @ 0.5 gate | 0.411 (6.8% adult-face fp) |
+| juvenile | kid probs vs adult-prob | med 0.94 vs mean 0.11 |
+| nudity | pos mean / adult-face neg p99 | 0.966 / 0.158 |
+| gore | — | absent (zeroed → 0.0, never fires) |
+
+Composed `nudity × juvenile` on the adult art-nude corpus: only 2/2205
+(0.1%) cross `juvenile > 0.5` (91.6% have nudity ≥ 0.9) — adult nudity
+essentially never trips CSAM-risk. Caution: the heads run on the whole
+96×96 image; faces small within the frame score lower (the model was
+trained on face crops), and solid flat fills can read as exposure
+(informative only, non-blocking).
 
 ### Video — same NN, per sampled frame
 
@@ -109,13 +144,17 @@ AV1 decode is `#[cfg(not(target_arch = "arm"))]`-gated because `rav1d-safe`
 needs nightly on 32-bit ARM (armeabi-v7a falls back to hash/chrom for AV1).
 Other containers/codecs fall back to the legacy hash + byte path.
 
-While the image asset is the placeholder, video runs per-frame chrominance
-only — the NN head contributes nothing until weights land.
+While the image asset was the placeholder (pre-training), video ran per-frame
+chrominance only. With juvenile+nudity heads shipped, video frames also run
+the real NN (gore head absent → never fires; `nudity × juvenile` composed
+CSAM-risk works on videos too).
 
 ## Export/delivery
 
 - Text: `SOSMLP1` mlpack (u32/u64 header + f32 LE tensors) committed as
   embedded asset (`include_bytes!`), ~1.4 MB. No build-time generation.
-- Image: `SOSIMG1` mlpack (placeholder until trained).
+- Image: `SOSIMG1` mlpack **v2** = concat(GAP,GMP) pooling (juvenile + nudity
+  heads trained; gore head zeroed / absent). v1 (GAP-only) assets are rejected
+  by the Rust parser.
 - No new Rust dependencies — hand-rolled forward passes, manual little-endian
   parsing, deterministic seeds/salts for reproducible verdicts.
