@@ -4329,7 +4329,7 @@ dependencies = [
 name = "soshal-content-core"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "flate2",
  "regex",
  "serde",
@@ -4344,7 +4344,7 @@ name = "soshal-crypto-core"
 version = "0.1.0"
 dependencies = [
  "aead",
- "base64 0.22.1",
+ "base64 0.23.1",
  "blake3",
  "chacha20 0.9.1",
  "chacha20poly1305",
@@ -4415,7 +4415,7 @@ name = "soshal-flutter-bridge"
 version = "0.1.0"
 dependencies = [
  "ashpd",
- "base64 0.22.1",
+ "base64 0.23.1",
  "dirs",
  "flutter_rust_bridge",
  "futures-util",
@@ -4537,7 +4537,7 @@ dependencies = [
 name = "soshal-media-core"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "blake3",
  "fastcdc",
  "hex",
@@ -4558,7 +4558,7 @@ dependencies = [
 name = "soshal-mesh-core"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "bincode",
  "blake3",
  "freenet-stdlib",
@@ -4625,7 +4625,7 @@ dependencies = [
 name = "soshal-network-core"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "blake3",
  "futures-util",
  "getrandom 0.4.3",
@@ -4687,7 +4687,7 @@ name = "soshal-pqc-core"
 version = "0.1.0"
 dependencies = [
  "aead",
- "base64 0.22.1",
+ "base64 0.23.1",
  "chacha20poly1305",
  "getrandom 0.4.3",
  "hex",
@@ -4783,7 +4783,7 @@ dependencies = [
 name = "soshal-sync-core"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "bech32",
  "hex",
  "libsql",
