@@ -16,7 +16,7 @@ memmap2 = { workspace = true }
 nix = { workspace = true }
 mdns-sd = { workspace = true }
 getrandom = { workspace = true }
-if-addrs = "0.13"
+if-addrs = "0.15"
 log = "0.4"
 webrtc-ice = { workspace = true }
 quinn = { workspace = true }
