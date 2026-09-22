@@ -1,3 +1,0 @@
-#!/system/bin/sh
-echo "Reticulum daemon requires Python runtime - not bundled in APK"
-exit 1
