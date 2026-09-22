@@ -20,7 +20,7 @@ if-addrs = "0.13"
 log = "0.4"
 webrtc-ice = { workspace = true }
 quinn = { workspace = true }
-rcgen = "0.13"
+rcgen = "0.14"
 rustls = { workspace = true }
 tokio-rustls = "0.26"
 webpki-roots = "0.26"
