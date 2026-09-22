@@ -190,6 +190,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ]),
+            // Tools section
+            _buildSection('Tools', [
+              ListTile(
+                title: const Text('Geohash Calculator'),
+                subtitle: const Text('Encode lat/lng into a geohash'),
+                leading: const Icon(Icons.pin_drop),
+                trailing: const Icon(Icons.arrow_forward),
+                onTap: () => context.push('/settings/geohash'),
+              ),
+            ]),
             // Notifications section
             _buildSection('Notifications', [
               ListTile(

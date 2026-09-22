@@ -7,6 +7,9 @@
 
 use flutter_rust_bridge::frb;
 use serde::Serialize;
+use soshal_db_core::repos::musicloud::{
+    MusicloudCommentRepo, MusicloudCommentRow, MusicloudRepo, MusicloudRow,
+};
 use soshal_db_core::repos::saved::{
     MusicloudPlaylistRepo, PlaylistTrackRow, SavedContentRepo, SavedContentRow,
 };
@@ -119,8 +122,110 @@ pub async fn music_publish(
     let event: serde_json::Value =
         serde_json::from_str(&signed).map_err(|e| format!("parse signed event: {e}"))?;
     let id = event["id"].as_str().unwrap_or_default().to_string();
-    let _ = super::network::network_publish_event(signed).await?;
+    let _ = super::network::network_publish_event(signed.clone()).await?;
+    // Mirror the published track into the local musiclouds table so
+    // `music_fetch` returns it immediately (relay echo lag) and across app
+    // restarts (persistent). Best-effort: a failed insert must not fail the
+    // publish — the track still reaches the network.
+    if let Ok(e) = nostr::event::Event::from_json(&signed) {
+        if let Some(track) =
+            minis_events::musicloud_from_event(&soshal_nostr_core::models::NostrEvent::from(&e))
+        {
+            persist_published_track(&track);
+        }
+    }
     Ok(id)
+}
+
+/// Map a musicloud track JSON value (`musicloud_from_event` shape) to a
+/// local `musiclouds` row and upsert it. Best-effort — errors are logged.
+fn persist_published_track(track: &serde_json::Value) {
+    let empty = |k: &str| track[k].as_str().unwrap_or_default().to_string();
+    let hashtags = match track["hashtags"].as_array() {
+        Some(a) => serde_json::to_string(a).unwrap_or_else(|_| "[]".to_string()),
+        None => "[]".to_string(),
+    };
+    let title = empty("title");
+    let thumbnail = empty("thumbnail");
+    let audience = empty("audience");
+    let row = MusicloudRow {
+        id: empty("id"),
+        pubkey: empty("pubkey"),
+        audio_url: empty("audioUrl"),
+        title: if title.is_empty() { None } else { Some(title) },
+        duration: None,
+        text_overlay: None,
+        thumbnail: if thumbnail.is_empty() {
+            None
+        } else {
+            Some(thumbnail)
+        },
+        likes: 0,
+        liked: false,
+        bookmarked: false,
+        audience: if audience.is_empty() {
+            "public".to_string()
+        } else {
+            audience
+        },
+        blob_hash: empty("blobHash"),
+        media_size: track["mediaSize"].as_i64().unwrap_or(0),
+        hashtags,
+        d: empty("d"),
+        created_at: track["createdAt"].as_i64().unwrap_or(0),
+    };
+    if let Err(e) = super::db::with_db_string(|db| {
+        MusicloudRepo::new(db)
+            .upsert(&row)
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }) {
+        eprintln!("musicloud persist own track: {e}");
+    }
+}
+
+/// Maps a local `musiclouds` row back to the musicloud track JSON shape
+/// (`musicloud_from_event` / `MusicTrack.fromJson`: id, pubkey, audioUrl,
+/// blobHash, mediaSize, title, thumbnail, hashtags, d, audience, createdAt).
+fn musicloud_row_to_json(r: &MusicloudRow) -> serde_json::Value {
+    let hashtags: serde_json::Value =
+        serde_json::from_str(&r.hashtags).unwrap_or_else(|_| serde_json::json!([]));
+    serde_json::json!({
+        "id": r.id.as_str(),
+        "pubkey": r.pubkey.as_str(),
+        "audioUrl": r.audio_url.as_str(),
+        "blobHash": r.blob_hash.as_str(),
+        "mediaSize": r.media_size,
+        "title": r.title.clone().unwrap_or_default(),
+        "thumbnail": r.thumbnail.clone().unwrap_or_default(),
+        "hashtags": hashtags,
+        "d": r.d.as_str(),
+        "audience": r.audience.as_str(),
+        "createdAt": r.created_at,
+    })
+}
+
+/// Merges local own tracks with relay-fetched tracks: dedup by event id
+/// (local wins — it must appear even while the relay echo lags), newest
+/// first, capped at [limit].
+fn merge_tracks(
+    mut local: Vec<serde_json::Value>,
+    relay: Vec<serde_json::Value>,
+    limit: usize,
+) -> Vec<serde_json::Value> {
+    let mut seen: std::collections::HashSet<String> = local
+        .iter()
+        .filter_map(|t| t["id"].as_str().map(str::to_ascii_lowercase))
+        .collect();
+    for t in relay {
+        let id = t["id"].as_str().unwrap_or("").to_ascii_lowercase();
+        if !id.is_empty() && seen.insert(id) {
+            local.push(t);
+        }
+    }
+    minis_events::sort_by_created_desc(&mut local);
+    local.truncate(limit);
+    local
 }
 
 /// Fetch tracks (kind 31022), optionally by author. Returns JSON array of
@@ -135,15 +240,49 @@ pub async fn music_fetch(
         "kinds": [31022],
         "limit": limit.min(100),
     });
-    if let Some(a) = author {
+    if let Some(a) = author.clone() {
         filter["authors"] = serde_json::json!([a]);
     } else if let Some(a) = super::identity::resolve_audience_authors(&audience)? {
         filter["authors"] = serde_json::json!(a);
     }
-    let raw = super::network::network_query_events(filter.to_string()).await?;
+    // Local mirror of the active account's own published tracks (fed by
+    // `music_publish`): they must appear instantly and survive restarts even
+    // before the relay echoes them back. Offline (no relay client / query
+    // failure) this is the fallback, so the Browse tab never blanks.
+    let local = match super::signer::signer_pubkey() {
+        Ok(my_pk) => super::db::with_db_string(|db| {
+            let rows = MusicloudRepo::new(db)
+                .list_by_author(&my_pk, limit.min(100) as i64)
+                .map_err(|e| e.to_string())?;
+            let mut out = Vec::new();
+            for r in rows {
+                if !audience.is_empty() && r.audience != audience {
+                    continue;
+                }
+                if let Some(a) = &author {
+                    if !a.eq_ignore_ascii_case(&r.pubkey) {
+                        continue;
+                    }
+                }
+                out.push(musicloud_row_to_json(&r));
+            }
+            Ok(out)
+        })
+        .unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+    let raw = match super::network::network_query_events(filter.to_string()).await {
+        Ok(raw) => raw,
+        Err(e) => {
+            if local.is_empty() {
+                return Err(e);
+            }
+            return super::util::json_ok(local);
+        }
+    };
     let events: Vec<nostr::event::Event> =
         serde_json::from_str(&raw).map_err(|e| format!("parse query result: {e}"))?;
-    let mut out = Vec::new();
+    let mut relay_tracks = Vec::new();
     for e in events {
         if !soshal_nostr_core::models::verify_event(&e) {
             continue;
@@ -151,11 +290,11 @@ pub async fn music_fetch(
         if let Some(mapped) =
             minis_events::musicloud_from_event(&soshal_nostr_core::models::NostrEvent::from(&e))
         {
-            out.push(mapped);
+            relay_tracks.push(mapped);
         }
     }
-    minis_events::sort_by_created_desc(&mut out);
-    super::util::json_ok(out)
+    let merged = merge_tracks(local, relay_tracks, limit.min(100) as usize);
+    super::util::json_ok(merged)
 }
 
 /// Share a track as a kind-1 text note with the standard track tags.
@@ -203,10 +342,11 @@ pub async fn music_comment(
     content: String,
 ) -> Result<String, String> {
     let addr = minis_events::musicloud_comment_addr(track_kind, &track_pubkey, &track_d);
-    let mut builder = nostr::event::EventBuilder::new(nostr::event::Kind::TextNote, content);
+    let mut builder =
+        nostr::event::EventBuilder::new(nostr::event::Kind::TextNote, content.clone());
     for tag in [
         vec!["E".to_string(), addr.clone()],
-        vec!["a".to_string(), addr],
+        vec!["a".to_string(), addr.clone()],
         vec!["p".to_string(), track_pubkey],
     ] {
         builder = add_tag(builder, tag);
@@ -216,6 +356,27 @@ pub async fn music_comment(
         serde_json::from_str(&signed).map_err(|e| format!("parse signed event: {e}"))?;
     let id = event["id"].as_str().unwrap_or_default().to_string();
     let _ = super::network::network_publish_event(signed).await?;
+    // Mirror the comment into the local `musicloud_comments` table (keyed by
+    // the track address) so the comment thread shows it immediately instead of
+    // waiting for the relay echo. Best-effort.
+    let pubkey = event["pubkey"].as_str().unwrap_or_default().to_string();
+    let created_at = event["created_at"]
+        .as_i64()
+        .unwrap_or_else(soshal_common_core::format::now_secs);
+    if let Err(e) = super::db::with_db_string(|db| {
+        MusicloudCommentRepo::new(db)
+            .insert(&MusicloudCommentRow {
+                id: id.clone(),
+                track_id: addr,
+                pubkey,
+                content,
+                created_at,
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }) {
+        eprintln!("musicloud persist own comment: {e}");
+    }
     Ok(id)
 }
 
@@ -234,10 +395,43 @@ pub async fn music_comments(
         "limit": 100,
     })
     .to_string();
-    let raw = super::network::network_query_events(filter).await?;
+    // Local mirror of this device's own comments (fed by `music_comment`), so
+    // the thread shows them immediately; fallback when the relay query fails.
+    let local: Vec<minis_events::MiniEventOut> = super::db::with_db_string(|db| {
+        let rows = MusicloudCommentRepo::new(db)
+            .list_by_track(&addr, 100)
+            .map_err(|e| e.to_string())?;
+        Ok(rows
+            .iter()
+            .map(|c| minis_events::MiniEventOut {
+                id: c.id.clone(),
+                pubkey: c.pubkey.clone(),
+                video_url: String::new(),
+                blob_hash: String::new(),
+                media_size: 0,
+                text_overlay: c.content.clone(),
+                thumbnail: String::new(),
+                audience: String::new(),
+                created_at: c.created_at as u64,
+            })
+            .collect::<Vec<_>>())
+    })
+    .unwrap_or_default();
+    let raw = match super::network::network_query_events(filter).await {
+        Ok(raw) => raw,
+        Err(e) => {
+            if local.is_empty() {
+                return Err(e);
+            }
+            let mut out = local;
+            minis_events::sort_minis_desc(&mut out);
+            return super::util::json_ok(out);
+        }
+    };
     let events: Vec<nostr::event::Event> =
         serde_json::from_str(&raw).map_err(|e| format!("parse query result: {e}"))?;
-    let mut out = Vec::new();
+    let mut out = local;
+    let mut seen: std::collections::HashSet<String> = out.iter().map(|m| m.id.clone()).collect();
     for e in events {
         if !soshal_nostr_core::models::verify_event(&e) {
             continue;
@@ -245,7 +439,9 @@ pub async fn music_comments(
         if let Some(mapped) =
             minis_events::mini_event_out(&soshal_nostr_core::models::NostrEvent::from(&e))
         {
-            out.push(mapped);
+            if seen.insert(mapped.id.clone()) {
+                out.push(mapped);
+            }
         }
     }
     minis_events::sort_minis_desc(&mut out);
@@ -602,6 +798,79 @@ mod tests {
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_file(format!("{path}-wal"));
         let _ = std::fs::remove_file(format!("{path}-shm"));
+    }
+
+    #[test]
+    fn merge_tracks_local_first_dedup_cap() {
+        let mut a = track_json("a1");
+        a["createdAt"] = serde_json::json!(200);
+        let mut b = track_json("b2");
+        b["createdAt"] = serde_json::json!(100);
+        let dup = track_json("a1"); // same id as local
+        let merged = merge_tracks(vec![a.clone()], vec![b.clone(), dup], 50);
+        assert_eq!(merged.len(), 2, "relay dup of local id must be dropped");
+        assert_eq!(merged[0]["id"], "a1", "newest first");
+        assert_eq!(merged[1]["id"], "b2");
+        let capped = merge_tracks(vec![a.clone()], vec![b], 1);
+        assert_eq!(capped.len(), 1);
+        assert_eq!(capped[0]["id"], "a1");
+    }
+
+    #[test]
+    fn musicloud_row_to_json_roundtrip() {
+        let row = MusicloudRow {
+            id: "t1".into(),
+            pubkey: "pk1".into(),
+            audio_url: "blob://abcd".into(),
+            title: Some("Song".into()),
+            duration: None,
+            text_overlay: None,
+            thumbnail: Some("thumb".into()),
+            likes: 0,
+            liked: false,
+            bookmarked: false,
+            audience: "public".into(),
+            blob_hash: "abcd".into(),
+            media_size: 42,
+            hashtags: "[\"a\",\"b\"]".into(),
+            d: "soshal_music_1".into(),
+            created_at: 9,
+        };
+        let v = musicloud_row_to_json(&row);
+        assert_eq!(v["id"], "t1");
+        assert_eq!(v["audioUrl"], "blob://abcd");
+        assert_eq!(v["blobHash"], "abcd");
+        assert_eq!(v["mediaSize"], 42);
+        assert_eq!(v["hashtags"].as_array().unwrap().len(), 2);
+        assert_eq!(v["d"], "soshal_music_1");
+        assert_eq!(v["audience"], "public");
+        assert_eq!(v["createdAt"], 9);
+        assert_eq!(v["title"], "Song");
+    }
+
+    #[test]
+    fn persist_track_then_fetch_offline_returns_local() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let path = init_db("musicloud_local");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        let my_pk = super::super::signer::signer_pubkey().unwrap();
+        let mut t = track_json("tlocal");
+        t["pubkey"] = serde_json::json!(my_pk);
+        t["createdAt"] = serde_json::json!(500);
+        persist_published_track(&t);
+        // No relay client in tests → query fails → local-only fallback returns
+        // the persisted own track instead of an error.
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let json = rt
+            .block_on(music_fetch(50, None, "public".to_string()))
+            .unwrap();
+        let fetched: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(fetched.len(), 1);
+        assert_eq!(fetched[0]["id"], "tlocal");
+        super::super::signer::signer_lock().unwrap();
+        cleanup(&path);
     }
 
     #[test]

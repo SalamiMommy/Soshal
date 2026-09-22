@@ -487,9 +487,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen>
                       _category = '';
                       setState(() {});
                       try {
-                        await context
-                            .read<MarketplaceService>()
-                            .trending();
+                        await context.read<MarketplaceService>().trending();
                       } catch (e) {
                         debugPrint('trending: $e');
                       }

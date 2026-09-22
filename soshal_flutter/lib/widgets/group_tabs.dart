@@ -30,8 +30,22 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
     with AutomaticKeepAliveClientMixin {
   static const List<String> _quickEmojis = ['👍', '❤️', '🔥', '😂'];
   static const List<String> _allEmojis = [
-    '👍', '❤️', '🔥', '😂', '🎉', '🚀', '👀', '💯',
-    '👏', '🙏', '🤯', '😍', '🤔', '😭', '✨', '⚡',
+    '👍',
+    '❤️',
+    '🔥',
+    '😂',
+    '🎉',
+    '🚀',
+    '👀',
+    '💯',
+    '👏',
+    '🙏',
+    '🤯',
+    '😍',
+    '🤔',
+    '😭',
+    '✨',
+    '⚡',
   ];
 
   String _roomId = '';
@@ -91,7 +105,8 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
       if (!mounted) return;
       await groups.fetchMessages(widget.groupId, roomId: _roomId);
       final me = _me();
-      await groups.fetchRoomReactions(widget.groupId, _roomId, viewerPubkey: me);
+      await groups.fetchRoomReactions(widget.groupId, _roomId,
+          viewerPubkey: me);
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
@@ -115,7 +130,8 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
         emoji,
         me,
       );
-      await groups.fetchRoomReactions(widget.groupId, _roomId, viewerPubkey: me);
+      await groups.fetchRoomReactions(widget.groupId, _roomId,
+          viewerPubkey: me);
       if (!mounted) return;
       setState(() {});
     } catch (e) {

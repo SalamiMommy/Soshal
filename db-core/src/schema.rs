@@ -1,8 +1,15 @@
 //! Database schema migrations.
 
-// NOTE: Do NOT add new migration files. The app has not been released yet —
-// modify v001_initial.rs directly to flatten all schema changes. Migrations
-// are only needed after the first public release when real user data exists.
+// NOTE: Migrations are enabled. `v001_initial.rs` is the squashed pre-release
+// baseline — it was formed by flattening the pre-public-release migration
+// chain (v001-v013) into a single step, so every existing database is already
+// at version 1 with the full schema. From here on, schema changes MUST land as
+// new `v0NN_*.rs` migration files: register the module + re-export in
+// `migrations/mod.rs`, add it to the `steps` array in `migrate()`, and bump
+// `SCHEMA_VERSION`. Each migration runs inside the `BEGIN IMMEDIATE` txn and
+// records its own version (`INSERT OR IGNORE INTO _migrations (version)
+// VALUES (N)`); it must stay idempotent so re-runs and `migrate()` on
+// already-migrated databases are no-ops.
 
 pub mod migrations;
 
@@ -30,6 +37,10 @@ const LEGACY_ALTER_COLUMNS: &[(&str, &str, &str)] = &[
     ("escrows", "seller_confirmed", "INTEGER NOT NULL DEFAULT 0"),
     ("groups", "password_hash", "TEXT"),
     ("group_messages", "room_id", "TEXT NOT NULL DEFAULT ''"),
+    ("musiclouds", "blob_hash", "TEXT NOT NULL DEFAULT ''"),
+    ("musiclouds", "media_size", "INTEGER NOT NULL DEFAULT 0"),
+    ("musiclouds", "hashtags", "TEXT NOT NULL DEFAULT '[]'"),
+    ("musiclouds", "d", "TEXT NOT NULL DEFAULT ''"),
 ];
 
 /// Adds columns and tables lost in the migration squash to legacy databases.

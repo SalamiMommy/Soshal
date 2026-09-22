@@ -1647,11 +1647,19 @@ fn test_musicloud_crud() {
         liked: false,
         bookmarked: false,
         audience: "public".into(),
+        blob_hash: String::new(),
+        media_size: 0,
+        hashtags: "[\"a\"]".into(),
+        d: "soshal_music_100".into(),
         created_at: 1000,
     };
     repo.upsert(&row).unwrap();
     assert_eq!(repo.list(10, 0).unwrap().len(), 1);
     assert_eq!(repo.list_by_author("pk1", 10).unwrap().len(), 1);
+    let stored = &repo.list(10, 0).unwrap()[0];
+    assert_eq!(stored.media_size, 0);
+    assert_eq!(stored.d, "soshal_music_100");
+    assert_eq!(stored.hashtags, "[\"a\"]");
 
     repo.set_like("mc1", true).unwrap();
     let liked = repo.list(10, 0).unwrap();
@@ -1662,6 +1670,84 @@ fn test_musicloud_crud() {
 
     repo.delete("mc1").unwrap();
     assert!(repo.list(10, 0).unwrap().is_empty());
+}
+
+#[test]
+fn test_heal_adds_musicloud_track_columns_to_legacy_db() {
+    // Simulate a pre-squash database: `musiclouds` exists but lacks the
+    // track columns (blob_hash/media_size/hashtags/d) that were squashed
+    // into v001. Schema is already at SCHEMA_VERSION, so only the heal path
+    // (which runs before the version short-circuit) repairs the table.
+    let db = Database::open_in_memory().unwrap();
+    {
+        let conn = db.conn().unwrap();
+        soshal_db_core::block_on(conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')));",
+        ))
+        .unwrap();
+        soshal_db_core::block_on(
+            conn.execute_batch("INSERT INTO _migrations (version) VALUES (1);"),
+        )
+        .unwrap();
+        soshal_db_core::block_on(conn.execute_batch(
+            "CREATE TABLE musiclouds (
+                id TEXT PRIMARY KEY,
+                pubkey TEXT NOT NULL DEFAULT '',
+                audio_url TEXT NOT NULL DEFAULT '',
+                title TEXT,
+                duration INTEGER,
+                text_overlay TEXT,
+                thumbnail TEXT,
+                likes INTEGER NOT NULL DEFAULT 0,
+                liked INTEGER NOT NULL DEFAULT 0,
+                bookmarked INTEGER NOT NULL DEFAULT 0,
+                audience TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL DEFAULT 0
+            );",
+        ))
+        .unwrap();
+    }
+    db.migrate().unwrap();
+
+    let conn = db.conn().unwrap();
+    let cols: Vec<String> = soshal_db_core::query::query(
+        &conn,
+        "SELECT name FROM pragma_table_info('musiclouds')",
+        (),
+        |row| row.get(0),
+    )
+    .unwrap();
+    for c in ["blob_hash", "media_size", "hashtags", "d"] {
+        assert!(cols.contains(&c.to_string()), "heal missing {c}: {cols:?}");
+    }
+    drop(conn);
+
+    // New columns must be usable (repo roundtrip) on the healed table.
+    let repo = MusicloudRepo::new(&db);
+    let row = MusicloudRow {
+        id: "t1".into(),
+        pubkey: "pk1".into(),
+        audio_url: "blob://abcd".into(),
+        title: None,
+        duration: None,
+        text_overlay: None,
+        thumbnail: None,
+        likes: 0,
+        liked: false,
+        bookmarked: false,
+        audience: "public".into(),
+        blob_hash: "abcd".into(),
+        media_size: 42,
+        hashtags: "[\"a\"]".into(),
+        d: "soshal_music_1".into(),
+        created_at: 9,
+    };
+    repo.upsert(&row).unwrap();
+    let stored = &repo.list(10, 0).unwrap()[0];
+    assert_eq!(stored.blob_hash, "abcd");
+    assert_eq!(stored.media_size, 42);
+    assert_eq!(stored.hashtags, "[\"a\"]");
+    assert_eq!(stored.d, "soshal_music_1");
 }
 
 #[test]

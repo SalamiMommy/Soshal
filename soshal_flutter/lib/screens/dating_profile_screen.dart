@@ -153,6 +153,65 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
     }
   }
 
+  /// Consent gate: IP geolocation discloses the user's public IP to a
+  /// third-party provider.
+  Future<bool> _confirmIpLocation() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Use IP location?'),
+        content: const Text(
+          'Soshal will look up an approximate position from your public IP '
+          'address. Your IP is sent to ipwho.is, a third-party geolocation '
+          'service. The result is city-level accuracy — you can adjust the '
+          'coordinates afterwards.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Allow'),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
+
+  /// Approximate location fill from the egress IP — works when the OS
+  /// location service is off (desktop Linux).
+  Future<void> _useIpLocation() async {
+    if (!await _confirmIpLocation()) return;
+    if (!mounted) return;
+    final events = context.read<EventsService>();
+    try {
+      final location = await PermissionsService.ipLocation();
+      if (!location.ok) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: SelectableText(
+                  'IP location unavailable: ${location.error}'
+                  '\n\nTip: enter lat,lon or a geohash manually below.')));
+        }
+        return;
+      }
+      final geohash = events.encodeGeohash(
+          lat: location.latitude!, lon: location.longitude!);
+      if (!mounted) return;
+      setState(() => _location.text = geohash);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Geohash from IP — approximate, adjust if needed')));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: SelectableText('IP location failed: $e')));
+      }
+    }
+  }
+
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
@@ -398,6 +457,17 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
                 icon: const Icon(Icons.my_location),
                 tooltip: 'Locate me — calculate geohash',
                 onPressed: _useMyLocation,
+              ),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _useIpLocation,
+              icon: const Icon(Icons.language, size: 18),
+              label: const Text('Use IP location (approximate)'),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
               ),
             ),
           ),

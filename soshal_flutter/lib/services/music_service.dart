@@ -1,5 +1,6 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
@@ -8,6 +9,7 @@ import '../utils/safe_url.dart';
 import '../utils/media_upload.dart';
 import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
+import 'audio_service.dart';
 import 'error_log.dart';
 import 'media_service.dart';
 import 'p2p_service.dart';
@@ -375,6 +377,39 @@ Future<bool> hostTrackBlob(
     }
   }
   return false;
+}
+
+/// Extracts waveform peaks (0..1 RMS bins, 64 default) for a track's audio so
+/// the playing bar can draw a scrubber. Local CAS blob first (resolveBlobPath
+/// gives a file path; sync-server streams the same file), then a downloaded
+/// http(s) copy. Returns an empty list when the audio is unreachable — the
+/// bar then renders progress-only instead of a fabricated waveform.
+Future<List<double>> extractTrackPeaks(
+  MusicTrack track, {
+  required MediaService media,
+  required P2pService p2p,
+}) async {
+  final audio = AudioService();
+  try {
+    if (track.blobHash.isNotEmpty) {
+      final path = await resolveBlobPath(media, p2p, track.blobHash);
+      if (path != null && File(path).existsSync()) {
+        final peaks = await audio.peaksFor(path);
+        if (peaks.isNotEmpty) return peaks;
+      }
+    }
+    final url = track.audioUrl;
+    if (url.isNotEmpty && SafeUrl.isSafeMediaUrl(url)) {
+      final cached =
+          await media.fetch(url, cacheDir: await media.getCachePath());
+      final peaks = await audio.peaksFor(cached);
+      if (peaks.isNotEmpty) return peaks;
+    }
+  } catch (e) {
+    debugPrint('extractTrackPeaks: $e');
+    logRuntimeError(e);
+  }
+  return const [];
 }
 
 /// A comment on a track (kind 1 with `E` tag), serialized via `mini_event_out`.

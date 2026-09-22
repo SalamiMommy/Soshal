@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `client_guard`, `connect_i2p`, `get_or_rebuild_http3_client`, `i2p_active`, `i2p_socks_addr`, `relay_status_snapshot`, `resolved_kind`, `reticulum_started`, `transport_mode`
+// These functions are ignored because they are not marked as `pub`: `client_guard`, `connect_i2p`, `freenet_current`, `freenet_stored`, `get_or_rebuild_http3_client`, `i2p_active`, `i2p_socks_addr`, `managed_sam_endpoint`, `relay_status_snapshot`, `resolved_kind`, `reticulum_started`, `transport_mode`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `RelayInfo`, `ReticulumStatusDto`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`
 
@@ -40,6 +40,14 @@ Future<String> networkGetRelayStatus() =>
 
 /// Summary of relay connectivity: `{connected, total}` — drives the app-wide
 /// offline banner. One relay connected means we are online.
+///
+/// Mesh transports (reticulum/freenet/i2p) carry traffic without the wss relay
+/// client. The mesh "online" exemption must come from the mesh relay node
+/// actually running (`relay::mesh_running`), NOT from the transport probe —
+/// a bind probe only proves a daemon socket is open, not that egress works, so
+/// a probe-satisfied-but-dead transport would otherwise force the banner
+/// green. With the mesh node stopped, zero connected relays means offline,
+/// honestly.
 Future<String> networkRelayConnectionStatus() =>
     RustLib.instance.api.crateFfiNetworkNetworkRelayConnectionStatus();
 
@@ -57,7 +65,9 @@ Future<bool> networkUnsubscribe({required String subscriptionId}) =>
         .crateFfiNetworkNetworkUnsubscribe(subscriptionId: subscriptionId);
 
 /// Publish an already-signed event (JSON) to all connected relays.
-/// Returns the number of relays that accepted it.
+/// Returns the number of relays that accepted it; Err when no relay
+/// accepted (event never reached the network — callers must surface or
+/// retry, never claim success).
 /// Mesh transports publish via the mesh relay node (flood) first.
 Future<int> networkPublishEvent({required String eventJson}) =>
     RustLib.instance.api
@@ -154,12 +164,13 @@ String reticulumCreateAnnounce({required String pubkey, String? aspect}) =>
     RustLib.instance.api
         .crateFfiNetworkReticulumCreateAnnounce(pubkey: pubkey, aspect: aspect);
 
-/// Connects to a Freenet node via WebSocket
+/// Connects to a Freenet node via WebSocket, replacing any stored client so
+/// the connection persists for later `freenet_*` calls.
 Future<bool> freenetConnect({required String url, required String authToken}) =>
     RustLib.instance.api
         .crateFfiNetworkFreenetConnect(url: url, authToken: authToken);
 
-/// Fetches contract state from Freenet
+/// Fetches contract state from Freenet (via the persistent client).
 Future<String> freenetGetContract(
         {required String url,
         required String authToken,
@@ -168,7 +179,7 @@ Future<String> freenetGetContract(
     RustLib.instance.api.crateFfiNetworkFreenetGetContract(
         url: url, authToken: authToken, key: key, subscribe: subscribe);
 
-/// Publishes contract state to Freenet
+/// Publishes contract state to Freenet (via the persistent client).
 Future<String> freenetPutContract(
         {required String url,
         required String authToken,
@@ -180,7 +191,7 @@ Future<String> freenetPutContract(
         stateJson: stateJson,
         subscribe: subscribe);
 
-/// Subscribes to Freenet contract updates
+/// Subscribes to Freenet contract updates (via the persistent client).
 Future<bool> freenetSubscribe(
         {required String url,
         required String authToken,
@@ -189,12 +200,21 @@ Future<bool> freenetSubscribe(
     RustLib.instance.api.crateFfiNetworkFreenetSubscribe(
         url: url, authToken: authToken, key: key, summaryJson: summaryJson);
 
-/// Connects to I2P SAM bridge
+/// Reachability probe against a SAM bridge: connects and completes the SAM
+/// handshake, then drops the client. Honest as a probe — the result reports
+/// bridge reachability at call time, nothing more. For a durable session use
+/// `i2p_start_session`.
 bool i2PConnect({required String samHost, required int samPort}) =>
     RustLib.instance.api
         .crateFfiNetworkI2PConnect(samHost: samHost, samPort: samPort);
 
-/// Creates an I2P session
+/// Creates (or re-binds) an I2P SAM session, returning its destination.
+///
+/// When the endpoint is the managed default bridge the session is created on
+/// the persistent `I2P_MANAGER` so it stays alive across calls (stop it with
+/// `i2p_stop_session`). Any other bridge cannot persist: SAM session state
+/// dies with the control socket, so the surface fails closed instead of
+/// returning a destination that stops working on the next call.
 String i2PCreateSession(
         {required String samHost,
         required int samPort,
@@ -206,13 +226,20 @@ String i2PCreateSession(
         sessionId: sessionId,
         destination: destination);
 
-/// Generates a new I2P destination
+/// Generates a new I2P destination via SAM. Pure keygen — the returned
+/// destination is real and can later be made persistent by passing it to
+/// `i2p_start_session(destination: ...)`.
 String i2PGenerateDestination(
         {required String samHost, required int samPort}) =>
     RustLib.instance.api.crateFfiNetworkI2PGenerateDestination(
         samHost: samHost, samPort: samPort);
 
-/// Connects to a remote I2P destination
+/// Opens an outbound SAM tunnel to a remote I2P destination.
+///
+/// Rides the persistent `I2P_MANAGER` session on the managed default bridge so
+/// the tunnel is established through a session that survives the call; any
+/// other bridge fails closed (one-shot tunnels are dropped with the client and
+/// returning `true` would claim a connection that no longer exists).
 bool i2PConnectToDestination(
         {required String samHost,
         required int samPort,
@@ -288,7 +315,10 @@ bool networkReticulumStop() =>
 String networkReticulumStatus() =>
     RustLib.instance.api.crateFfiNetworkNetworkReticulumStatus();
 
-/// Announce the active Reticulum destination.
+/// Announce the active Reticulum destination to known peers. The announce
+/// packet carries the node destination so peers build a path to it; with zero
+/// known peers nothing can be delivered, and that is reported honestly as an
+/// error rather than a silent success.
 bool networkReticulumAnnounce({required String pubkey}) => RustLib.instance.api
     .crateFfiNetworkNetworkReticulumAnnounce(pubkey: pubkey);
 
@@ -309,6 +339,7 @@ String? networkSkademliaGenerateNodeId(
     RustLib.instance.api.crateFfiNetworkNetworkSkademliaGenerateNodeId(
         pubkey: pubkey, staticNonce: staticNonce, dynamicNonce: dynamicNonce);
 
+/// Raw HTTP response: status code plus body bytes.
 class HttpResponseDto {
   final int status;
   final Uint8List body;

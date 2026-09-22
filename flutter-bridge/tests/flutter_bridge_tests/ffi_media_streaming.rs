@@ -168,6 +168,35 @@ mod ffi_media_streaming_tests {
         let _ = std::fs::remove_file(&src);
         let _ = std::fs::remove_file(&out);
     }
+    /// Musicloud FLAC path: a real FLAC file uploads through
+    /// `media_upload_blob_file`, fetches back byte-identical, and sniffing
+    /// classifies it as `audio/flac`. Pins lossless upload (no mime gate).
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn media_upload_flac_roundtrip() {
+        let _g = crate::test_util::lock();
+        const FLAC: &[u8] = include_bytes!("../../../audio-core/tests/fixtures/sine_440_1s.flac");
+        assert!(
+            FLAC.len() > 4 && &FLAC[..4] == b"fLaC",
+            "fixture is a flac stream"
+        );
+        let src = temp_path("track.flac");
+        std::fs::write(&src, FLAC).unwrap();
+        assert_eq!(
+            media::media_get_mime_type(src.clone()).unwrap(),
+            "audio/flac"
+        );
+        let json = media::media_upload_blob_file(src.clone()).await.unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let hash = manifest["blob_hash"].as_str().unwrap().to_string();
+        assert_eq!(hash.len(), 64);
+        assert_eq!(manifest["total_size"].as_u64().unwrap(), FLAC.len() as u64);
+        let out = temp_path("flac_out");
+        media::media_fetch_blob(hash, out.clone()).await.unwrap();
+        assert_eq!(std::fs::read(&out).unwrap(), FLAC);
+        let _ = std::fs::remove_file(&src);
+        let _ = std::fs::remove_file(&out);
+    }
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn media_upload_blob_file_rejects_ssrf_urls() {

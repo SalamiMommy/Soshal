@@ -245,7 +245,8 @@ class _FeedScreenState extends State<FeedScreen> {
       body = EmptyState(
         icon: Icons.filter_list_off,
         title: 'No posts match this filter',
-        body: 'Try switching your feed tab or audience filter to see more posts.',
+        body:
+            'Try switching your feed tab or audience filter to see more posts.',
         action: ElevatedButton(
           onPressed: _refreshFeed,
           child: const Text('Refresh'),
@@ -547,10 +548,8 @@ class _FeedPostCardState extends State<FeedPostCard> {
                           await context.read<FeedService>().fetchFeed();
                         } catch (e) {
                           if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content:
-                                        SelectableText('Feed refresh: $e')));
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: SelectableText('Feed refresh: $e')));
                           }
                         }
                       } catch (e) {

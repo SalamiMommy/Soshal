@@ -5049,6 +5049,35 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
+  void wire__crate__ffi__geoloc__geoloc_ip_lookup(
+    int port_,
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__geoloc__geoloc_ip_lookup(
+      port_,
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__geoloc__geoloc_ip_lookupPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__geoloc__geoloc_ip_lookup');
+  late final _wire__crate__ffi__geoloc__geoloc_ip_lookup =
+      _wire__crate__ffi__geoloc__geoloc_ip_lookupPtr
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
+
   WireSyncRust2DartSse wire__crate__ffi__groups__groups_create(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -16122,7 +16151,7 @@ const int COLOR_FormatYUV420Flexible = 2135033992;
 typedef DartPort = ffi.Int64;
 typedef DartDartPort = int;
 
-
+const int MAX_DECODE_OUTPUT_PIXELS = 8388608;
 
 
 

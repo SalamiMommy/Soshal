@@ -80,7 +80,7 @@ An unwired call panics at runtime (undefined symbol).
 | `notifications` | unread, mark read, per-type |
 | `moderation` | mute lists, word filters, `should_filter` |
 | `network` | relay pool (add/remove/subscribe/publish/query — all live), I2P/Freenet/SAM, Reticulum mesh, multi-bearer status |
-| `relay` | local relay node start/stop/status (`soshal-relay-core`) |
+| `relay` | local relay node start/stop/status (`soshal-relay-core`); stopped + relay state dropped on account switch |
 | `p2p` | mDNS discovery, LAN chunk server, peer blob fetch, QUIC streams, swarm downloads |
 | `media` | local load, mime, fetch (async) |
 | `zap` | LNURL/NWC (NIP-47): connect, fetch invoice, send payment, receipts, totals |

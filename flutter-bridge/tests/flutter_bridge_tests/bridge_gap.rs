@@ -47,7 +47,7 @@ mod bridge_gap_tests {
         let (pk, secret) = gen_keys();
         signer::signer_lock().unwrap();
         network::network_set_transport_mode("nostr".to_string()).unwrap();
-        let rt = tokio::runtime::Builder::new_current_thread()
+        let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap();

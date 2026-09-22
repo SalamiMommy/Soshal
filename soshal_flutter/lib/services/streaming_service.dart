@@ -203,7 +203,8 @@ class StreamingService extends ChangeNotifier
     return parsed;
   }
 
-  Future<List<StreamRow>> fetchFollowedStories(String viewerPubkey, {String audience = 'following'}) async {
+  Future<List<StreamRow>> fetchFollowedStories(String viewerPubkey,
+      {String audience = 'following'}) async {
     final parsed = await _decode(
       () => RustLib.instance.api.crateFfiStreamingStreamingFetchFollowedStories(
         audience: audience,

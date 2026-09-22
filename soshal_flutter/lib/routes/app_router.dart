@@ -7,6 +7,7 @@ import '../screens/feed_screen.dart';
 import '../screens/profile_screen.dart';
 import '../screens/inbox_screen.dart';
 import '../screens/settings_screen.dart';
+import '../screens/geohash_calculator_screen.dart';
 import '../screens/notifications_screen.dart';
 import '../screens/edit_profile_screen.dart';
 import '../screens/accounts_screen.dart';
@@ -346,6 +347,10 @@ class AppRouter {
           GoRoute(
             path: '/settings/network',
             builder: (context, state) => const NetworkSettingsScreen(),
+          ),
+          GoRoute(
+            path: '/settings/geohash',
+            builder: (context, state) => const GeohashCalculatorScreen(),
           ),
           GoRoute(
             path: '/post/:eventId',

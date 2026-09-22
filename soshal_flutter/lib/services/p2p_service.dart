@@ -58,6 +58,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   Duration? _pollInterval;
   bool _pollingEnabled = false;
   bool _pollInFlight = false;
+
   /// Mutable hint for the poll loop; nulled once its download leaves the map
   /// so polling latches onto a live download (see [startPolling]).
   String? _activeDownloadId;

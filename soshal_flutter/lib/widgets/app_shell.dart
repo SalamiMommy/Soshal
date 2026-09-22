@@ -13,6 +13,7 @@ import '../services/signer_service.dart';
 import '../services/theme_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import 'audio_waveform_bar.dart';
 import 'lock_screen.dart';
 import 'signer_lock_screen.dart';
 
@@ -869,21 +870,72 @@ class _GlobalAudioBar extends StatelessWidget {
         child: Card(
           margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
+            padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.music_note),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    shell.audioTitle,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                Row(
+                  children: [
+                    const Icon(Icons.music_note),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        shell.audioTitle,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    StreamBuilder<Duration?>(
+                      stream: shell.audioDurationStream,
+                      initialData: Duration.zero,
+                      builder: (_, durationSnap) {
+                        final d = durationSnap.data ?? Duration.zero;
+                        if (d.inSeconds <= 0) return const SizedBox.shrink();
+                        return StreamBuilder<Duration>(
+                          stream: shell.audioPositionStream,
+                          initialData: Duration.zero,
+                          builder: (_, positionSnap) => Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Text(
+                              '${_fmt(positionSnap.data ?? Duration.zero)} / ${_fmt(d)}',
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        shell.audioPlaying ? Icons.pause : Icons.play_arrow,
+                      ),
+                      tooltip: shell.audioPlaying ? 'Pause' : 'Play',
+                      onPressed: shell.audioPlaying
+                          ? () => shell.pauseAudio()
+                          : () => shell.resumeAudio(),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Stop',
+                      onPressed: () => shell.stopAudio(),
+                    ),
+                  ],
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  tooltip: 'Stop',
-                  onPressed: () => shell.stopAudio(),
+                const SizedBox(height: 4),
+                StreamBuilder<Duration?>(
+                  stream: shell.audioDurationStream,
+                  initialData: Duration.zero,
+                  builder: (_, durationSnap) => StreamBuilder<Duration>(
+                    stream: shell.audioPositionStream,
+                    initialData: Duration.zero,
+                    builder: (_, positionSnap) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: AudioWaveformSeekBar(
+                        peaks: shell.audioPeaks,
+                        position: positionSnap.data ?? Duration.zero,
+                        duration: durationSnap.data,
+                        onSeek: (p) => shell.seekAudio(p),
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -891,5 +943,11 @@ class _GlobalAudioBar extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  static String _fmt(Duration d) {
+    final m = d.inMinutes.toString().padLeft(2, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 }

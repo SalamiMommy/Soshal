@@ -1214,8 +1214,7 @@ class _LikesTabState extends State<_LikesTab> {
                         if (ok) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                                content:
-                                    SelectableText('It\'s a match!')),
+                                content: SelectableText('It\'s a match!')),
                           );
                         } else {
                           ScaffoldMessenger.of(context).showSnackBar(

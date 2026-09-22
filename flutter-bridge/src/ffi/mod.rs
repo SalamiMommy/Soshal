@@ -19,6 +19,7 @@ pub mod ebpf;
 pub mod ephemeral;
 pub mod events;
 pub mod feed;
+pub mod geoloc;
 pub mod groups;
 pub mod guestbook;
 pub mod h264;

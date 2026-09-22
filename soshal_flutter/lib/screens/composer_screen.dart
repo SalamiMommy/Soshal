@@ -32,6 +32,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
   final List<String> _tags = [];
   final List<String> _mentions = [];
   Timer? _tagDebounce;
+
   /// Bumped on every debounce tick; a slow `mentions()` result from an older
   /// tick is discarded when it lands (stale-closure guard).
   int _mentionGen = 0;

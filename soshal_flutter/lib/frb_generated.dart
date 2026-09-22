@@ -81,7 +81,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 134321592;
+  int get rustContentHash => 1908233765;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -554,6 +554,8 @@ abstract class RustLibApi extends BaseApi {
       required String authToken,
       required String key,
       String? summaryJson});
+
+  Future<LocationFixDto> crateFfiGeolocGeolocIpLookup();
 
   String crateFfiGroupsGroupsCreate(
       {required String groupId,
@@ -5884,6 +5886,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "freenet_subscribe",
         argNames: ["url", "authToken", "key", "summaryJson"],
+      );
+
+  @override
+  Future<LocationFixDto> crateFfiGeolocGeolocIpLookup() {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__geoloc__geoloc_ip_lookup(
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_location_fix_dto,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiGeolocGeolocIpLookupConstMeta,
+      argValues: [],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiGeolocGeolocIpLookupConstMeta =>
+      const TaskConstMeta(
+        debugName: "geoloc_ip_lookup",
+        argNames: [],
       );
 
   @override

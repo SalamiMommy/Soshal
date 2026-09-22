@@ -4,6 +4,49 @@ Finding ledger for the periodic full-workspace bug sweeps. Each round lists
 what was found, what was fixed (with file refs), and what was examined and
 cleared. Rounds are cumulative; last-known-good state is shaded green.
 
+## Round 10 — 2026-09-22: transport hardening + cross-account isolation (`763d592`)
+
+Scope: `feat(network): harden transports, isolate mesh per account`
+(2026-09-21 22:02) plus tail fixes landed after round 9 (
+`8749320` publish error, `851f9aa` Linux location pre-check, `f22cbf0` relay
+status re-poll). Re-verified against source.
+
+### Fixed (this round, verified against git log + source)
+- **Swarm symlink `out_path` (WP11)** (`network-core/swarm.rs`) — final-path
+  component symlink refused (`symlink_metadata` check); parent directory
+  canonicalized and `..`/symlink escapes rejected before open.
+- **QUIC resource exhaustion** (`network-core/quic.rs`) — `HANDSHAKE_TIMEOUT`
+  10 s / `CONNECT_TIMEOUT` 5 s / `STREAM_WRITE_TIMEOUT` 30 s + 16 MiB
+  `MAX_STREAM_FRAME` cap so a stalled peer can't pin accept loops or inflate
+  send buffers.
+- **Gossip verify-before-amplify + per-account dedup (L7)**
+  (`sync-core/gossip.rs`) — Gossip only amplified when signature-valid AND
+  `event.id` matches the claimed `message_id`; dedup keyed
+  `<account_pubkey>:<event_id>` so an event ingested under account A still
+  ingests for account B (no cross-account relay of attacker-chosen ids).
+- **Cross-account mesh isolation** (`flutter-bridge/src/ffi/relay.rs` +
+  `session_service.dart`) — account switch stops the Rust mesh relay node
+  and drops relay state; new-identity traffic never routes under the old
+  pubkey. Flutter relay screens read real status from bridge truth (no
+  fabricated connected flags).
+- **Freenet websocket + mesh relay fixes** (`mesh-core/freenet_websocket.rs`)
+  plus bridge p-tag checks in `network-core`, `sync-core`, `gossip.rs`.
+- **Tail fixes** — publish error surfaced when no relay accepts
+  (`8749320`); Linux location-service pre-check before portal (`851f9aa`);
+  relay status re-poll for offline banner (`f22cbf0`).
+
+### Cleared (verified against source this round)
+- No new stub/gated surfaces introduced; existing gated list unchanged
+  (FCM/TURN/WebRTC media/WASI wasm/ZK/FROST/eBPF/seednode announce/raster).
+- FFI surface: `relay_node_start/stop/status` unchanged
+  (account-scoping internal); `network_*` live relay fns still resolve.
+- Docs/annotations for this round: AGENTS.md transport-hardening paragraph,
+  CHANGELOG Unreleased batch, FFI_BRIDGE_GUIDE `relay` row.
+
+### Verified
+- In-code annotations present (WP11 comment, constant docs, per-account dedup
+  doc comments). Doc-only changes this round; no cargo/flutter re-run needed.
+
 ## Round 9 — 2026-09-21: transport/scheduler/native-surface post-sweep
 
 Scope: 3 weeks of fix batches (Sept 7-21, ~138 commits) landed since round 8 —

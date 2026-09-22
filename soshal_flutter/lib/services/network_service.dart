@@ -241,8 +241,8 @@ class NetworkService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
         if (ok) {
           // Refresh the local list from bridge truth — the connected flag must
           // come from real relay status, never fabricated.
-          final json = await RustLib.instance.api
-              .crateFfiNetworkNetworkGetRelayStatus();
+          final json =
+              await RustLib.instance.api.crateFfiNetworkNetworkGetRelayStatus();
           _relays = (jsonDecode(json) as List<dynamic>)
               .map((e) => RelayInfo.fromJson(e as Map<String, dynamic>))
               .toList();
@@ -267,8 +267,8 @@ class NetworkService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
         // Sync the local list with bridge truth (including real connected
         // flags) so screens never render the stale pre-init list. Only runs
         // after a successful init — a failed init leaves _relays untouched.
-        final json = await RustLib.instance.api
-            .crateFfiNetworkNetworkGetRelayStatus();
+        final json =
+            await RustLib.instance.api.crateFfiNetworkNetworkGetRelayStatus();
         _relays = (jsonDecode(json) as List<dynamic>)
             .map((e) => RelayInfo.fromJson(e as Map<String, dynamic>))
             .toList();

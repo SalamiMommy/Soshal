@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:geolocator/geolocator.dart';
 
+// ignore_for_file: invalid_use_of_internal_member
 import '../ffi/permissions.dart' as ffi;
+import '../frb_generated.dart';
 
 /// Outcome of a permission request.
 class PermissionResult {
@@ -240,5 +242,22 @@ class PermissionsService {
       }
     }
     return const LocationResult.failed('Location unavailable on this platform');
+  }
+
+  /// Approximate coordinates from the egress IP (city-level accuracy).
+  ///
+  /// Fallback when the OS location service is off — typical desktop Linux,
+  /// where the XDG portal rejects before any dialog can appear. Callers
+  /// MUST show a consent dialog first: the query discloses the user's
+  /// public IP to a third-party provider (ipwho.is).
+  static Future<LocationResult> ipLocation() async {
+    try {
+      final fix = await RustLib.instance.api.crateFfiGeolocGeolocIpLookup();
+      return LocationResult.coords(fix.latitude, fix.longitude);
+    } catch (e) {
+      return LocationResult.failed(
+          'IP location unavailable: $e\n\nTip: enter coordinates manually — '
+          'geohash encoding needs no location service.');
+    }
   }
 }

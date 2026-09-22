@@ -117,6 +117,37 @@ fn waveform_wav_path_with_extension_hint() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// Real FLAC container (Symphonia `flac` feature path): a 1 s 440 Hz sine
+/// fixture generated with ffmpeg, same include_bytes pattern as the
+/// moderation-core video fixtures. Pins the Musicloud upload + waveform
+/// path for lossless FLAC files.
+#[test]
+fn waveform_from_flac_container() {
+    const FLAC: &[u8] = include_bytes!("fixtures/sine_440_1s.flac");
+    assert!(
+        FLAC.len() > 4 && &FLAC[..4] == b"fLaC",
+        "fixture is a flac stream"
+    );
+    let peaks = extract_waveform_bytes(FLAC, 64).unwrap();
+    assert_eq!(peaks.len(), 64);
+    for p in &peaks {
+        assert!((0.0..=1.0).contains(p), "peak out of range: {p}");
+    }
+    assert!(
+        peaks.iter().any(|p| *p > 0.05),
+        "sine should register energy"
+    );
+    assert!(peaks.iter().any(|p| *p > 0.9), "sine peak near 1.0");
+    // Same file via the path API (extension hint routes the prober to FLAC).
+    let dir = soshal_test_util::tmp_root("audio-flac");
+    let path = dir.join("track.flac");
+    std::fs::write(&path, FLAC).unwrap();
+    let path_peaks = extract_waveform_path(path.to_str().unwrap(), 64).unwrap();
+    assert_eq!(path_peaks.len(), 64);
+    assert!(path_peaks.iter().any(|p| *p > 0.05));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn waveform_rejects_garbage_bytes() {
     assert!(extract_waveform_bytes(b"not audio at all", 32).is_err());

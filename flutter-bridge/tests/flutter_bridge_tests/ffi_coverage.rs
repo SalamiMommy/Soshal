@@ -459,4 +459,21 @@ mod ffi_coverage_tests {
         assert_eq!(p2p::p2p_quic_server_port().unwrap(), port);
         assert!(p2p::p2p_quic_server_stop().unwrap());
     }
+    #[test]
+    fn geoloc_ip_lookup_ok_or_honest_error() {
+        // Tolerant by design: live — network-dependent. The surface must
+        // return a valid fix when reachable and never fabricate a position;
+        // without connectivity an honest non-empty error is acceptable.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        match rt.block_on(geoloc::geoloc_ip_lookup()) {
+            Ok(fix) => {
+                assert!((-90.0..=90.0).contains(&fix.latitude));
+                assert!((-180.0..=180.0).contains(&fix.longitude));
+            }
+            Err(e) => assert!(!e.is_empty(), "empty error string"),
+        }
+    }
 }

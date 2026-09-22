@@ -13,6 +13,10 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// Start advertising this device's chunk server over mDNS. `pubkey` may be
 /// empty, in which case the unlocked signer's pubkey is used. `quic_port` is
 /// advertised in TXT records if provided.
+///
+/// When an advertiser already exists the record is *re-announced* with the new
+/// `quic_port` (TXT update) instead of no-opping — a QUIC server (re)started
+/// after the initial advertise must not leave LAN peers caching the old port.
 bool p2PMdnsAdvertiseStart(
         {required String pubkey, required int port, int? quicPort}) =>
     RustLib.instance.api.crateFfiP2PP2PMdnsAdvertiseStart(

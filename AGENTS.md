@@ -151,6 +151,16 @@ media landed. FFI: `p2p_quic_server_start/port/stop`, `p2p_quic_fetch_chunk`,
 `swarmDownload(quicPorts:)` (parallel `Vec<Option<u16>>`) falls back to TCP per
 peer when null (`swarm.rs::fetch_from_peer`).
 
+**Transport hardening (2026-09-21, `763d592`)**: account switch stops the Rust
+mesh relay node + drops relay state so new-identity traffic never routes under
+the old pubkey (`ffi/relay.rs`). `swarm.rs` refuses a symlink `out_path` (WP11:
+canonicalized-parent escape check); `quic.rs` adds handshake/connect/
+stream-write timeouts + a 16 MiB `MAX_STREAM_FRAME` cap so a stalled peer can't
+pin accept loops or send buffers. `sync-core/gossip.rs` verifies signatures
+before amplifying (`verify_event` + id match) and dedups per account
+(`<account_pubkey>:<event_id>` — L7). Relay screens read status from bridge
+truth (no fabricated connected flags).
+
 **Mesh transports** (mesh-core, split from network-core): freenet (websocket/
 contract/opennet/cache_router), i2p_sam, reticulum (`reticulum/`), ble,
 wifi_direct, plus the shared pqc_link (hybrid PQC double-ratchet link crypto)
@@ -252,7 +262,11 @@ corruptions to repair:
 **DB migrations** (db-core): `SCHEMA_VERSION` + a `v0NN_*.rs` migration file;
 each migration SQL records its own version
 (`INSERT OR IGNORE INTO _migrations (version) VALUES (N)`) and applies inside
-`BEGIN IMMEDIATE … COMMIT`. Bump `SCHEMA_VERSION` when adding one.
+`BEGIN IMMEDIATE … COMMIT`. Bump `SCHEMA_VERSION` when adding one. Baseline:
+`v001_initial.rs` is the squashed pre-release schema (the old v001–v013 chain
+was flattened into it, `SCHEMA_VERSION = 1`); upgrades are forward-only from
+version 1 — never edit v001 to mutate an existing database, add a new `v0NN`
+file instead.
 
 ## Architecture Rules
 

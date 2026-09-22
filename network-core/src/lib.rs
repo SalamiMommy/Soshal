@@ -10,6 +10,7 @@ pub mod blob_grab;
 pub mod discovery;
 pub mod ebpf;
 pub mod eigentrust;
+pub mod geoloc;
 pub mod heuristics;
 pub mod http3_client;
 pub mod lan;

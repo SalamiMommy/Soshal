@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 134321592;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1908233765;
 
 // Section: executor
 
@@ -1519,15 +1519,15 @@ fn wire__crate__ffi__crypto__crypto_pir_evaluate_query_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_query_json = <String>::sse_decode(&mut deserializer);
-            let api_record_hex_list = <Vec<String>>::sse_decode(&mut deserializer);
+            let api__query_json = <String>::sse_decode(&mut deserializer);
+            let api__record_hex_list = <Vec<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
                     (move || async move {
                         let output_ok = crate::ffi::crypto::crypto_pir_evaluate_query(
-                            api_query_json,
-                            api_record_hex_list,
+                            api__query_json,
+                            api__record_hex_list,
                         )
                         .await?;
                         Ok(output_ok)
@@ -1560,17 +1560,17 @@ fn wire__crate__ffi__crypto__crypto_pir_generate_query_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_target_index = <usize>::sse_decode(&mut deserializer);
-            let api_dimension = <usize>::sse_decode(&mut deserializer);
-            let api_client_pubkey = <String>::sse_decode(&mut deserializer);
+            let api__target_index = <usize>::sse_decode(&mut deserializer);
+            let api__dimension = <usize>::sse_decode(&mut deserializer);
+            let api__client_pubkey = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
                     (move || async move {
                         let output_ok = crate::ffi::crypto::crypto_pir_generate_query(
-                            api_target_index,
-                            api_dimension,
-                            api_client_pubkey,
+                            api__target_index,
+                            api__dimension,
+                            api__client_pubkey,
                         )
                         .await?;
                         Ok(output_ok)
@@ -4907,6 +4907,41 @@ fn wire__crate__ffi__network__freenet_subscribe_impl(
         },
     )
 }
+fn wire__crate__ffi__geoloc__geoloc_ip_lookup_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "geoloc_ip_lookup",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::ffi::geoloc::geoloc_ip_lookup().await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__ffi__groups__groups_create_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -6581,14 +6616,14 @@ fn wire__crate__ffi__network__i2p_connect_to_destination_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_sam_host = <String>::sse_decode(&mut deserializer);
             let api_sam_port = <u16>::sse_decode(&mut deserializer);
-            let api_session_id = <String>::sse_decode(&mut deserializer);
+            let api__session_id = <String>::sse_decode(&mut deserializer);
             let api_destination = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
                 let output_ok = crate::ffi::network::i2p_connect_to_destination(
                     api_sam_host,
                     api_sam_port,
-                    api_session_id,
+                    api__session_id,
                     api_destination,
                 )?;
                 Ok(output_ok)
@@ -6619,14 +6654,14 @@ fn wire__crate__ffi__network__i2p_create_session_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_sam_host = <String>::sse_decode(&mut deserializer);
             let api_sam_port = <u16>::sse_decode(&mut deserializer);
-            let api_session_id = <String>::sse_decode(&mut deserializer);
+            let api__session_id = <String>::sse_decode(&mut deserializer);
             let api_destination = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
                 let output_ok = crate::ffi::network::i2p_create_session(
                     api_sam_host,
                     api_sam_port,
-                    api_session_id,
+                    api__session_id,
                     api_destination,
                 )?;
                 Ok(output_ok)
@@ -11033,10 +11068,10 @@ fn wire__crate__ffi__network__network_reticulum_announce_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api__pubkey = <String>::sse_decode(&mut deserializer);
+            let api_pubkey = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, String>((move || {
-                let output_ok = crate::ffi::network::network_reticulum_announce(api__pubkey)?;
+                let output_ok = crate::ffi::network::network_reticulum_announce(api_pubkey)?;
                 Ok(output_ok)
             })())
         },
@@ -19589,6 +19624,16 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__geoloc__geoloc_ip_lookup(
+        port_: i64,
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__geoloc__geoloc_ip_lookup_impl(port_, ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__groups__groups_create(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -25006,6 +25051,16 @@ mod web {
         data_len_: i32,
     ) {
         wire__crate__ffi__network__freenet_subscribe_impl(port_, ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__geoloc__geoloc_ip_lookup(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__geoloc__geoloc_ip_lookup_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]

@@ -1726,6 +1726,14 @@ class RustLibWire implements BaseWire {
       wasmModule.wire__crate__ffi__network__freenet_subscribe(
           port_, ptr_, rust_vec_len_, data_len_);
 
+  void wire__crate__ffi__geoloc__geoloc_ip_lookup(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__geoloc__geoloc_ip_lookup(
+          port_, ptr_, rust_vec_len_, data_len_);
+
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__groups__groups_create(
               PlatformGeneralizedUint8ListPtr ptr_,
@@ -5499,6 +5507,9 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
       PlatformGeneralizedUint8ListPtr ptr_,
       int rust_vec_len_,
       int data_len_);
+
+  external void wire__crate__ffi__geoloc__geoloc_ip_lookup(NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__groups__groups_create(

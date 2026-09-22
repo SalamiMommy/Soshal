@@ -4,10 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/mesh_service.dart';
-import '../services/events_service.dart';
 import '../services/network_service.dart';
 import '../services/p2p_service.dart';
-import '../services/permissions_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
 import '../widgets/error_state_text.dart';
@@ -58,11 +56,6 @@ class _NetworkScreenState extends State<NetworkScreen> {
   );
   final TextEditingController _fountainPacketsField =
       TextEditingController(text: '[]');
-  final TextEditingController _geohashLat =
-      TextEditingController(text: '52.5200');
-  final TextEditingController _geohashLng =
-      TextEditingController(text: '13.4050');
-  String? _geohashResult;
 
   @override
   void initState() {
@@ -84,8 +77,6 @@ class _NetworkScreenState extends State<NetworkScreen> {
     _outPathField.dispose();
     _fountainManifestField.dispose();
     _fountainPacketsField.dispose();
-    _geohashLat.dispose();
-    _geohashLng.dispose();
     super.dispose();
   }
 
@@ -643,50 +634,6 @@ class _NetworkScreenState extends State<NetworkScreen> {
           content: Text(bytes == null
               ? 'Decode failed (supply a real manifest + base64 packets)'
               : 'Decoded ${bytes.length} bytes')));
-    }
-  }
-
-  Future<void> _useMyLocation() async {
-    try {
-      final location = await PermissionsService.currentPosition();
-      if (!location.ok) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Location unavailable: ${location.error}')));
-        }
-        return;
-      }
-      if (!mounted) return;
-      _geohashLat.text = location.latitude!.toStringAsFixed(6);
-      _geohashLng.text = location.longitude!.toStringAsFixed(6);
-      await _encodeGeohash();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('Location failed: $e')));
-      }
-    }
-  }
-
-  Future<void> _encodeGeohash() async {
-    final lat = double.tryParse(_geohashLat.text.trim());
-    final lng = double.tryParse(_geohashLng.text.trim());
-    if (lat == null || lng == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: SelectableText('Enter valid lat/lng numbers')));
-      }
-      return;
-    }
-    try {
-      final geohash =
-          context.read<EventsService>().encodeGeohash(lat: lat, lon: lng);
-      if (mounted) setState(() => _geohashResult = geohash);
-    } catch (e) {
-      debugPrint('encode geohash: $e');
-      if (mounted) {
-        setState(() => _geohashResult = 'Encode failed: $e');
-      }
     }
   }
 
@@ -1461,65 +1408,6 @@ class _NetworkScreenState extends State<NetworkScreen> {
               style: theme.textTheme.bodySmall?.copyWith(
                 fontFamily: 'monospace',
               ),
-            ),
-          ),
-        const Divider(height: 32),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text('Network Tools', style: theme.textTheme.titleMedium),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _geohashLat,
-                  keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true, signed: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Latitude',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: _geohashLng,
-                  keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true, signed: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Longitude',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.gps_fixed),
-                tooltip: 'Use my location',
-                onPressed: _useMyLocation,
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.my_location),
-                tooltip: 'Encode geohash',
-                onPressed: _encodeGeohash,
-              ),
-            ],
-          ),
-        ),
-        if (_geohashResult != null)
-          ListTile(
-            dense: true,
-            title: Text('Geohash: ${_geohashResult!}'),
-            trailing: IconButton(
-              icon: const Icon(Icons.close),
-              tooltip: 'Clear',
-              onPressed: () => setState(() => _geohashResult = null),
             ),
           ),
       ],

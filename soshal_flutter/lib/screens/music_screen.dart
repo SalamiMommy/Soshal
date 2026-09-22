@@ -1,4 +1,3 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -9,7 +8,9 @@ import '../services/music_service.dart';
 import '../services/p2p_service.dart';
 import '../services/shell_service.dart';
 import '../utils/format.dart';
+import '../utils/media_upload.dart';
 import '../widgets/audience_filter_dropdown.dart';
+import '../widgets/audio_waveform_bar.dart';
 import '../widgets/blob_image.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_state_text.dart';
@@ -193,10 +194,7 @@ class _MusicloudScreenState extends State<MusicloudScreen>
                   const SizedBox(height: 12),
                   FilledButton.tonalIcon(
                     onPressed: () async {
-                      final picked = await FilePicker.pickFile(
-                        type: FileType.audio,
-                      );
-                      final path = picked?.path;
+                      final path = await pickAudioPath();
                       if (path == null) return;
                       setSheetState(() {
                         pickedPath = path;
@@ -214,7 +212,7 @@ class _MusicloudScreenState extends State<MusicloudScreen>
                     keyboardType: TextInputType.url,
                     decoration: const InputDecoration(
                       labelText:
-                          '…or audio URL (https mp3/ogg…) — fallback when no device has the blob',
+                          '…or audio URL (https mp3/ogg/flac…) — fallback when no device has the blob',
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -300,11 +298,9 @@ class _MusicloudScreenState extends State<MusicloudScreen>
 
   Future<void> _play(MusicTrack track) async {
     final shell = context.read<ShellService>();
-    final url = await resolveTrackPlaybackUrl(
-      track,
-      context.read<MediaService>(),
-      context.read<P2pService>(),
-    );
+    final media = context.read<MediaService>();
+    final p2p = context.read<P2pService>();
+    final url = await resolveTrackPlaybackUrl(track, media, p2p);
     if (!mounted) return;
     if (url == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -314,6 +310,11 @@ class _MusicloudScreenState extends State<MusicloudScreen>
       return;
     }
     final ok = await shell.playAudio(url, track.title);
+    if (ok) {
+      // Aspire waveform async — playback must not block on peak extraction.
+      final peaks = await extractTrackPeaks(track, media: media, p2p: p2p);
+      shell.setAudioPeaks(peaks);
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       ok
@@ -816,9 +817,10 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
   bool _shareBusy = false;
   bool _commentBusy = false;
   String? _shareStatus;
-  // No audio-core peak extraction / playback position hookup exists yet — the
-  // old hardcoded 14.5s/184.0s values fabricated a scrubber that lied about
-  // playback. Removed; see the "unavailable (roadmap)" waveform note.
+  // Waveform peaks for this track, extracted via audio-core (Rust symphonia)
+  // from the local blob copy; empty until loaded or when unreachable.
+  List<double> _peaks = const [];
+  bool _peaksLoading = false;
 
   MusicTrack get _track => widget.track;
 
@@ -828,6 +830,23 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
   void initState() {
     super.initState();
     _loadComments();
+    _loadPeaks();
+  }
+
+  Future<void> _loadPeaks() async {
+    if (_peaksLoading) return;
+    setState(() => _peaksLoading = true);
+    try {
+      final peaks = await extractTrackPeaks(
+        _track,
+        media: context.read<MediaService>(),
+        p2p: context.read<P2pService>(),
+      );
+      if (mounted) setState(() => _peaks = peaks);
+    } catch (e) {
+      debugPrint('detail peaks: $e');
+    }
+    if (mounted) setState(() => _peaksLoading = false);
   }
 
   @override
@@ -915,6 +934,12 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
 
   String? _commentStatus;
 
+  static String _fmtDuration(Duration d) {
+    final m = d.inMinutes.toString().padLeft(2, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
   Future<void> _postComment() async {
     final raw = _commentCtrl.text.trim();
     if (raw.isEmpty) return;
@@ -942,6 +967,7 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final shell = context.read<ShellService>();
     final trackPlaying = context.select<ShellService, bool>(
         (s) => s.audioPlaying && s.audioTitle == _track.title);
     return Scaffold(
@@ -1037,10 +1063,12 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
                           }
                           // Same blob-resolution path as the list rows: the
                           // audio may live on a LAN peer, not locally.
+                          final media = context.read<MediaService>();
+                          final p2p = context.read<P2pService>();
                           final url = await resolveTrackPlaybackUrl(
                             _track,
-                            context.read<MediaService>(),
-                            context.read<P2pService>(),
+                            media,
+                            p2p,
                           );
                           if (!context.mounted) return;
                           if (url == null) {
@@ -1051,7 +1079,15 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
                             );
                             return;
                           }
-                          await shell.playAudio(url, _track.title);
+                          final ok = await shell.playAudio(url, _track.title);
+                          if (ok) {
+                            final peaks = await extractTrackPeaks(
+                              _track,
+                              media: media,
+                              p2p: p2p,
+                            );
+                            shell.setAudioPeaks(peaks);
+                          }
                         },
                       ),
                       const SizedBox(width: 12),
@@ -1064,9 +1100,52 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
                                     fontWeight: FontWeight.bold),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis),
-                            Text(
-                              'Playback position unavailable (roadmap)',
-                              style: Theme.of(context).textTheme.bodySmall,
+                            StreamBuilder<Duration?>(
+                              stream: shell.audioDurationStream,
+                              initialData: Duration.zero,
+                              builder: (_, durationSnap) {
+                                final d = durationSnap.data ?? Duration.zero;
+                                if (d.inSeconds <= 0) {
+                                  return Text(
+                                    _peaksLoading
+                                        ? 'Loading waveform…'
+                                        : 'Not playing',
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
+                                  );
+                                }
+                                return StreamBuilder<Duration>(
+                                  stream: shell.audioPositionStream,
+                                  initialData: Duration.zero,
+                                  builder: (_, positionSnap) => Text(
+                                    '${_fmtDuration(positionSnap.data ?? Duration.zero)} / ${_fmtDuration(d)}',
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            // Live waveform scrubber: peaks from audio-core
+                            // (Rust symphonia, container-agnostic = mp3/flac/
+                            // wav/ogg…), progress from just_audio, tap/drag
+                            // seeks. Empty peaks (unreachable blob) show a
+                            // progress-only bar — no fabricated waveform.
+                            StreamBuilder<Duration?>(
+                              stream: shell.audioDurationStream,
+                              initialData: Duration.zero,
+                              builder: (_, durationSnap) =>
+                                  StreamBuilder<Duration>(
+                                stream: shell.audioPositionStream,
+                                initialData: Duration.zero,
+                                builder: (_, positionSnap) =>
+                                    AudioWaveformSeekBar(
+                                  peaks: _peaks,
+                                  position: positionSnap.data ?? Duration.zero,
+                                  duration: durationSnap.data,
+                                  onSeek: (p) => shell.seekAudio(p),
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -1074,29 +1153,6 @@ class TrackDetailScreenState extends State<TrackDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  // Waveform scrubber & timed comments: no audio-core peak
-                  // extraction or live position hookup exists — the previous
-                  // hardcoded 14.5s/184.0s bars fabricated a scrubber that
-                  // never reflected real playback. Honest placeholder instead.
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.graphic_eq, size: 18),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Waveform & timed comments unavailable (roadmap)',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ),

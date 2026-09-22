@@ -199,6 +199,28 @@ void main() {
       expect(shell.incomingCall?['call_id'], 'call_0');
     });
 
+    test('setAudioPeaks stores peaks and notifies; stopAudio clears them',
+        () async {
+      final shell = ShellService();
+      var notified = 0;
+      shell.addListener(() => notified++);
+
+      shell.setAudioPeaks(const [0.1, 0.5, 1.0]);
+      expect(shell.audioPeaks, [0.1, 0.5, 1.0]);
+      expect(notified, 1);
+
+      await shell.stopAudio();
+      expect(shell.audioPeaks, isEmpty);
+      expect(shell.audioTitle, '');
+      expect(shell.audioPlaying, isFalse);
+      expect(notified, greaterThanOrEqualTo(2));
+    });
+
+    test('seekAudio without player is a safe no-op', () async {
+      final shell = ShellService();
+      await shell.seekAudio(const Duration(seconds: 30));
+    });
+
     test('resetForAccountSwitch clears incoming call and seen calls', () async {
       final shell = ShellService();
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;

@@ -13,7 +13,7 @@ impl<'a> MusicloudRepo<'a> {
         let norm_pk = m.pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
-            "INSERT INTO musiclouds (id, pubkey, audio_url, title, duration, text_overlay, thumbnail, likes, liked, bookmarked, audience, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) ON CONFLICT(id) DO UPDATE SET title=excluded.title, duration=excluded.duration, text_overlay=excluded.text_overlay, thumbnail=excluded.thumbnail",
+            "INSERT INTO musiclouds (id, pubkey, audio_url, title, duration, text_overlay, thumbnail, likes, liked, bookmarked, audience, blob_hash, media_size, hashtags, d, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16) ON CONFLICT(id) DO UPDATE SET pubkey=excluded.pubkey, audio_url=excluded.audio_url, title=excluded.title, duration=excluded.duration, text_overlay=excluded.text_overlay, thumbnail=excluded.thumbnail, audience=excluded.audience, blob_hash=excluded.blob_hash, media_size=excluded.media_size, hashtags=excluded.hashtags, d=excluded.d, created_at=excluded.created_at",
             params![
                 m.id.as_str(),
                 norm_pk.as_str(),
@@ -26,6 +26,10 @@ impl<'a> MusicloudRepo<'a> {
                 m.liked as i64,
                 m.bookmarked as i64,
                 m.audience.as_str(),
+                m.blob_hash.as_str(),
+                m.media_size,
+                m.hashtags.as_str(),
+                m.d.as_str(),
                 m.created_at
             ],
         )?;
@@ -41,7 +45,7 @@ impl<'a> MusicloudRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, audio_url, title, duration, text_overlay, thumbnail, likes, liked, bookmarked, audience, created_at FROM musiclouds ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
+            "SELECT id, pubkey, audio_url, title, duration, text_overlay, thumbnail, likes, liked, bookmarked, audience, blob_hash, media_size, hashtags, d, created_at FROM musiclouds ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
             params![limit, offset],
             Self::map_row,
         )
@@ -57,7 +61,7 @@ impl<'a> MusicloudRepo<'a> {
         let norm_pk = pubkey.trim().to_ascii_lowercase();
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, audio_url, title, duration, text_overlay, thumbnail, likes, liked, bookmarked, audience, created_at FROM musiclouds WHERE LOWER(pubkey)=?1 ORDER BY created_at DESC LIMIT ?2",
+            "SELECT id, pubkey, audio_url, title, duration, text_overlay, thumbnail, likes, liked, bookmarked, audience, blob_hash, media_size, hashtags, d, created_at FROM musiclouds WHERE LOWER(pubkey)=?1 ORDER BY created_at DESC LIMIT ?2",
             params![norm_pk.as_str(), limit],
             Self::map_row,
         )
@@ -102,7 +106,11 @@ impl<'a> MusicloudRepo<'a> {
             liked: r.get(8)?,
             bookmarked: r.get(9)?,
             audience: r.get(10)?,
-            created_at: r.get(11)?,
+            blob_hash: r.get(11)?,
+            media_size: r.get(12)?,
+            hashtags: r.get(13)?,
+            d: r.get(14)?,
+            created_at: r.get(15)?,
         })
     }
 }
@@ -119,6 +127,10 @@ pub struct MusicloudRow {
     pub liked: bool,
     pub bookmarked: bool,
     pub audience: String,
+    pub blob_hash: String,
+    pub media_size: i64,
+    pub hashtags: String,
+    pub d: String,
     pub created_at: i64,
 }
 
@@ -193,6 +205,10 @@ mod tests {
             liked: false,
             bookmarked: false,
             audience: String::new(),
+            blob_hash: String::new(),
+            media_size: 0,
+            hashtags: "[]".into(),
+            d: String::new(),
             created_at: 1000,
         };
         repo.upsert(&row).unwrap();

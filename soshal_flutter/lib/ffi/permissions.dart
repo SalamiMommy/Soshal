@@ -52,7 +52,10 @@ bool permissionsLocationGranted() =>
 bool permissionsLocationRequest() =>
     RustLib.instance.api.crateFfiPermissionsPermissionsLocationRequest();
 
-/// Any location provider (GPS or network) enabled.
+/// OS-level location service enabled (independent of app permission).
+/// Android: any provider (GPS/network/passive) on. Linux: desktop location
+/// switch via gsettings (`org.gnome.system.location enabled`) — when off
+/// the XDG portal rejects without prompting, so pre-check before portal.
 bool permissionsLocationEnabled() =>
     RustLib.instance.api.crateFfiPermissionsPermissionsLocationEnabled();
 

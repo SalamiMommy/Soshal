@@ -66,6 +66,10 @@ All notable changes to Soshal.
   MethodChannels deleted — codecs are Rust FFI now
 - `android:exported="false"` for MainActivity; network security config with
   cleartext disabled + private-range P2P allowances
+- DB migrations re-enabled: `v001_initial.rs` frozen as the squashed
+  pre-release baseline (`SCHEMA_VERSION = 1`); schema changes now land as new
+  `v0NN_*.rs` migration files with a `SCHEMA_VERSION` bump (forward-only from
+  version 1 — v001 never mutated in place)
 
 ### Fixed
 - Audit rounds 4-8 (docs/AUDIT.md): crash/robustness sweep, relay timestamp
@@ -79,6 +83,16 @@ All notable changes to Soshal.
   NIP-44 legacy decode, SDP validation, base64url padding, linkpreview
   whitespace, runstls TLS CVE bump, Android XML build break, .so resync with
   round-3/4 Rust fixes, honest-fied simulated stubs
+- Transport hardening (`763d592`, 2026-09-21): swarm refuses symlink
+  `out_path` (WP11 path traversal); QUIC handshake/connect/stream-write
+  timeouts + 16 MiB stream-frame cap (stalled peer can't pin accept loops or
+  send buffers); gossip verify-before-amplify + per-account dedup keys (L7);
+  bridge-identity p-tag checks; account switch stops the Rust mesh relay node
+  + drops relay state (new-identity traffic never routes under old pubkey);
+  freenet websocket + mesh relay fixes; honest relay status from bridge truth
+  (no fabricated connected flags); publish error surfaced when no relay
+  accepts; Linux location-service pre-check; relay status re-poll for offline
+  banner
 
 ## [1.0.0] — 2026-07-22
 

@@ -454,6 +454,10 @@ pub fn v1_create_tables(conn: &Connection) -> Result<(), libsql::Error> {
             liked INTEGER NOT NULL DEFAULT 0,
             bookmarked INTEGER NOT NULL DEFAULT 0,
             audience TEXT NOT NULL DEFAULT '',
+            blob_hash TEXT NOT NULL DEFAULT '',
+            media_size INTEGER NOT NULL DEFAULT 0,
+            hashtags TEXT NOT NULL DEFAULT '[]',
+            d TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL DEFAULT 0
         );
 

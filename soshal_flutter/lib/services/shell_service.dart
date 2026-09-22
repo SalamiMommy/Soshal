@@ -120,6 +120,17 @@ class ShellService extends ChangeNotifier {
   bool _audioPlaying = false;
   bool get audioPlaying => _audioPlaying;
 
+  // Waveform peaks for the currently loaded track (Rust-extracted RMS bins,
+  // 0..1). Empty while loading/unknown — the bar renders progress-only.
+  List<double> _audioPeaks = const [];
+  List<double> get audioPeaks => _audioPeaks;
+
+  /// Set waveform peaks for the active track and repaint the audio bar.
+  void setAudioPeaks(List<double> peaks) {
+    _audioPeaks = List.unmodifiable(peaks);
+    notifyListeners();
+  }
+
   // Incoming call signal.
   Map<String, dynamic>? _incomingCall;
 
@@ -386,12 +397,30 @@ class ShellService extends ChangeNotifier {
 
   AudioPlayer _ensurePlayer() => _audioPlayer ??= AudioPlayer();
 
+  /// Live playback position of the global audio player. Emits frequently
+  /// during playback; safe to drive a StreamBuilder-based seek bar directly.
+  Stream<Duration> get audioPositionStream => _ensurePlayer().positionStream;
+
+  /// Total duration of the loaded track (null until known). Consumed by the
+  /// seek bar to map taps to absolute positions.
+  Stream<Duration?> get audioDurationStream => _ensurePlayer().durationStream;
+
+  /// Seek the global audio player to [position] (waveform tap/drag).
+  Future<void> seekAudio(Duration position) async {
+    try {
+      await _audioPlayer?.seek(position);
+    } catch (e) {
+      debugPrint('audio seek failed: $e');
+    }
+  }
+
   /// Plays an audio URL (local blob-server URL or remote fallback) through
   /// the global audio player. Returns true when playback actually started;
   /// false (with `error` populated) when the load/play failed.
   Future<bool> playAudio(String url, String title,
       {Duration timeout = const Duration(seconds: 15)}) async {
     final player = _ensurePlayer();
+    _audioPeaks = const [];
     try {
       await player.stop();
       await player.setUrl(url).timeout(timeout);
@@ -414,6 +443,29 @@ class ShellService extends ChangeNotifier {
     }
   }
 
+  /// Pause playback without unloading the track (bar play/pause toggle).
+  Future<void> pauseAudio() async {
+    try {
+      await _audioPlayer?.pause();
+    } catch (e) {
+      debugPrint('audio pause failed: $e');
+    }
+    _audioPlaying = false;
+    notifyListeners();
+  }
+
+  /// Resume a paused track.
+  Future<void> resumeAudio() async {
+    try {
+      await _audioPlayer?.play();
+    } catch (e) {
+      debugPrint('audio resume failed: $e');
+      return;
+    }
+    _audioPlaying = true;
+    notifyListeners();
+  }
+
   Future<void> stopAudio() async {
     try {
       await _audioPlayer?.stop();
@@ -423,6 +475,7 @@ class ShellService extends ChangeNotifier {
     _audioUrl = '';
     _audioTitle = '';
     _audioPlaying = false;
+    _audioPeaks = const [];
     notifyListeners();
   }
 

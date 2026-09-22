@@ -40,6 +40,37 @@ Future<String?> pickMediaPath({FileType type = FileType.image}) async {
   return picked?.path;
 }
 
+/// Audio extensions covered by [pickAudioPath]. Explicit list — file_picker's
+/// Linux `FileType.audio` filter ships a hardcoded `*.aac *.midi *.mp3
+/// *.ogg *.wav` table with no FLAC, so lossless picks grey out on desktop.
+/// `FileType.custom` renders `*.<ext>` patterns in the portal dialog instead.
+const List<String> audioPickerExtensions = [
+  'flac',
+  'mp3',
+  'wav',
+  'ogg',
+  'oga',
+  'm4a',
+  'aac',
+  'opus',
+  'midi',
+  'mid',
+  'aif',
+  'aiff',
+];
+
+/// Pick an audio file covering lossless (FLAC/WAV/AIFF) + compressed
+/// (MP3/AAC/OGG/Opus) formats on every platform (works around the Linux
+/// `FileType.audio` filter gap; Android maps the extensions to a mime array
+/// that includes `audio/flac`). Returns the path or null on cancel.
+Future<String?> pickAudioPath() async {
+  final picked = await FilePicker.pickFile(
+    type: FileType.custom,
+    allowedExtensions: audioPickerExtensions,
+  );
+  return picked?.path;
+}
+
 /// Upload [path] via [upload] and validate the manifest `blob_hash` is a
 /// 64-hex string. Returns the bare hash. Throws [Exception] with
 /// [errorMessage] on a bad manifest — the contract every legacy call site

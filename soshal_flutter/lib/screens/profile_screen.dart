@@ -543,17 +543,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     context: context,
                     builder: (context) => AlertDialog(
                       title: const Text('Metadata'),
-                    content: SingleChildScrollView(
-                      child: SelectableText(json),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Close'),
+                      content: SingleChildScrollView(
+                        child: SelectableText(json),
                       ),
-                    ],
-                  ),
-                );
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Close'),
+                        ),
+                      ],
+                    ),
+                  );
                 } catch (e) {
                   if (!context.mounted) return;
                   Navigator.of(context).pop();
