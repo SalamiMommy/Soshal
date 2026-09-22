@@ -489,7 +489,7 @@ dependencies = [
  "rand_core 0.6.4",
  "ripemd",
  "secp256k1 0.27.0",
- "sha2",
+ "sha2 0.10.9",
  "subtle",
  "zeroize",
 ]
@@ -622,7 +622,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf88ba1141d185c399bee5288d850d63b8369520c1eafc32a0430b5b6c287bf4"
 dependencies = [
- "sha2",
+ "sha2 0.10.9",
  "tinyvec",
 ]
 
@@ -1231,6 +1231,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
 dependencies = [
  "block-buffer 0.12.1",
+ "const-oid 0.10.2",
  "crypto-common 0.2.2",
  "ctutils",
 ]
@@ -2489,7 +2490,7 @@ dependencies = [
  "cfg-if",
  "ecdsa",
  "elliptic-curve",
- "sha2",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -3104,7 +3105,7 @@ dependencies = [
  "log",
  "lzma-rs",
  "serde_json",
- "sha2",
+ "sha2 0.10.9",
  "simd-adler32",
  "thiserror 2.0.20",
 ]
@@ -4164,6 +4165,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha2"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.0",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "sha3"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4355,7 +4367,7 @@ dependencies = [
  "ring",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.11.0",
  "soshal-common-core",
  "soshal-content-core",
  "soshal-pqc-core",
@@ -4480,7 +4492,7 @@ dependencies = [
  "pbkdf2",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.11.0",
  "soshal-common-core",
  "soshal-crypto-core",
  "soshal-nostr-core",
@@ -4501,7 +4513,7 @@ dependencies = [
  "secp256k1 0.30.0",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.11.0",
  "soshal-common-core",
  "soshal-crypto-core",
  "soshal-nostr-core",
@@ -4568,7 +4580,7 @@ dependencies = [
  "rustls 0.23.45",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.11.0",
  "soshal-common-core",
  "soshal-content-core",
  "soshal-crypto-core",
@@ -4616,7 +4628,7 @@ dependencies = [
  "rust_h264",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.11.0",
  "soshal-content-core",
  "soshal-crypto-core",
 ]
@@ -4641,7 +4653,7 @@ dependencies = [
  "rustls 0.23.45",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.11.0",
  "soshal-common-core",
  "soshal-content-core",
  "soshal-crypto-core",
@@ -4665,7 +4677,7 @@ dependencies = [
  "nostr-sdk",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.11.0",
  "soshal-common-core",
  "soshal-content-core",
  "tokio",
@@ -4708,7 +4720,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.11.0",
  "soshal-common-core",
  "soshal-network-core",
  "soshal-nostr-core",
@@ -4794,7 +4806,7 @@ dependencies = [
  "rustls 0.23.45",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.11.0",
  "soshal-common-core",
  "soshal-content-core",
  "soshal-crypto-core",
