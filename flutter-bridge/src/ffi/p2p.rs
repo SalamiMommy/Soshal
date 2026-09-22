@@ -121,6 +121,10 @@ impl P2pSwarmStatusDto {
 /// Start advertising this device's chunk server over mDNS. `pubkey` may be
 /// empty, in which case the unlocked signer's pubkey is used. `quic_port` is
 /// advertised in TXT records if provided.
+///
+/// When an advertiser already exists the record is *re-announced* with the new
+/// `quic_port` (TXT update) instead of no-opping — a QUIC server (re)started
+/// after the initial advertise must not leave LAN peers caching the old port.
 #[frb(sync, serialize)]
 pub fn p2p_mdns_advertise_start(
     pubkey: String,
@@ -137,10 +141,14 @@ pub fn p2p_mdns_advertise_start(
     }
     let mut st = state_mut();
     let inner = st.get_or_insert_with(P2pState::new);
-    if inner.advertiser.is_some() {
-        return Ok(true).into();
+    match inner.advertiser.as_ref() {
+        Some(re) => re
+            .update_quic_port(quic_port)
+            .map_err(|e| format!("mdns update advertise: {e}"))?,
+        None => {
+            inner.advertiser = Some(MdnsAdvertiser::start(&pubkey, "", port, quic_port)?);
+        }
     }
-    inner.advertiser = Some(MdnsAdvertiser::start(&pubkey, "", port, quic_port)?);
     Ok(true).into()
 }
 

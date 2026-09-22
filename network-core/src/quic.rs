@@ -450,7 +450,7 @@ async fn run_channel(
                 if conns.len() >= MAX_DATAGRAM_CONNS {
                     continue;
                 }
-                if let Ok(conn) = incoming.await {
+                if let Ok(Ok(conn)) = tokio::time::timeout(HANDSHAKE_TIMEOUT, incoming).await {
                     conns.insert(conn.remote_address(), conn.clone());
                     spawn_conn_task(conn, evt_tx.clone(), bound, key, authed.clone());
                 }
@@ -788,7 +788,21 @@ use soshal_media_core::cas::ChunkStore;
 use std::net::UdpSocket;
 use std::time::Duration as StdDuration;
 
-const MAX_STREAM_FRAME: usize = 1024 * 1024;
+/// Max payload in one QUIC stream frame. Mirrors `MAX_FRAME_BYTES` on the
+/// TCP path: must cover the media chunker's largest video chunk (16 MiB) so
+/// video-mime blobs actually transfer over the QUIC swarm path.
+const MAX_STREAM_FRAME: usize = 16 * 1024 * 1024;
+
+/// Upper bound for a TLS handshake on an accepted `Incoming`. The accept
+/// loop awaits the handshake inline; without a timeout a private-LAN peer
+/// could send one Initial packet and stall the whole accept+command loop
+/// (and `stop()`) for the handshake-idle duration, keylessly, on repeat.
+const HANDSHAKE_TIMEOUT: StdDuration = StdDuration::from_secs(10);
+
+/// Upper bound for a single stream response write. A peer that stops reading
+/// (0 receive window) would otherwise pin its stream task — and per-conn
+/// send buffers — forever.
+const STREAM_WRITE_TIMEOUT: StdDuration = StdDuration::from_secs(30);
 
 /// Live MoQ group-log limits: bounded memory, hostile-publisher safe.
 const LIVE_MAX_STREAM_ID: usize = 128;
@@ -1064,7 +1078,7 @@ async fn run_stream_server(
                 if active_conns.load(Ordering::SeqCst) >= MAX_STREAM_CONNS {
                     continue;
                 }
-                if let Ok(conn) = incoming.await {
+                if let Ok(Ok(conn)) = tokio::time::timeout(HANDSHAKE_TIMEOUT, incoming).await {
                     active_conns.fetch_add(1, Ordering::SeqCst);
                     let counter = active_conns.clone();
                     let pa = pending_auth.clone();
@@ -1193,7 +1207,11 @@ async fn serve_stream(
                                 }
                                 if let Err(e) = send.finish() {
                                     log::warn!("quic response write: {e}");
-                                    let _ = send.write_all(&[3u8]).await;
+                                    let _ = tokio::time::timeout(
+                                        STREAM_WRITE_TIMEOUT,
+                                        send.write_all(&[3u8]),
+                                    )
+                                    .await;
                                     return;
                                 }
                                 return;
@@ -1231,7 +1249,9 @@ async fn serve_stream(
                         }
                         if let Err(e) = send.finish() {
                             log::warn!("quic response write: {e}");
-                            let _ = send.write_all(&[3u8]).await;
+                            let _ =
+                                tokio::time::timeout(STREAM_WRITE_TIMEOUT, send.write_all(&[3u8]))
+                                    .await;
                             return;
                         }
                         return;
@@ -1442,11 +1462,17 @@ async fn write_stream_frame(
         len_bytes[2],
         len_bytes[3],
     ];
-    send.write_all(&header)
+    write_stream_all(send, &header).await?;
+    write_stream_all(send, payload).await
+}
+
+/// `SendStream::write_all` bounded by `STREAM_WRITE_TIMEOUT` so a peer that
+/// stops reading (flow-control window 0) can't pin its stream task — and the
+/// conn's unacknowledged send buffers — forever.
+async fn write_stream_all(send: &mut quinn::SendStream, bytes: &[u8]) -> Result<(), String> {
+    tokio::time::timeout(STREAM_WRITE_TIMEOUT, send.write_all(bytes))
         .await
-        .map_err(|e| format!("stream write: {e}"))?;
-    send.write_all(payload)
-        .await
+        .map_err(|_| "stream write timeout".to_string())?
         .map_err(|e| format!("stream write: {e}"))
 }
 
@@ -1472,7 +1498,7 @@ async fn exchange_chunk(
         &nonce,
     );
     let mac = lan::beacon_mac(&key, &body);
-    send.write_all(format!("{body}:{mac}\n").as_bytes())
+    write_stream_all(&mut send, format!("{body}:{mac}\n").as_bytes())
         .await
         .map_err(|e| format!("handshake write: {e}"))?;
 
@@ -1484,10 +1510,10 @@ async fn exchange_chunk(
         "want_manifest": req.want_manifest,
     }))
     .map_err(|e| format!("req serde: {e}"))?;
-    send.write_all(&(payload.len() as u32).to_le_bytes())
+    write_stream_all(&mut send, &(payload.len() as u32).to_le_bytes())
         .await
         .map_err(|e| format!("req write: {e}"))?;
-    send.write_all(&payload)
+    write_stream_all(&mut send, &payload)
         .await
         .map_err(|e| format!("req write: {e}"))?;
     send.finish().map_err(|e| format!("finish: {e}"))?;
@@ -1540,7 +1566,10 @@ where
     T: Send + 'static,
 {
     match tokio::runtime::Handle::try_current() {
-        Ok(h) => {
+        Ok(h) if h.runtime_flavor() != tokio::runtime::RuntimeFlavor::CurrentThread => {
+            // Multi-thread runtime: spawn the future and block on the oneshot
+            // from the calling thread — the worker pool keeps the future
+            // progressing.
             let (tx, rx) = tokio::sync::oneshot::channel();
             h.spawn(async move {
                 let result = fut.await;
@@ -1549,7 +1578,13 @@ where
             rx.blocking_recv()
                 .map_err(|_| "run_async_blocking: sender dropped".to_string())?
         }
-        Err(_) => {
+        Ok(_) | Err(_) => {
+            // Either no runtime is active, or the caller IS a worker on a
+            // current-thread runtime. Spawning onto that handle then
+            // blocking_recv would self-deadlock (the sole worker is busy
+            // blocking here), so route through the dedicated static
+            // multi-thread runtime instead. Unreachable today (all QUIC calls
+            // happen off any current-thread runtime), but correct under both.
             static SHARED_RT: std::sync::OnceLock<tokio::runtime::Runtime> =
                 std::sync::OnceLock::new();
             SHARED_RT
@@ -1785,7 +1820,11 @@ pub fn fetch_quic_verified_chunk(
             want_manifest: false,
         },
     )?;
-    if blake3::hash(&data).to_hex().as_str() != hash {
+    if !blake3::hash(&data)
+        .to_hex()
+        .as_str()
+        .eq_ignore_ascii_case(hash)
+    {
         return Err("chunk hash mismatch after transfer".to_string());
     }
     Ok(data)
@@ -1838,7 +1877,7 @@ pub fn fetch_quic_moq_groups(
                 &hex::encode(lan::fresh_nonce()),
             );
             let mac = lan::beacon_mac(&key, &body);
-            send.write_all(format!("{body}:{mac}\n").as_bytes())
+            write_stream_all(&mut send, format!("{body}:{mac}\n").as_bytes())
                 .await
                 .map_err(|e| format!("handshake write: {e}"))?;
 
@@ -1848,10 +1887,10 @@ pub fn fetch_quic_moq_groups(
                 "window_ms": window_ms,
             }))
             .map_err(|e| format!("req serde: {e}"))?;
-            send.write_all(&(payload.len() as u32).to_le_bytes())
+            write_stream_all(&mut send, &(payload.len() as u32).to_le_bytes())
                 .await
                 .map_err(|e| format!("req write: {e}"))?;
-            send.write_all(&payload)
+            write_stream_all(&mut send, &payload)
                 .await
                 .map_err(|e| format!("req write: {e}"))?;
             send.finish().map_err(|e| format!("finish: {e}"))?;

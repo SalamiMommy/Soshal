@@ -11,6 +11,14 @@
 //!   dialing target by the QUIC/TCP transports that carry real data.
 //! - srflx candidates require a reachable STUN server; without one only host
 //!   candidates are gathered (still useful: loopback/LAN peers).
+//! - P2P transport policy is **private-IP-only** (same gate as
+//!   lan_transport/quic/mdns). srflx candidates carry the host's public,
+//!   NAT-mapped address, so cross-subnet traversal is only possible when the
+//!   remote explicitly opts in via
+//!   [`NatHandle::set_allow_public_candidates(true)`]. It defaults to
+//!   `false`; a peer steering ICE probes at public addresses (SSRF-style
+//!   traffic) is refused unless the opt-in is set. Without the opt-in the
+//!   srflx machinery is effectively inert for remote dialing.
 //! - TURN relays are out of scope here; when direct paths fail the app falls
 //!   back to its relay layer (`privacy.rs`).
 //!
@@ -46,6 +54,9 @@ pub struct NatSessionStatus {
     pub connected_addr: Option<String>,
     pub local_candidates: Vec<String>,
     pub remote_candidates: Vec<String>,
+    /// Whether non-private (public/srflx) remote candidates are accepted for
+    /// this manager. Defaults to `false` (private-IP-only P2P policy).
+    pub allow_public_candidates: bool,
 }
 
 struct Session {
@@ -85,6 +96,10 @@ enum NatCommand {
     },
     Status {
         result: std::sync::mpsc::SyncSender<Vec<NatSessionStatus>>,
+    },
+    /// Toggles acceptance of non-private (public/srflx) remote candidates.
+    SetPublicCandidates {
+        allow: bool,
     },
 }
 
@@ -146,6 +161,16 @@ impl NatHandle {
         {
             log::warn!("NAT manager thread dead, session not cleaned up");
         }
+    }
+
+    /// Opts this manager into accepting non-private (public/srflx) remote
+    /// candidates. Default is `false`: the P2P transport policy is
+    /// private-IP-only, and refusing public candidates blocks a hostile peer
+    /// from steering ICE probes at arbitrary external hosts.
+    pub fn set_allow_public_candidates(&self, allow: bool) -> Result<(), String> {
+        self.sender
+            .send(NatCommand::SetPublicCandidates { allow })
+            .map_err(|e| format!("nat command: {e}"))
     }
 
     /// Local ICE credentials (ufrag, pwd) of the session for `pubkey`.
@@ -257,6 +282,9 @@ async fn run_manager(
     my_pubkey: String,
 ) {
     let mut sessions: HashMap<String, Session> = HashMap::new();
+    // Private-IP-only P2P policy: public (srflx-mapped) remote candidates are
+    // refused unless explicitly opted in.
+    let mut allow_public_candidates = false;
     loop {
         if stop.load(Ordering::Acquire) {
             eprintln!("nat: stop flag");
@@ -298,6 +326,7 @@ async fn run_manager(
                                     connected_addr,
                                     local_candidates: local,
                                     remote_candidates: Vec::new(),
+                                    allow_public_candidates,
                                 };
                                 sessions.insert(
                                     pubkey.clone(),
@@ -344,13 +373,19 @@ async fn run_manager(
                                                 // lan_transport/quic/mdns): drop remote
                                                 // candidates outside the private scope so a
                                                 // hostile peer can't steer ICE probes at
-                                                // external hosts.
+                                                // external hosts. The srflx (public
+                                                // NAT-mapped) candidate type is therefore
+                                                // refused by default; only an explicit
+                                                // opt-in (`set_allow_public_candidates`)
+                                                // lifts the gate for cross-subnet traversal.
                                                 let addr: std::net::IpAddr =
                                                     match c.address().parse() {
                                                         Ok(a) => a,
                                                         Err(_) => continue,
                                                     };
-                                                if !crate::lan::is_private_ip(addr) {
+                                                if !allow_public_candidates
+                                                    && !crate::lan::is_private_ip(addr)
+                                                {
                                                     continue;
                                                 }
                                                 let c: Arc<dyn Candidate + Send + Sync> =
@@ -415,6 +450,9 @@ async fn run_manager(
                         };
                         let _ = result.send(out);
                     }
+                    NatCommand::SetPublicCandidates { allow } => {
+                        allow_public_candidates = allow;
+                    }
                     NatCommand::Status { result } => {
                         let mut out = Vec::with_capacity(sessions.len());
                         for (pubkey, session) in &sessions {
@@ -472,6 +510,7 @@ async fn run_manager(
                                 connected_addr: connected,
                                 local_candidates,
                                 remote_candidates,
+                                allow_public_candidates,
                             });
                         }
                         let _ = result.send(out);
@@ -827,6 +866,43 @@ mod tests {
             vec![private],
             "only private-IP candidate added"
         );
+        handle.remove(&pk);
+        handle.stop();
+    }
+
+    #[test]
+    fn add_remote_accepts_public_candidate_when_opted_in() {
+        let handle = spawn_nat_manager("eve".repeat(2)).unwrap();
+        let pk = "frank".repeat(2);
+        handle
+            .gather(&pk, &["stun:192.0.2.1:9".to_string()])
+            .unwrap();
+        let public =
+            "1 1 udp 2122260223 8.8.8.8 50070 typ srflx raddr 192.0.2.1 rport 50070".to_string();
+        // Default: public srflx candidate dropped (private-IP-only gate).
+        handle
+            .add_remote(&pk, "u", "p", std::slice::from_ref(&public))
+            .unwrap();
+        let statuses = handle.status();
+        assert_eq!(
+            statuses[0].remote_candidates.len(),
+            0,
+            "public candidate dropped by default"
+        );
+        assert!(!statuses[0].allow_public_candidates);
+
+        // Opt in: the same candidate is now accepted.
+        handle.set_allow_public_candidates(true).unwrap();
+        handle
+            .add_remote(&pk, "u", "p", std::slice::from_ref(&public))
+            .unwrap();
+        let statuses = handle.status();
+        assert_eq!(
+            statuses[0].remote_candidates,
+            vec![public],
+            "public candidate accepted after opt-in"
+        );
+        assert!(statuses[0].allow_public_candidates);
         handle.remove(&pk);
         handle.stop();
     }

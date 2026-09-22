@@ -5,10 +5,14 @@ use crate::SyncUpdate;
 use soshal_common_core::bounded::BoundedSet;
 use soshal_db_core::Database;
 use soshal_network_core::plumtree::{PlumTreeMessage, PlumTreeNode};
+use soshal_nostr_core::models::verify_event;
 use std::sync::{Arc, LazyLock, Mutex};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
 
+/// Cross-account gossip dedup set. Events are keyed per account
+/// (`<account_pubkey>:<event_id>`); an event processed while one identity is
+/// active must still ingest for a second identity (L7).
 static SEEN_GOSSIP: LazyLock<Mutex<BoundedSet<String>>> =
     LazyLock::new(|| Mutex::new(BoundedSet::new(SEEN_GOSSIP_CAP)));
 
@@ -35,27 +39,48 @@ impl GossipSyncBridge {
         msg: PlumTreeMessage,
         tx: &Sender<SyncUpdate>,
     ) -> Vec<(String, PlumTreeMessage)> {
-        let (outgoing, my_pubkey) = {
+        let (outgoing, verified, my_pubkey) = {
             let mut pt = self.node.write().await;
-            let out = pt.handle_incoming(from_peer, msg.clone());
-            (out, pt.self_peer_id.clone())
+            let my_pubkey = pt.self_peer_id.clone();
+            // Verify before amplify: a Gossip must carry a signature-valid
+            // event whose id binds the claimed message_id. Anything else is
+            // dropped WITHOUT fan-out — an attacker cannot force replication
+            // of unverified content by choosing an arbitrary message_id, and
+            // dedup keys on the real event id, not the attacker-chosen one.
+            let verified = match &msg {
+                PlumTreeMessage::Gossip {
+                    message_id,
+                    payload_json,
+                    ..
+                } => match serde_json::from_str::<nostr::event::Event>(payload_json.as_ref()) {
+                    Ok(event) if &event.id.to_hex() == message_id && verify_event(&event) => {
+                        Some(event)
+                    }
+                    _ => None,
+                },
+                _ => None,
+            };
+            if matches!(&msg, PlumTreeMessage::Gossip { .. }) && verified.is_none() {
+                (Vec::new(), None, my_pubkey)
+            } else {
+                let out = pt.handle_incoming(from_peer, msg.clone());
+                (out, verified, my_pubkey)
+            }
         };
 
-        if let PlumTreeMessage::Gossip { payload_json, .. } = msg {
-            if let Ok(event) = serde_json::from_str::<nostr::event::Event>(payload_json.as_ref()) {
-                let key = event.id.to_hex();
-                let fresh = {
-                    let mut seen = SEEN_GOSSIP.lock().unwrap_or_else(|e| e.into_inner());
-                    seen.insert(key)
-                };
-                if fresh {
-                    // Use bridge identity for p-tag-to-me checks: empty
-                    // pubkey would drop all gossip DMs (safe) but also
-                    // breaks own-DM relay via mesh. Read from node.
-                    // Ingest into SQLite database
-                    if let Err(e) = crate::ingest::handle(db, &my_pubkey, &event, tx) {
-                        eprintln!("gossip ingest failed: {e}");
-                    }
+        if let Some(event) = verified {
+            let key = format!("{my_pubkey}:{}", event.id.to_hex());
+            let fresh = {
+                let mut seen = SEEN_GOSSIP.lock().unwrap_or_else(|e| e.into_inner());
+                seen.insert(key)
+            };
+            if fresh {
+                // Use bridge identity for p-tag-to-me checks: empty
+                // pubkey would drop all gossip DMs (safe) but also
+                // breaks own-DM relay via mesh. Read from node.
+                // Ingest into SQLite database
+                if let Err(e) = crate::ingest::handle(db, &my_pubkey, &event, tx) {
+                    eprintln!("gossip ingest failed: {e}");
                 }
             }
         }
@@ -72,35 +97,50 @@ impl GossipSyncBridge {
         tx: &Sender<SyncUpdate>,
     ) -> Vec<(String, PlumTreeMessage)> {
         let mut all_outgoing = Vec::new();
-        let my_pubkey = {
+        let (verified_events, my_pubkey) = {
             let mut pt = self.node.write().await;
+            let my_pubkey = pt.self_peer_id.clone();
+            let mut verified_events = Vec::new();
             for (from_peer, msg) in messages {
+                let verified = match msg {
+                    PlumTreeMessage::Gossip {
+                        message_id,
+                        payload_json,
+                        ..
+                    } => match serde_json::from_str::<nostr::event::Event>(payload_json.as_ref()) {
+                        Ok(event) if &event.id.to_hex() == message_id && verify_event(&event) => {
+                            Some(event)
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if matches!(msg, PlumTreeMessage::Gossip { .. }) && verified.is_none() {
+                    // Unverified gossip: no plumtree state change and no
+                    // fan-out (L1).
+                    continue;
+                }
                 let out = pt.handle_incoming(from_peer, (*msg).clone());
                 all_outgoing.extend(out);
-            }
-            pt.self_peer_id.clone()
-        };
-
-        let mut events_to_ingest = Vec::new();
-        for (_, msg) in messages {
-            if let PlumTreeMessage::Gossip { payload_json, .. } = msg {
-                if let Ok(event) =
-                    serde_json::from_str::<nostr::event::Event>(payload_json.as_ref())
-                {
-                    let key = event.id.to_hex();
-                    let fresh = {
-                        let mut seen = SEEN_GOSSIP.lock().unwrap_or_else(|e| e.into_inner());
-                        seen.insert(key)
-                    };
-                    if fresh {
-                        events_to_ingest.push(event);
-                    }
+                if let Some(ev) = verified {
+                    verified_events.push(ev);
                 }
             }
-        }
+            (verified_events, my_pubkey)
+        };
 
-        if !events_to_ingest.is_empty() {
-            if let Err(e) = crate::ingest::handle_batch(db, &my_pubkey, &events_to_ingest, tx) {
+        let fresh_events: Vec<_> = verified_events
+            .into_iter()
+            .filter(|event| {
+                // L7: dedup scope is per-account.
+                let key = format!("{my_pubkey}:{}", event.id.to_hex());
+                let mut seen = SEEN_GOSSIP.lock().unwrap_or_else(|e| e.into_inner());
+                seen.insert(key)
+            })
+            .collect();
+
+        if !fresh_events.is_empty() {
+            if let Err(e) = crate::ingest::handle_batch(db, &my_pubkey, &fresh_events, tx) {
                 eprintln!("gossip batch ingest failed: {e}");
             }
         }
@@ -172,9 +212,12 @@ mod tests {
             .await
             .lazy_peers
             .insert("lazy_c".to_string());
+        let keys = Keys::generate();
+        let event =
+            soshal_test_util::signed_event(&keys, Kind::TextNote, "gossip relay", 1_700_001_000);
         let msg = PlumTreeMessage::Gossip {
-            message_id: "m1".to_string(),
-            payload_json: "{}".into(),
+            message_id: event.id.to_hex(),
+            payload_json: serde_json::to_string(&event).unwrap().into(),
             round: 0,
         };
         let (tx, _rx) = channel();
@@ -199,9 +242,12 @@ mod tests {
         let bridge = GossipSyncBridge::new("self");
         bridge.node.write().await.add_peer("peer_a");
         bridge.node.write().await.add_peer("peer_b");
+        let keys = Keys::generate();
+        let event =
+            soshal_test_util::signed_event(&keys, Kind::TextNote, "dup prune", 1_700_001_001);
         let msg = PlumTreeMessage::Gossip {
-            message_id: "m1".to_string(),
-            payload_json: "{}".into(),
+            message_id: event.id.to_hex(),
+            payload_json: serde_json::to_string(&event).unwrap().into(),
             round: 0,
         };
         let (tx, _rx) = channel();
@@ -217,20 +263,36 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn gossip_with_invalid_payload_not_ingested() {
+    async fn gossip_with_invalid_payload_not_amplified_or_ingested() {
         let db = soshal_test_util::test_db();
         let bridge = GossipSyncBridge::new("self");
         bridge.node.write().await.add_peer("peer_a");
-        let msg = PlumTreeMessage::Gossip {
+        // L1: an unverified payload (junk, wrong message_id, or invalid
+        // signature) must NOT be amplified to any peer nor ingested.
+        let (tx, _rx) = channel();
+        let bad = PlumTreeMessage::Gossip {
             message_id: "bad".to_string(),
             payload_json: "not an event".into(),
             round: 0,
         };
-        let (tx, _rx) = channel();
-        let outgoing = bridge.process_gossip(&db, "sender", msg, &tx).await;
-        assert!(outgoing
-            .iter()
-            .any(|(p, m)| p == "peer_a" && matches!(m, PlumTreeMessage::Gossip { .. })));
+        let outgoing = bridge.process_gossip(&db, "sender", bad, &tx).await;
+        assert!(outgoing.is_empty(), "no fan-out of unverified content");
+
+        // Same content wrapped in a *valid* event but a mismatched
+        // message_id is also refused.
+        let keys = Keys::generate();
+        let event =
+            soshal_test_util::signed_event(&keys, Kind::TextNote, "id mismatch", 1_700_001_002);
+        let mismatched = PlumTreeMessage::Gossip {
+            message_id: "ffff".repeat(32),
+            payload_json: serde_json::to_string(&event).unwrap().into(),
+            round: 0,
+        };
+        let outgoing = bridge.process_gossip(&db, "sender", mismatched, &tx).await;
+        assert!(
+            outgoing.is_empty(),
+            "message_id must bind the real event id"
+        );
 
         let count: i64 = query_first(&db.conn().unwrap(), "SELECT COUNT(*) FROM posts", (), |r| {
             r.get::<i64>(0)
@@ -238,6 +300,45 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn gossip_dedup_is_scoped_per_account() {
+        // L7: an event ingested for account A must still ingest for account B
+        // (the global dedup set is keyed by account+event, not event alone).
+        let (tx, _rx) = channel();
+        let keys = Keys::generate();
+        let event =
+            soshal_test_util::signed_event(&keys, Kind::TextNote, "per-account", 1_700_001_003);
+        let msg = PlumTreeMessage::Gossip {
+            message_id: event.id.to_hex(),
+            payload_json: serde_json::to_string(&event).unwrap().into(),
+            round: 0,
+        };
+
+        let db_a = soshal_test_util::test_db();
+        soshal_test_util::seed_user(&db_a, &keys.public_key().to_hex());
+        let bridge_a = GossipSyncBridge::new("acct_a");
+        bridge_a
+            .process_gossip(&db_a, "sender", msg.clone(), &tx)
+            .await;
+        let row_a = PostRepo::new(&db_a)
+            .get_by_id(&event.id.to_hex())
+            .unwrap()
+            .unwrap();
+        assert_eq!(row_a.content, "per-account");
+
+        // Second identity, fresh store: must NOT be deduped away just because
+        // identity A already saw the event.
+        let db_b = soshal_test_util::test_db();
+        soshal_test_util::seed_user(&db_b, &keys.public_key().to_hex());
+        let bridge_b = GossipSyncBridge::new("acct_b");
+        bridge_b.process_gossip(&db_b, "sender", msg, &tx).await;
+        let row_b = PostRepo::new(&db_b)
+            .get_by_id(&event.id.to_hex())
+            .unwrap()
+            .unwrap();
+        assert_eq!(row_b.content, "per-account");
     }
 
     #[tokio::test(flavor = "multi_thread")]

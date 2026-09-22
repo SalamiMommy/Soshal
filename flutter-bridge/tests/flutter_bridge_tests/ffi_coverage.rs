@@ -444,7 +444,10 @@ mod ffi_coverage_tests {
         let e = p2p::p2p_mdns_advertise_start("short".into(), 9876, None).unwrap_err();
         assert_eq!(e, "invalid pubkey");
         let pk = "ab".repeat(32);
-        assert!(p2p::p2p_mdns_advertise_start(pk, 9876, None).unwrap());
+        assert!(p2p::p2p_mdns_advertise_start(pk.clone(), 9876, None).unwrap());
+        // F12: re-advertising with a changed quic_port must re-announce the TXT
+        // record, not no-op or error.
+        assert!(p2p::p2p_mdns_advertise_start(pk, 9876, Some(9999)).unwrap());
         assert!(p2p::p2p_mdns_advertise_stop().unwrap());
         assert!(p2p::p2p_mdns_browse_start().unwrap());
         let peers = p2p::p2p_mdns_browse_drain().unwrap();

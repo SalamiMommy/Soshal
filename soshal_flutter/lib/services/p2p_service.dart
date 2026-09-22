@@ -58,6 +58,9 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   Duration? _pollInterval;
   bool _pollingEnabled = false;
   bool _pollInFlight = false;
+  /// Mutable hint for the poll loop; nulled once its download leaves the map
+  /// so polling latches onto a live download (see [startPolling]).
+  String? _activeDownloadId;
 
   List<P2pPeerDto> get peers => _cachedPeers;
   Map<String, P2pSwarmStatusDto> get downloads => _cachedDownloads;
@@ -364,6 +367,8 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
         cellular: sample.cellular,
         lowPowerMode: sample.lowPowerMode,
       );
+      // Async gap: the service may have been disposed/stopped meanwhile.
+      if (_disposed) return;
       if (_downloads.isNotEmpty || _peers.isNotEmpty) {
         _powerInterval = const Duration(seconds: 30);
       } else if (_lastPowerSample == sample) {
@@ -403,7 +408,12 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
           maxParallel: BigInt.from(maxParallel),
         );
         if (_downloads.length >= 50) {
-          _downloads.remove(_downloads.keys.first);
+          final evicted = _downloads.keys.first;
+          // Release the Rust worker + its mmap'd sparse file instead of
+          // leaking it: the download we stop tracking would otherwise keep
+          // running and holding the output file open forever.
+          p2PSwarmCancel(id: evicted);
+          _downloads.remove(evicted);
         }
         _downloads[id] = P2pSwarmStatusDto(
           state: 'running',
@@ -548,6 +558,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   Future<void> stopAll() async {
     _pollTimer?.cancel();
     _pollTimer = null;
+    _activeDownloadId = null;
     try {
       p2PStopAll();
     } catch (e, st) {
@@ -564,9 +575,17 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     notifyListeners();
   }
 
-  /// Reset in-memory state and stop P2P network operations on account switch or logout.
+  /// Reset in-memory state and stop P2P network operations on account switch
+  /// or logout.
   void resetForAccountSwitch() {
     stopAll();
+    // Account-scoped identity + power state must not leak across identities.
+    _mdnsPubkey = '';
+    _power = null;
+    _lastPowerSample = null;
+    _powerInterval = const Duration(seconds: 30);
+    _pausePowerTimer();
+    _startPowerTimer();
   }
 
   /// Poll swarm downloads + drain peers every [interval]; call from a
@@ -574,15 +593,22 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   void startPolling(Duration interval, {String? activeDownloadId}) {
     _pollingEnabled = true;
     _pollInterval = interval;
+    _activeDownloadId = activeDownloadId ?? _activeDownloadId;
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(interval, (_) async {
       if (_pollInFlight) return;
       _pollInFlight = true;
       try {
-        final active = activeDownloadId ??
+        // Track the active id in a mutable field: once the download
+        // completes (leaves the map) the hint resets so the poller latches
+        // onto the next download instead of hammering a dead id forever.
+        final active = _activeDownloadId ??
             (_downloads.keys.isNotEmpty ? _downloads.keys.first : null);
         if (active != null) {
           await swarmStatus(active);
+          if (active == _activeDownloadId && !_downloads.containsKey(active)) {
+            _activeDownloadId = null;
+          }
         }
         await drainPeers();
       } finally {
@@ -596,6 +622,7 @@ class P2pService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     _pollingEnabled = false;
     _pollInterval = null;
     _pollInFlight = false;
+    _activeDownloadId = null;
     _pollTimer?.cancel();
     _pollTimer = null;
   }

@@ -111,6 +111,11 @@ void main() {
       addTearDown(p2p.dispose);
       api.stub('crateFfiP2PP2PSwarmDownload',
           (inv) => 'dl-${api.namedArg(inv, 'manifestJson')}');
+      final cancelled = <String>[];
+      api.stub('crateFfiP2PP2PSwarmCancel', (inv) {
+        cancelled.add(api.namedArg(inv, 'id'));
+        return true;
+      });
 
       for (var i = 0; i < 55; i++) {
         await p2p.swarmDownload(
@@ -125,6 +130,9 @@ void main() {
       expect(p2p.downloads.containsKey('dl-m-0'), isFalse,
           reason: 'oldest evicted');
       expect(p2p.downloads.containsKey('dl-m-54'), isTrue);
+      // WP11: the evicted Rust worker + its mmap must be explicitly cancelled
+      // (releasing the sparse file), not just dropped from the Dart map.
+      expect(cancelled, contains('dl-m-0'));
     });
 
     test('swarmStatus keeps running, drops done; cancel removes', () async {

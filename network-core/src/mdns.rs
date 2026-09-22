@@ -10,7 +10,7 @@
 //! mDNS frames to arrive.
 
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 
 /// Service type advertised/browsed by Soshal peers.
@@ -41,10 +41,15 @@ pub struct MdnsPeer {
 
 /// Advertises this device as a `_soshal._tcp` service so LAN peers can find
 /// it. Holds the daemon alive for the struct's lifetime; dropping the struct
-/// stops the mDNS responder.
+/// stops the mDNS responder. Service parameters are retained so the record's
+/// TXT can be re-announced with a changed `quic_port` later.
 pub struct MdnsAdvertiser {
     #[allow(dead_code)] // kept alive for the responder's lifetime only
     daemon: ServiceDaemon,
+    instance: String,
+    host: String,
+    advertised: String,
+    port: u16,
 }
 
 impl MdnsAdvertiser {
@@ -63,24 +68,47 @@ impl MdnsAdvertiser {
         } else {
             ip.to_string()
         };
-        let host = format!("{}.local.", instance_name(pubkey));
+        let instance = instance_name(pubkey);
+        let host = format!("{}.local.", instance);
+        let mut txt = HashMap::new();
+        if let Some(qp) = quic_port {
+            txt.insert("quic_port".to_string(), qp.to_string());
+        }
+        let info = ServiceInfo::new(SERVICE_TYPE, &instance, &host, &advertised, port, Some(txt))
+            .map_err(|e| format!("mdns service info: {e}"))?;
+        daemon
+            .register(info)
+            .map_err(|e| format!("mdns register: {e}"))?;
+        Ok(Self {
+            daemon,
+            instance,
+            host,
+            advertised,
+            port,
+        })
+    }
+
+    /// Re-announces the service record with a new `quic_port` TXT value.
+    /// mdns_sd re-registers in place (no unregister needed) and broadcasts an
+    /// unsolicited response, so a QUIC server started *after* the advertiser
+    /// no longer leaves peers caching the old, dead port.
+    pub fn update_quic_port(&self, quic_port: Option<u16>) -> Result<(), String> {
         let mut txt = HashMap::new();
         if let Some(qp) = quic_port {
             txt.insert("quic_port".to_string(), qp.to_string());
         }
         let info = ServiceInfo::new(
             SERVICE_TYPE,
-            &instance_name(pubkey),
-            &host,
-            &advertised,
-            port,
+            &self.instance,
+            &self.host,
+            &self.advertised,
+            self.port,
             Some(txt),
         )
         .map_err(|e| format!("mdns service info: {e}"))?;
-        daemon
+        self.daemon
             .register(info)
-            .map_err(|e| format!("mdns register: {e}"))?;
-        Ok(Self { daemon })
+            .map_err(|e| format!("mdns update register: {e}"))
     }
 }
 
@@ -89,7 +117,12 @@ pub struct MdnsBrowser {
     #[allow(dead_code)] // kept alive for the browser's lifetime only
     daemon: ServiceDaemon,
     events: mdns_sd::Receiver<ServiceEvent>,
-    seen: HashSet<SocketAddr>,
+    /// Latest advertised `quic_port` per known peer address. Keyed on the
+    /// address so a peer is only reported to callers once per *change*: an
+    /// updated record for a known address re-emits the peer with the new
+    /// port instead of being dropped by dedup, so peers never hold a stale
+    /// QUIC port.
+    seen: HashMap<SocketAddr, Option<u16>>,
 }
 
 impl MdnsBrowser {
@@ -101,12 +134,14 @@ impl MdnsBrowser {
         Ok(Self {
             daemon,
             events,
-            seen: HashSet::new(),
+            seen: HashMap::new(),
         })
     }
 
-    /// Drains pending discovery events into a list of new peers (deduped,
-    /// private-IP-only, foreign instances skipped).
+    /// Drains pending discovery events into a list of new/changed peers
+    /// (private-IP-only, foreign instances skipped). A peer is emitted the
+    /// first time its address is seen and again whenever a newer record for
+    /// the same address advertises a different `quic_port`.
     pub fn drain_peers(&mut self) -> Vec<MdnsPeer> {
         let mut peers = Vec::new();
         while let Ok(event) = self.events.try_recv() {
@@ -129,12 +164,24 @@ impl MdnsBrowser {
                         continue;
                     }
                     let addr = SocketAddr::new(ip, info.get_port());
-                    if self.seen.insert(addr) {
-                        peers.push(MdnsPeer {
-                            pubkey: pubkey.clone(),
-                            addr,
-                            quic_port,
-                        });
+                    match self.seen.get(&addr) {
+                        None => {
+                            self.seen.insert(addr, quic_port);
+                            peers.push(MdnsPeer {
+                                pubkey: pubkey.clone(),
+                                addr,
+                                quic_port,
+                            });
+                        }
+                        Some(prev) if *prev != quic_port => {
+                            self.seen.insert(addr, quic_port);
+                            peers.push(MdnsPeer {
+                                pubkey: pubkey.clone(),
+                                addr,
+                                quic_port,
+                            });
+                        }
+                        Some(_) => { /* unchanged — dedup */ }
                     }
                 }
             }

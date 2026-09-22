@@ -30,11 +30,21 @@ use std::time::Duration;
 
 pub const LAN_MAGIC: &str = "soshal-lan";
 
-/// Max payload a remote peer may request in one frame (one nominal chunk).
-const MAX_FRAME_BYTES: usize = 1024 * 1024;
+/// Max payload a remote peer may request in one frame. Matches the largest
+/// chunk the media chunker can emit (`ChunkingParams::for_mime("video/*")`
+/// max), so video-mime blobs sync over LAN/QUIC instead of every chunk ≥1 MiB
+/// being rejected by the frame cap.
+const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 const MAX_HANDSHAKE_LINE: usize = 512;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Upper bound for a single response write (copy path `write_all` or
+/// zero-copy `sendfile`) on the LAN server. Blocking sockets wedged forever
+/// without SO_SNDTIMEO: a peer that passes the HMAC handshake then stops
+/// reading (TCP window 0) would otherwise pin a handler thread and its fd
+/// indefinitely, surviving even `stop()` which only joins the accept thread.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LanChunkRequest {
@@ -152,6 +162,10 @@ fn handle_conn(stream: TcpStream, key: [u8; 32], store: &ChunkStore) {
         return;
     }
     let _ = stream.set_read_timeout(Some(READ_TIMEOUT));
+    // Blocking write path must not wedge the handler thread: SO_SNDTIMEO
+    // bounds both `write_all` and `sendfile` on this socket. Without it a
+    // peer that stops reading pins the thread + fd forever.
+    let _ = stream.set_write_timeout(Some(WRITE_TIMEOUT));
     let peer = match stream.try_clone() {
         Ok(p) => p,
         Err(_) => return,
@@ -370,30 +384,20 @@ fn serve_range_zero_copy(
     }
     let mut sent = 0usize;
     let mut file_offset = (req.offset - chunk.offset as usize) as i64;
-    // EAGAIN backoff: 1 → 2 → 4 → … → 16 ms. Fixed 1 ms spin-sleeping
-    // could wake ~1000×/s on a busy LAN; doubling caps wakeups while a
-    // sustained stall (≥64 EAGAINs, ~1 s total) fails the connection so
-    // the client falls back to another peer/transport.
-    let mut eagain_backoff_ms: u32 = 1;
-    let mut eagain_streak: u32 = 0;
+    // EAGAIN on a blocking socket means SO_SNDTIMEO expired (stalled peer,
+    // TCP window 0) — the connection is over, give up. This socket is never
+    // non-blocking, so the old 64-streak exponential backoff was unreachable
+    // dead code (blocking sockets never return EAGAIN until the write
+    // timeout fires); keep the branch as a terminal exit.
     while sent < req.length {
         let remaining = req.length - sent;
         match nix::sys::sendfile::sendfile(&writer, &file, Some(&mut file_offset), remaining) {
             Ok(0) => return true, // header already emitted; give up on the socket
             Ok(n) => {
                 sent += n;
-                eagain_backoff_ms = 1;
-                eagain_streak = 0;
             }
             Err(nix::errno::Errno::EINTR) => {}
-            Err(nix::errno::Errno::EAGAIN) => {
-                eagain_streak += 1;
-                if eagain_streak >= 64 {
-                    return true; // stalled peer; socket stays half-written
-                }
-                std::thread::sleep(Duration::from_millis(eagain_backoff_ms as u64));
-                eagain_backoff_ms = (eagain_backoff_ms * 2).min(16);
-            }
+            Err(nix::errno::Errno::EAGAIN) => return true, // write timeout: stalled peer
             Err(_) => return true, // header already emitted; connection is dead
         }
     }
@@ -638,7 +642,11 @@ pub fn fetch_verified_chunk(
             want_manifest: false,
         },
     )?;
-    if blake3::hash(&data).to_hex().as_str() != hash {
+    if !blake3::hash(&data)
+        .to_hex()
+        .as_str()
+        .eq_ignore_ascii_case(hash)
+    {
         return Err("chunk hash mismatch after transfer".to_string());
     }
     Ok(data)

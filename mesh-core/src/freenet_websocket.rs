@@ -52,6 +52,7 @@ use crate::freenet_contract::{RelatedContract, StateSummary};
 /// ciphertext, so only the designated peer (holding the matching session)
 /// can read the state; everyone else sees an opaque blob. Subscribers
 /// without the session cannot decode it by design.
+#[derive(Clone)]
 pub struct FreenetWebSocketClient {
     url: String,
     auth_token: String,
@@ -293,6 +294,17 @@ impl FreenetWebSocketClient {
                 .map_err(|e| format!("WebSocket close failed: {e}"))?;
         }
         Ok(())
+    }
+
+    /// Cheap liveness probe: whether a socket is currently held. A held socket
+    /// can still be a stale half-open connection (server vanished without a
+    /// close frame), so callers treat this as a best-effort hint and fall back
+    /// to reconnect-once-on-error.
+    pub fn is_socket_open(&self) -> bool {
+        match self.socket.try_lock() {
+            Ok(guard) => guard.is_some(),
+            Err(_) => true, // contended — assume alive rather than block
+        }
     }
 
     /// Sends a request to the Freenet node over the native (bincode) client

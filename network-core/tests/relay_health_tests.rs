@@ -96,6 +96,32 @@ fn backoff_delay_zero_base() {
 }
 
 #[test]
+fn compute_health_nan_latency_is_unhealthy() {
+    // L10: NaN must not be classified Healthy via false comparisons.
+    let health = compute_health(f64::NAN, 0);
+    assert_eq!(health.status, RelayStatus::Unhealthy);
+    assert_eq!(health.score, 0.0);
+    let inf = compute_health(f64::INFINITY, 0);
+    assert_eq!(inf.status, RelayStatus::Unhealthy);
+    let neg = compute_health(-50.0, 0);
+    assert_eq!(neg.status, RelayStatus::Healthy);
+}
+
+#[test]
+fn update_ema_nan_prev_recovers() {
+    let ema = update_ema(f64::NAN, 100.0);
+    assert_eq!(ema, 100.0);
+}
+
+#[test]
+fn backoff_delay_saturates_on_overflow() {
+    let overflowed = backoff_delay(u64::MAX / 2, 6);
+    assert_eq!(overflowed, u64::MAX, "saturating_mul must cap at u64::MAX");
+    let saturated = backoff_delay(u64::MAX, 6);
+    assert_eq!(saturated, u64::MAX);
+}
+
+#[test]
 fn relay_status_comparison() {
     assert!(RelayStatus::Healthy != RelayStatus::Degraded);
     assert!(RelayStatus::Degraded != RelayStatus::Unhealthy);

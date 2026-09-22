@@ -839,7 +839,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
                         maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text(
                       relay.connected
-                          ? '${relay.latencyMs} ms · last event ${relay.lastEventAt}s'
+                          ? '${relay.latencyMs} ms · connected ${relay.lastConnectAt}s ago'
                           : 'disconnected',
                     ),
                     trailing: IconButton(

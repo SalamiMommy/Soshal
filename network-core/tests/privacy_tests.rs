@@ -117,7 +117,28 @@ fn select_relays_friends_with_freenet_no_i2p() {
 #[test]
 fn select_relays_only_me() {
     let relays = select_relays("only_me", false, false, None, None);
-    assert_eq!(relays.len(), 1);
+    assert!(relays.is_empty(), "only_me routes mesh-only, no relays");
+    let with_public = select_relays("only_me", false, false, None, None);
+    assert!(
+        with_public.iter().all(|r| !r.contains("relay.damus.io")),
+        "no public relay URL for only_me"
+    );
+}
+
+#[test]
+fn select_relays_friends_drops_public_when_distance_exceeds() {
+    // L6: friends audience whose graph distance exceeds the friends max (1)
+    // must not select public relays (strangers).
+    let kept = select_relays("friends", false, false, None, None);
+    assert!(kept.iter().any(|r| r.contains("relay.damus.io")));
+    let dropped = select_relays("friends", false, false, None, Some(2));
+    assert!(
+        dropped.is_empty(),
+        "friends + distance>1 -> no public relays"
+    );
+    // Public/network levels unaffected by distance.
+    let public = select_relays("public", false, false, None, Some(2));
+    assert!(public.contains(&"wss://relay.damus.io".to_string()));
 }
 
 #[test]

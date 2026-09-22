@@ -283,12 +283,19 @@ pub(crate) fn cached_tcp_probe(host: &str, port: u16) -> bool {
     static PROBE_CACHE: OnceLock<Mutex<TtlCache<(String, u16), bool>>> = OnceLock::new();
     let cache = PROBE_CACHE.get_or_init(|| Mutex::new(TtlCache::new(5, 256)));
     let key = (host.to_string(), port);
-    let mut guard = lock(cache);
-    if let Some(&result) = guard.get(&key, soshal_common_core::format::now_secs()) {
-        return result;
+    let now = soshal_common_core::format::now_secs();
+    {
+        let mut guard = lock(cache);
+        if let Some(&result) = guard.get(&key, now) {
+            return result;
+        }
     }
+    // Probe OUTSIDE the cache lock: a 500 ms TCP connect must never serialize
+    // behind every other cached_tcp_probe caller (and must not re-check the
+    // cache under the same lock it fills — TOCTOU between get and insert).
     let fresh = tcp_probe(host, port);
-    guard.insert(key, fresh, soshal_common_core::format::now_secs());
+    let now = soshal_common_core::format::now_secs();
+    lock(cache).insert(key, fresh, now);
     fresh
 }
 

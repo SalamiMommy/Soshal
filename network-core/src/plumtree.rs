@@ -4,13 +4,23 @@
 
 use serde::{Deserialize, Serialize};
 use soshal_common_core::bounded::{BoundedMap, BoundedSet};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 const MAX_RECEIVED_MESSAGES: usize = 10_000;
 /// Cap on outstanding graft requests; oldest evicted past it (bounds
 /// attacker-spoofed IHave memory).
 const MAX_PENDING_GRAFTS: usize = 4_096;
+/// Cap on eager (payload-push) peers per node; new peers beyond it land in
+/// the lazy set. Bounds fan-out cost under conn-churn.
+const EAGER_PEER_CAP: usize = 64;
+/// Cap on lazy (announce-only) peers per node.
+const LAZY_PEER_CAP: usize = 256;
+/// Per-peer IHave-triggered graft credit window. 16 grafts/second/peer caps
+/// fake-IHave floods without hindering a healthy lazy tree.
+const GRAFT_WINDOW: Duration = Duration::from_secs(1);
+const GRAFT_CREDITS_PER_WINDOW: u32 = 16;
 
 /// Types of messages in the PlumTree protocol.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +48,9 @@ pub struct PlumTreeNode {
     pub lazy_peers: HashSet<String>,
     pub received_messages: BoundedSet<String>,
     pub pending_grafts: BoundedMap<String, String>,
+    /// Per-peer graft credit (window start, remaining credits) for IHave
+    /// floods. Cleared implicitly when the window elapses.
+    graft_windows: HashMap<String, (Instant, u32)>,
 }
 
 impl PlumTreeNode {
@@ -48,13 +61,23 @@ impl PlumTreeNode {
             lazy_peers: HashSet::new(),
             received_messages: BoundedSet::new(MAX_RECEIVED_MESSAGES),
             pending_grafts: BoundedMap::new(MAX_PENDING_GRAFTS),
+            graft_windows: HashMap::new(),
         }
     }
 
-    /// Adds a newly connected peer (defaults to eager set).
+    /// Adds a newly connected peer. Eager (payload-push) by default, up to
+    /// [`EAGER_PEER_CAP`]; past that the peer joins the lazy (announce-only)
+    /// set, up to [`LAZY_PEER_CAP`]. Beyond both, the peer is not admitted —
+    /// membership is bounded so no single attacker can grow the fan-out
+    /// without bound.
     pub fn add_peer(&mut self, peer_id: &str) {
-        if peer_id != self.self_peer_id {
+        if peer_id == self.self_peer_id {
+            return;
+        }
+        if self.eager_peers.len() < EAGER_PEER_CAP {
             self.eager_peers.insert(peer_id.to_string());
+        } else if self.lazy_peers.len() < LAZY_PEER_CAP {
+            self.lazy_peers.insert(peer_id.to_string());
         }
     }
 
@@ -122,6 +145,18 @@ impl PlumTreeNode {
                 }
             }
             PlumTreeMessage::IHave { message_id, .. } => {
+                // Only trust announced ids that look like real hashes
+                // (64-hex). Anything else can't be a genuine event id and is
+                // dropped before it can occupy pending-graft memory.
+                if !is_plausible_event_id(&message_id) {
+                    return outgoing;
+                }
+                // Rate-limit IHave-triggered grafts per peer (16/s): a
+                // fake-IHave flood must not evict legitimate grafts from the
+                // pending set or spend unbounded outbound graft traffic.
+                if !self.consume_graft_credit(from_peer) {
+                    return outgoing;
+                }
                 if !self.received_messages.contains(&message_id)
                     && !self.pending_grafts.contains_key(&message_id)
                 {
@@ -132,12 +167,18 @@ impl PlumTreeNode {
                 }
             }
             PlumTreeMessage::Graft { message_id } => {
-                // Promote peer to eager link
-                self.lazy_peers.remove(from_peer);
-                self.eager_peers.insert(from_peer.to_string());
+                // Only promote a peer that is already a member — an unknown
+                // peer must not be able to inject itself into the eager tree
+                // (and from there into every payload fan-out) with a spoofed
+                // Graft.
+                if self.eager_peers.contains(from_peer) || self.lazy_peers.contains(from_peer) {
+                    // Promote peer to eager link
+                    self.lazy_peers.remove(from_peer);
+                    self.eager_peers.insert(from_peer.to_string());
 
-                // Note: caller will re-send payload for message_id if available in local DB
-                let _ = message_id;
+                    // Note: caller will re-send payload for message_id if available in local DB
+                    let _ = message_id;
+                }
             }
             PlumTreeMessage::Prune { .. } => {
                 // Demote peer to lazy link
@@ -148,6 +189,33 @@ impl PlumTreeNode {
 
         outgoing
     }
+
+    /// Decrements the sending peer's graft credit for the current window,
+    /// returning `false` (and spending nothing) once the per-window budget is
+    /// exhausted, `true` when a graft may be issued.
+    fn consume_graft_credit(&mut self, peer: &str) -> bool {
+        let now = Instant::now();
+        let entry = self
+            .graft_windows
+            .entry(peer.to_string())
+            .or_insert((now, GRAFT_CREDITS_PER_WINDOW));
+        if now.duration_since(entry.0) >= GRAFT_WINDOW {
+            *entry = (now, GRAFT_CREDITS_PER_WINDOW);
+        }
+        if entry.1 == 0 {
+            false
+        } else {
+            entry.1 -= 1;
+            true
+        }
+    }
+}
+
+/// Returns true when `id` has the shape of a real 256-bit hash: exactly
+/// 64 lowercase hex chars (nostr event ids). Anything else is attacker
+/// junk, unusable as an event id.
+fn is_plausible_event_id(id: &str) -> bool {
+    id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 #[cfg(test)]
@@ -204,26 +272,29 @@ mod tests {
         let mut node = PlumTreeNode::new("self");
         node.add_peer("peer_eager");
         node.lazy_peers.insert("peer_lazy".to_string());
+        let seen = "aa".repeat(32);
+        let pending = "bb".repeat(32);
+        let fresh = "cc".repeat(32);
 
         // IHave for already-seen message -> no-op
-        node.received_messages.insert("seen".to_string());
+        node.received_messages.insert(seen.clone());
         let out = node.handle_incoming(
             "peer_lazy",
             PlumTreeMessage::IHave {
-                message_id: "seen".to_string(),
+                message_id: seen.clone(),
                 round: 1,
             },
         );
         assert!(out.is_empty());
-        assert!(!node.pending_grafts.contains_key(&"seen".to_string()));
+        assert!(!node.pending_grafts.contains_key(&seen));
 
         // IHave for message already pending graft -> no-op
         node.pending_grafts
-            .insert("pending_msg".to_string(), "peer_lazy".to_string());
+            .insert(pending.clone(), "peer_lazy".to_string());
         let out = node.handle_incoming(
             "peer_lazy",
             PlumTreeMessage::IHave {
-                message_id: "pending_msg".to_string(),
+                message_id: pending.clone(),
                 round: 1,
             },
         );
@@ -233,16 +304,14 @@ mod tests {
         let out = node.handle_incoming(
             "peer_lazy",
             PlumTreeMessage::IHave {
-                message_id: "fresh_msg".to_string(),
+                message_id: fresh.clone(),
                 round: 1,
             },
         );
         assert_eq!(out.len(), 1);
         assert!(matches!(out[0].1, PlumTreeMessage::Graft { .. }));
         assert_eq!(
-            node.pending_grafts
-                .get(&"fresh_msg".to_string())
-                .map(String::as_str),
+            node.pending_grafts.get(&fresh).map(String::as_str),
             Some("peer_lazy")
         );
 
@@ -250,7 +319,7 @@ mod tests {
         let out = node.handle_incoming(
             "peer_lazy",
             PlumTreeMessage::Graft {
-                message_id: "fresh_msg".to_string(),
+                message_id: fresh.clone(),
             },
         );
         assert!(out.is_empty());
@@ -261,13 +330,13 @@ mod tests {
         let out = node.handle_incoming(
             "peer_lazy",
             PlumTreeMessage::Gossip {
-                message_id: "fresh_msg".to_string(),
+                message_id: fresh.clone(),
                 payload_json: "{}".into(),
                 round: 1,
             },
         );
-        assert!(!node.pending_grafts.contains_key(&"fresh_msg".to_string()));
-        assert!(node.received_messages.contains(&"fresh_msg".to_string()));
+        assert!(!node.pending_grafts.contains_key(&fresh));
+        assert!(node.received_messages.contains(&fresh));
         // sender was promoted to eager; only the remaining eager peer
         // (peer_eager) gets the forward, no IHave to lazy peers
         assert_eq!(out.len(), 1);
@@ -281,11 +350,98 @@ mod tests {
         let out = node.handle_incoming(
             "peer_lazy",
             PlumTreeMessage::Prune {
-                message_id: "fresh_msg".to_string(),
+                message_id: fresh.clone(),
             },
         );
         assert!(out.is_empty());
         assert!(!node.eager_peers.contains("peer_lazy"));
         assert!(node.lazy_peers.contains("peer_lazy"));
+    }
+
+    #[test]
+    fn test_graft_from_unknown_peer_ignored() {
+        let mut node = PlumTreeNode::new("self");
+        node.add_peer("peer_eager");
+        // A peer that is in neither set must not be able to inject itself
+        // into the eager tree with a spoofed Graft.
+        let out = node.handle_incoming(
+            "unknown_attacker",
+            PlumTreeMessage::Graft {
+                message_id: "dd".repeat(32),
+            },
+        );
+        assert!(out.is_empty());
+        assert!(!node.eager_peers.contains("unknown_attacker"));
+        assert!(!node.lazy_peers.contains("unknown_attacker"));
+    }
+
+    #[test]
+    fn test_implausible_ihave_id_dropped() {
+        let mut node = PlumTreeNode::new("self");
+        node.add_peer("peer_eager");
+        node.lazy_peers.insert("peer_lazy".to_string());
+        let out = node.handle_incoming(
+            "peer_lazy",
+            PlumTreeMessage::IHave {
+                message_id: "not-a-valid-hash".to_string(),
+                round: 1,
+            },
+        );
+        assert!(out.is_empty(), "junk id must not trigger a graft");
+        assert!(node.pending_grafts.is_empty());
+    }
+
+    #[test]
+    fn test_ihave_flood_rate_limited_per_peer() {
+        let mut node = PlumTreeNode::new("self");
+        node.lazy_peers.insert("peer_lazy".to_string());
+        let mut grafts = 0;
+        for i in 0..(GRAFT_CREDITS_PER_WINDOW + 8) {
+            let id = format!("{:02x}", i & 0xff).repeat(32);
+            let out = node.handle_incoming(
+                "peer_lazy",
+                PlumTreeMessage::IHave {
+                    message_id: id.clone(),
+                    round: 1,
+                },
+            );
+            if !out.is_empty() {
+                grafts += 1;
+            }
+            assert_eq!(
+                node.pending_grafts.contains_key(&id),
+                !out.is_empty(),
+                "pending entry only for granted grafts"
+            );
+        }
+        // Credited grafts granted, the rest of the window suppressed.
+        assert_eq!(grafts, GRAFT_CREDITS_PER_WINDOW);
+        // A different peer (its own window) is unaffected.
+        let out = node.handle_incoming(
+            "peer_other",
+            PlumTreeMessage::IHave {
+                message_id: "ff".repeat(32),
+                round: 1,
+            },
+        );
+        assert!(!out.is_empty(), "unrelated peer has its own credit");
+    }
+
+    #[test]
+    fn test_peer_caps_bound_fanout() {
+        let mut node = PlumTreeNode::new("self");
+        for i in 0..(EAGER_PEER_CAP + LAZY_PEER_CAP + 16) {
+            node.add_peer(&format!("peer-{i}"));
+        }
+        assert_eq!(node.eager_peers.len(), EAGER_PEER_CAP);
+        assert_eq!(node.lazy_peers.len(), LAZY_PEER_CAP);
+        // Beyond the combined caps a peer is admitted to neither set: total
+        // membership is bounded, so excess spoofed ids buy nothing.
+        assert!(!node
+            .eager_peers
+            .contains(&format!("peer-{}", EAGER_PEER_CAP + LAZY_PEER_CAP)));
+        assert!(!node
+            .lazy_peers
+            .contains(&format!("peer-{}", EAGER_PEER_CAP + LAZY_PEER_CAP)));
     }
 }

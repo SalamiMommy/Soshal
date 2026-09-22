@@ -3,6 +3,37 @@
 use soshal_network_core::rate_limit::rate_limit_check_json;
 
 #[test]
+fn rate_limit_hostile_attempts_and_now_do_not_overflow() {
+    // L10: u32::MAX attempts / now near u64::MAX must saturate, never
+    // wrap into a reset that un-blocks the limiter.
+    let input = r#"{
+        "attempts": 4294967295,
+        "first_attempt": 1,
+        "now": 18446744073709551615,
+        "max_attempts": 4294967295,
+        "window_ms": 18446744073709551615,
+        "blocked_until": null
+    }"#;
+    let result = rate_limit_check_json(input);
+    assert!(
+        result.contains("\"allowed\":false"),
+        "max attempts + unsaturated overflow must stay blocked"
+    );
+    assert!(result.contains("\"new_blocked_until\":18446744073709551615"));
+    // An attempt increment past max-1 must not panic or wrap to 0.
+    let input = r#"{
+        "attempts": 4294967294,
+        "first_attempt": 1,
+        "now": 2,
+        "max_attempts": 4294967295,
+        "window_ms": 60000,
+        "blocked_until": null
+    }"#;
+    let result = rate_limit_check_json(input);
+    assert!(result.contains("\"new_attempts\":4294967295"));
+}
+
+#[test]
 fn rate_limit_allows_first_attempt() {
     let input = r#"{
         "attempts": 0,

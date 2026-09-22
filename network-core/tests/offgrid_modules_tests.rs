@@ -50,7 +50,7 @@ fn multi_bearer_routes_plumtree_gossip() {
     let actor = MultiBearerActor::new("abcdef0123456789abcdef0123456789", [0u8; 32]);
     let rt = tokio::runtime::Runtime::new().unwrap();
     let msg = PlumTreeMessage::IHave {
-        message_id: "m1".into(),
+        message_id: "aa".repeat(32),
         round: 1,
     };
     let outgoing = rt.block_on(actor.route_plumtree_gossip("peer_a", msg.clone()));

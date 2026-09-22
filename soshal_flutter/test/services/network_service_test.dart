@@ -258,7 +258,7 @@ void main() {
       api.stub(
         'crateFfiNetworkNetworkGetRelayStatus',
         (_) => fv('[{"url":"wss://r1","connected":true,'
-            '"latency_ms":12,"last_event_at":99}]'),
+            '"latency_ms":12,"last_connect_at":99}]'),
       );
 
       final relays = await svc.fetchRelayStatus();
@@ -267,7 +267,7 @@ void main() {
       expect(svc.relays.first.url, 'wss://r1');
       expect(svc.relays.first.connected, isTrue);
       expect(svc.relays.first.latencyMs, 12);
-      expect(svc.relays.first.lastEventAt, 99);
+      expect(svc.relays.first.lastConnectAt, 99);
 
       api.stub('crateFfiNetworkNetworkInitRelays', (_) => fv('ok'));
       await svc.reinitRelays();
@@ -288,12 +288,22 @@ void main() {
       final svc = NetworkService();
       addTearDown(svc.dispose);
       api.stub('crateFfiNetworkNetworkAddRelay', (_) => fv(true));
+      api.stub(
+        'crateFfiNetworkNetworkGetRelayStatus',
+        (_) => fv('[{"url":"wss://r2","connected":true,'
+            '"latency_ms":5,"last_connect_at":0}]'),
+      );
 
       final ok = await svc.addRelay('wss://r2');
 
       expect(ok, isTrue);
       var inv = api.callsOf('crateFfiNetworkNetworkAddRelay').single;
       expect(api.namedArg(inv, 'url'), 'wss://r2');
+      // After a successful add the local list is refreshed from bridge truth
+      // (connected flag comes from real status, not fabricated).
+      expect(svc.relays.length, 1);
+      expect(svc.relays.single.url, 'wss://r2');
+      expect(svc.relays.single.connected, isTrue);
 
       api.stub('crateFfiNetworkNetworkRemoveRelay', (_) => fv(false));
       final removed = await svc.removeRelay('wss://r2');
@@ -306,12 +316,20 @@ void main() {
       final svc = NetworkService();
       addTearDown(svc.dispose);
       api.stub('crateFfiNetworkNetworkInitRelays', (_) => fv('connected'));
+      api.stub(
+        'crateFfiNetworkNetworkGetRelayStatus',
+        (_) => fv('[{"url":"wss://a","connected":true,'
+            '"latency_ms":1,"last_connect_at":0}]'),
+      );
 
       final result = await svc.initRelays(['wss://a', 'wss://b']);
 
       expect(result, 'connected');
       final inv = api.callsOf('crateFfiNetworkNetworkInitRelays').single;
       expect(api.namedArg(inv, 'relayUrls'), ['wss://a', 'wss://b']);
+      // Successful init syncs the local list with bridge truth.
+      expect(svc.relays.length, 1);
+      expect(svc.relays.single.url, 'wss://a');
     });
 
     test('fetchRelayStatus error rethrows and sets lastError', () async {

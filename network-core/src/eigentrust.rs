@@ -1,7 +1,7 @@
 //! Cryptographic EigenTrust Peer Reputation Engine.
 //! Computes global trust scores from local peer transaction feedback matrices.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Pre-trusted peers vector alpha weight (damping factor).
 pub const EIGENTRUST_ALPHA: f64 = 0.15;
@@ -9,6 +9,9 @@ pub const EIGENTRUST_ALPHA: f64 = 0.15;
 pub const MAX_EIGENTRUST_ITERATIONS: usize = 50;
 /// Convergence epsilon threshold.
 pub const CONVERGENCE_EPSILON: f64 = 1e-5;
+/// Hard cap on `local_matrix` entries (FIFO eviction). A hostile audit
+/// stream must not grow the matrix without bound (memory + O(n) row scans).
+pub const MAX_LOCAL_AUDITS: usize = 10_000;
 
 /// Local transaction experience recorded for a peer.
 #[derive(Debug, Clone, Default)]
@@ -38,8 +41,14 @@ impl PeerAuditScore {
 pub struct EigenTrustEngine {
     /// Local trust scores: map of (src_pubkey, dst_pubkey) -> AuditScore
     pub local_matrix: HashMap<(String, String), PeerAuditScore>,
-    /// Pre-trusted peer set (bootstrap nodes / trusted web-of-trust seeds)
+    /// Pre-trusted peer set (bootstrap nodes / trusted web-of-trust seeds).
+    /// At least one *real* anchor is required for dominance resistance; a
+    /// self-only anchor set is the baseline until a user-provided anchor
+    /// list is supplied via [`EigenTrustEngine::extend_pre_trusted`].
     pub pre_trusted_peers: Vec<String>,
+    /// FIFO insertion order for `local_matrix` keys — drives the bounded
+    /// eviction policy.
+    audit_order: VecDeque<(String, String)>,
 }
 
 impl EigenTrustEngine {
@@ -47,15 +56,37 @@ impl EigenTrustEngine {
         Self {
             local_matrix: HashMap::new(),
             pre_trusted_peers,
+            audit_order: VecDeque::new(),
+        }
+    }
+
+    /// Adds real web-of-trust anchors to the pre-trusted set (bootstrap
+    /// peers / verified contacts). Called at wire-up with the anchor list;
+    /// a self-only seed cannot anchor global trust against a colluding ring.
+    pub fn extend_pre_trusted(&mut self, anchors: &[String]) {
+        for a in anchors {
+            if !self.pre_trusted_peers.contains(a) {
+                self.pre_trusted_peers.push(a.clone());
+            }
         }
     }
 
     /// Record a transaction outcome for a peer.
     pub fn record_audit(&mut self, src: &str, dst: &str, valid: bool, latency_ms: u64) {
-        let entry = self
-            .local_matrix
-            .entry((src.to_string(), dst.to_string()))
-            .or_default();
+        let key = (src.to_string(), dst.to_string());
+        // Bound the matrix: new pairs evict the oldest recorded pair once the
+        // cap is reached, so hostile audit streams cannot grow memory or row
+        // scan cost without bound.
+        let is_new = !self.local_matrix.contains_key(&key);
+        if is_new {
+            if self.local_matrix.len() >= MAX_LOCAL_AUDITS {
+                if let Some(oldest) = self.audit_order.pop_front() {
+                    self.local_matrix.remove(&oldest);
+                }
+            }
+            self.audit_order.push_back(key.clone());
+        }
+        let entry = self.local_matrix.entry(key).or_default();
         if valid {
             entry.valid_chunks += 1;
             entry.successful_transfers += 1;
@@ -199,5 +230,61 @@ mod tests {
         let scores = engine.compute_global_trust(&peers);
 
         assert!(scores["peer_b"] > scores["peer_c"]);
+    }
+
+    #[test]
+    fn test_local_matrix_bounded_at_cap() {
+        let mut engine = EigenTrustEngine::new(vec!["anchor".to_string()]);
+        // Hostile audit stream: distinct src/dst pairs beyond the cap.
+        for i in 0..(MAX_LOCAL_AUDITS + 500) {
+            engine.record_audit(&format!("src-{i}"), "dst", true, 1);
+        }
+        assert_eq!(
+            engine.local_matrix.len(),
+            MAX_LOCAL_AUDITS,
+            "matrix must not grow past the cap"
+        );
+        // The oldest entries were evicted first (FIFO).
+        assert!(!engine
+            .local_matrix
+            .contains_key(&("src-0".into(), "dst".into())));
+        assert!(engine
+            .local_matrix
+            .contains_key(&(format!("src-{}", MAX_LOCAL_AUDITS + 499), "dst".into())));
+        // Existing pairs keep accumulating (no eviction thrash on update).
+        engine.record_audit("dst", "dst", false, 10);
+        assert_eq!(engine.local_matrix.len(), MAX_LOCAL_AUDITS);
+    }
+
+    #[test]
+    fn test_colluding_ring_does_not_dominate_with_anchors() {
+        // A real anchor rates an honest peer; a closed ring of two mutally
+        // inflating peers has no interaction with the anchor. EigenTrust's
+        // damping toward the anchor mass drives the ring's closed-loop trust
+        // to ~0 while the anchor-endorsed peer retains its score.
+        let mut engine = EigenTrustEngine::new(vec!["anchor".to_string()]);
+        engine.extend_pre_trusted(&["anchor".to_string()]);
+        engine.record_audit("anchor", "legit", true, 10);
+        engine.record_audit("ring1", "ring2", true, 5);
+        engine.record_audit("ring2", "ring1", true, 5);
+        let peers: Vec<String> = ["anchor", "legit", "ring1", "ring2"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let scores = engine.compute_global_trust(&peers);
+        assert!(
+            scores["legit"] > scores["ring1"],
+            "anchor-endorsed peer outscores ring member"
+        );
+        assert!(scores["legit"] > scores["ring2"]);
+        assert!(
+            scores["ring1"] < 1e-2,
+            "closed colluding ring converges to ~0 trust"
+        );
+        assert_eq!(
+            engine.pre_trusted_peers,
+            vec!["anchor".to_string()],
+            "extend is idempotent"
+        );
     }
 }

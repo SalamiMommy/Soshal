@@ -1185,7 +1185,7 @@ class _NetworkSettingsScreenState extends State<NetworkSettingsScreen> {
                   ),
                   subtitle: Text(
                     relay.connected
-                        ? '${relay.latencyMs} ms · last event ${_ago(relay.lastEventAt)}'
+                        ? '${relay.latencyMs} ms · connected ${_ago(relay.lastConnectAt)} ago'
                         : 'disconnected',
                   ),
                   trailing: IconButton(

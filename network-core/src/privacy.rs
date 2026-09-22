@@ -115,6 +115,10 @@ pub fn select_relays(
     pubkey: Option<&str>,
     wot_distance: Option<u32>,
 ) -> Vec<String> {
+    // L6: public Nostr relay selection is audience-honest. "only_me" never
+    // selects a public relay (mesh-only); a "friends" audience whose caller
+    // graph distance already exceeds the friends max drops public relays too,
+    // so content never leaks to strangers via a public relay's membership.
     let i2p_relays: Vec<&str> = vec![
         "wss://i2p.nostr.i2p",
         "wss://relay.i2p",
@@ -171,8 +175,19 @@ pub fn select_relays(
                 3
             }
         }
-        "friends" => 2,
-        "only_me" => 1,
+        // L6: honored per-relay. Public relays are strangers by definition —
+        // for a "friends" audience (max wot distance 1) they are only
+        // acceptable while the caller's own graph distance still covers the
+        // audience; once the caller's measured distance exceeds it, public
+        // relay selection is dropped entirely.
+        "friends" => match wot_distance {
+            Some(d) if d > 1 => 0,
+            _ => 2,
+        },
+        // "only_me" must never route through a public relay — zero public
+        // selection (mesh-only; possibly an empty list, which callers treat
+        // as mesh-only routing).
+        "only_me" => 0,
         _ => 3,
     };
     let nostr_relays: Vec<String> = public_relays

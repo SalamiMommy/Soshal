@@ -109,7 +109,12 @@ pub struct BeaconSeq {
 impl BeaconSeq {
     const MAX_NONCES_PER_PEER: usize = 64;
     const MAX_TRACKED_PEERS: usize = 1024;
-    const MAX_EVICTED_TOMBSTONES: usize = 1024;
+    /// Hostile peer churn flushes evicted nonces into the tombstone bucket;
+    /// a small FIFO lets an attacker rotate real peers' tombstones out and
+    /// reopen their replay window. 16k entries (~256 KiB) forces ~16k
+    /// churned peers (each must present a valid-shaped nonce to become
+    /// tracked first) before the oldest tombstone is evicted.
+    const MAX_EVICTED_TOMBSTONES: usize = 16_384;
 
     pub fn new() -> Self {
         Self::default()
@@ -243,5 +248,39 @@ mod tests {
         }
         // Evicted nonce now rejected via tombstone, not just replay map.
         assert!(!seq.check_and_record(&evictor, &n_old));
+    }
+
+    #[test]
+    fn beacon_seq_tombstones_survive_hostile_churn_past_old_cap() {
+        // WP11: the old 1024-entry tombstone FIFO let ~1k churned peers
+        // rotate out a real peer's tombstones and reopen its replay window.
+        // Fill the tombstone bucket beyond the OLD cap and confirm the
+        // evicted nonce is still rejected.
+        let seq = BeaconSeq::new();
+        let victim = "ab".repeat(32);
+        let n_old = fresh_nonce();
+        assert!(seq.check_and_record(&victim, &n_old));
+        assert!(seq.check_and_record(&victim, &fresh_nonce()));
+        // Bigger-than-old-cap churn: each new tracked peer evicts the oldest
+        // tracked peer (adding its nonces to tombstones), so the bucket
+        // rotates past an attacker-sized window. Total tombstone pushes stay
+        // under MAX_EVICTED_TOMBSTONES so the victim's entries are never the
+        // ones dropped (they were pushed earliest).
+        let churn = BeaconSeq::MAX_TRACKED_PEERS + 12_000;
+        for i in 0..churn {
+            // Distinct single-nonce peers; once tracked they accumulate a
+            // second nonce so eviction always carries entries into tombstones.
+            let pk = format!("{:08x}", i).repeat(4);
+            assert!(seq.check_and_record(&pk, &fresh_nonce()));
+        }
+        assert!(
+            !seq.check_and_record(&victim, &n_old),
+            "tombstone must survive hostile churn well past the old 1024 cap"
+        );
+        // Bounded memory holds regardless of churn.
+        {
+            let ev = seq.evicted.lock().unwrap();
+            assert!(ev.len() <= BeaconSeq::MAX_EVICTED_TOMBSTONES);
+        }
     }
 }

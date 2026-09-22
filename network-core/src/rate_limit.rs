@@ -53,7 +53,7 @@ fn rate_limit_check(input: &RateLimitInput) -> RateLimitOutput {
         let exp = input.attempts.min(30);
         let backoff_secs = 2u64.saturating_pow(exp).min(3600);
         let backoff_ms = backoff_secs * 1000;
-        let blocked_until = now + backoff_ms;
+        let blocked_until = now.saturating_add(backoff_ms);
 
         return RateLimitOutput {
             allowed: false,
@@ -65,7 +65,9 @@ fn rate_limit_check(input: &RateLimitInput) -> RateLimitOutput {
         };
     }
 
-    let new_attempts = input.attempts + 1;
+    // Saturate: hostile `attempts` (u32::MAX) or `now` near u64::MAX must
+    // not overflow into a wrap-around reset that un-blocks the limiter.
+    let new_attempts = input.attempts.saturating_add(1);
     let remaining = input.max_attempts.saturating_sub(new_attempts);
     RateLimitOutput {
         allowed: true,

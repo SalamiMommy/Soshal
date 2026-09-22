@@ -26,6 +26,17 @@ static MESH_INGEST_ALIVE: AtomicBool = AtomicBool::new(false);
 /// within the ingest loop's 500 ms sleep).
 static MESH_INGEST_GEN: AtomicU64 = AtomicU64::new(0);
 
+/// Ingest errors observed since the ingest task last started (surfaced in
+/// [`status`] so a failing ingest path is visible, not silently dropped).
+static MESH_INGEST_ERRORS: AtomicU64 = AtomicU64::new(0);
+
+/// Either `(running, status_json)` from the alive-thread perspective.
+fn clear_ingest_alive_if_current(gen: u64) {
+    if MESH_INGEST_GEN.load(Ordering::Relaxed) == gen {
+        MESH_INGEST_ALIVE.store(false, Ordering::Relaxed);
+    }
+}
+
 fn node_guard() -> std::sync::MutexGuard<'static, Option<RelayNode>> {
     crate::ffi::util::lock(&NODE)
 }
@@ -147,17 +158,27 @@ pub(super) fn try_mesh_publish(event_json: &str) -> Result<bool, String> {
 
 fn status() -> String {
     let mut guard = node_guard();
-    match guard.as_mut() {
-        Some(node) => node.status(),
+    let mut obj = match guard.as_mut() {
+        Some(node) => match serde_json::from_str::<serde_json::Value>(&node.status()) {
+            Ok(v) => v,
+            Err(_) => serde_json::json!({}),
+        },
         None => serde_json::json!({
             "running": false,
             "peers": {},
             "published": 0,
             "received": 0,
             "delivered": 0,
-        })
-        .to_string(),
+        }),
+    };
+    // Surface ingest-path health: batch errors are counted, never dropped.
+    if let Some(map) = obj.as_object_mut() {
+        map.insert(
+            "ingest_errors".into(),
+            serde_json::json!(MESH_INGEST_ERRORS.load(Ordering::Relaxed)),
+        );
     }
+    obj.to_string()
 }
 
 /// Poll the node + ingest verified events into sync-core (DB cache + app
@@ -173,18 +194,40 @@ fn spawn_ingest(db_path: String, my_pubkey: String) {
     let my_pubkey = my_pubkey.trim().to_ascii_lowercase();
     let gen = MESH_INGEST_GEN.fetch_add(1, Ordering::Relaxed) + 1;
     MESH_INGEST_ALIVE.store(true, Ordering::Relaxed);
+    MESH_INGEST_ERRORS.store(0, Ordering::Relaxed);
     std::thread::spawn(move || {
         let rt = match tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
         {
             Ok(rt) => rt,
-            Err(_) => return,
+            Err(e) => {
+                eprintln!("mesh ingest: runtime build failed: {e}");
+                clear_ingest_alive_if_current(gen);
+                return;
+            }
         };
         rt.block_on(async move {
-            let db = match soshal_db_core::Database::open(&db_path) {
-                Ok(db) => db,
-                Err(_) => return,
+            // DB open can transiently fail (contended libsql writer). Retry
+            // with backoff + logging instead of silently giving up; each
+            // failure path clears ALIVE so callers see the ingest task end.
+            let mut db = None;
+            for attempt in 1..=5u32 {
+                match soshal_db_core::Database::open(&db_path) {
+                    Ok(d) => {
+                        db = Some(d);
+                        break;
+                    }
+                    Err(e) => {
+                        eprintln!("mesh ingest: db open failed (attempt {attempt}/5): {e}");
+                        tokio::time::sleep(Duration::from_millis(1000)).await;
+                    }
+                }
+            }
+            let Some(db) = db else {
+                eprintln!("mesh ingest: giving up on database open");
+                clear_ingest_alive_if_current(gen);
+                return;
             };
             let (tx, mut rx) = tokio::sync::mpsc::channel::<SyncUpdate>(256);
             let forwarder = tokio::spawn(async move {
@@ -223,8 +266,13 @@ fn spawn_ingest(db_path: String, my_pubkey: String) {
                                 events.push(event);
                             }
                         }
-                        let _ =
-                            soshal_sync_core::ingest::handle_batch(&db, &my_pubkey, &events, &tx);
+                        if !events.is_empty()
+                            && soshal_sync_core::ingest::handle_batch(&db, &my_pubkey, &events, &tx)
+                                .is_err()
+                        {
+                            // Count (never silently drop) ingest failures.
+                            MESH_INGEST_ERRORS.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 }
                 tokio::time::sleep(Duration::from_millis(500)).await;
@@ -232,9 +280,7 @@ fn spawn_ingest(db_path: String, my_pubkey: String) {
             forwarder.abort();
             // Only reset the alive flag if this thread is still the current
             // generation — a newer spawn owns the flag.
-            if MESH_INGEST_GEN.load(Ordering::Relaxed) == gen {
-                MESH_INGEST_ALIVE.store(false, Ordering::Relaxed);
-            }
+            clear_ingest_alive_if_current(gen);
         });
     });
 }

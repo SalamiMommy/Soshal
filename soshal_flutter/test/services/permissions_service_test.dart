@@ -209,6 +209,7 @@ void main() {
     });
 
     test('currentPosition reads portal fix coords', () async {
+      api.stubBool('crateFfiPermissionsPermissionsLocationEnabled', true);
       api.stub('crateFfiPermissionsPermissionsLocationPortalFix', (_) async {
         return const LocationFixDto(latitude: 51.5, longitude: -0.12);
       });
@@ -220,6 +221,7 @@ void main() {
     });
 
     test('currentPosition surfaces portal denial', () async {
+      api.stubBool('crateFfiPermissionsPermissionsLocationEnabled', true);
       api.stub('crateFfiPermissionsPermissionsLocationPortalFix', (_) {
         throw Exception('DENIED: Location permission denied');
       });

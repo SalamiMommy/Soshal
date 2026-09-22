@@ -11,6 +11,7 @@ use nostr_sdk::client::Client;
 use nostr_sdk::prelude::{Filter, SubscriptionId};
 use nostr_sdk::proxy::Proxy;
 use serde::{Deserialize, Serialize};
+use soshal_network_core::freenet_websocket::FreenetWebSocketClient;
 use soshal_network_core::i2p_sam::I2PSessionManager;
 use soshal_network_core::transport::{TransportKind, TransportMode, I2P_SOCKS_PORT};
 use std::net::SocketAddr;
@@ -88,7 +89,10 @@ pub struct RelayInfo {
     pub url: String,
     pub connected: bool,
     pub latency_ms: u32,
-    pub last_event_at: u64,
+    /// Unix seconds when the connection was last established — the closest
+    /// timestamp nostr-sdk tracks per relay. Not an event time, so the field
+    /// must not advertise itself as one.
+    pub last_connect_at: u64,
 }
 
 /// Raw HTTP response: status code plus body bytes.
@@ -185,14 +189,60 @@ pub async fn network_init_relays(relay_urls: Vec<String>) -> Result<String, Stri
                 Ok(_) => added += 1,
                 Err(e) => return Err(format!("failed to add relay {url}: {e}")).into(),
             }
+        } else {
+            // Policy accepted the URL but nostr-sdk cannot parse it (e.g.
+            // IDN/punycode host that RelayUrl rejects). Surfacing the error
+            // beats silently skipping: the caller sees why their relay set
+            // was not initialized instead of a vague partial-initialize.
+            return Err(format!(
+                "relay URL passed policy but failed RelayUrl parse: {url}"
+            ))
+            .into();
         }
     }
     if added == 0 {
         return Err("no relays could be added".to_string()).into();
     }
-    let _ = client.connect().await;
+    client.connect().await;
+    // No fake success: claim init OK only when at least one relay completes
+    // the connection handshake. `connect()` spawns connection tasks and
+    // returns immediately (its future outputs `()`), so poll the relay states
+    // briefly before declaring success. Offline boot now surfaces an honest
+    // Err; callers retry lazily (startup wiring already tolerates the error).
+    let mut connected = 0usize;
+    for _ in 0..25 {
+        let relays = client.relays().await;
+        connected = relays
+            .values()
+            .filter(|r| r.status().is_connected())
+            .count();
+        if connected > 0 {
+            break;
+        }
+        // Fail fast once no relay can make progress: every relay has reached a
+        // settled state (failed attempt / sleeping / terminated). Sleeping out
+        // the full 5 s window on an unreachable set only wastes boot time.
+        let any_inflight = relays.values().any(|r| {
+            matches!(
+                r.status(),
+                nostr_sdk::relay::RelayStatus::Pending
+                    | nostr_sdk::relay::RelayStatus::Connecting
+                    | nostr_sdk::relay::RelayStatus::Initialized
+            )
+        });
+        if !any_inflight {
+            return Err("no relay connected".to_string()).into();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    if connected == 0 {
+        return Err("no relay connected".to_string()).into();
+    }
     *client_guard() = Some(client.clone());
-    Ok(format!("relay client initialized ({added} relays)")).into()
+    Ok(format!(
+        "relay client initialized ({connected}/{added} relays connected)"
+    ))
+    .into()
 }
 
 /// Add and connect a single relay.
@@ -241,9 +291,9 @@ async fn relay_status_snapshot() -> Result<Vec<RelayInfo>, String> {
             latency_ms: relay
                 .stats()
                 .latency()
-                .map(|l| l.as_millis().min(u64::MAX as u128) as u32)
+                .map(|l| l.as_millis().min(u32::MAX as u128) as u32)
                 .unwrap_or(0),
-            last_event_at: relay.stats().connected_at().as_secs(),
+            last_connect_at: relay.stats().connected_at().as_secs(),
         })
         .collect();
     out.sort_by(|a, b| a.url.cmp(&b.url));
@@ -259,21 +309,24 @@ pub async fn network_get_relay_status() -> Result<String, String> {
 /// Summary of relay connectivity: `{connected, total}` — drives the app-wide
 /// offline banner. One relay connected means we are online.
 ///
-/// Non-nostr transports (reticulum/freenet/i2p, probed by `resolved_kind`)
-/// carry traffic without the wss relay client, so a satisfied transport
-/// counts as online even when zero relays are connected — the offline banner
-/// must not lie just because the relay client is idle or uninitialized.
+/// Mesh transports (reticulum/freenet/i2p) carry traffic without the wss relay
+/// client. The mesh "online" exemption must come from the mesh relay node
+/// actually running (`relay::mesh_running`), NOT from the transport probe —
+/// a bind probe only proves a daemon socket is open, not that egress works, so
+/// a probe-satisfied-but-dead transport would otherwise force the banner
+/// green. With the mesh node stopped, zero connected relays means offline,
+/// honestly.
 #[frb(serialize)]
 pub async fn network_relay_connection_status() -> Result<String, String> {
-    let (kind, satisfied) = resolved_kind();
+    let mesh_up = super::relay::mesh_running();
     let relays = match relay_status_snapshot().await {
         Ok(relays) => relays,
-        // No relay client but a mesh transport is up: still online.
-        Err(_) if kind != TransportKind::Nostr && satisfied => Vec::new(),
+        // No relay client but the mesh relay node is running: still online.
+        Err(_) if mesh_up => Vec::new(),
         Err(e) => return Err(e),
     };
     let mut connected = relays.iter().filter(|r| r.connected).count();
-    if connected == 0 && kind != TransportKind::Nostr && satisfied {
+    if connected == 0 && mesh_up {
         connected = 1;
     }
     super::util::json_ok(serde_json::json!({
@@ -615,21 +668,57 @@ pub fn reticulum_create_announce(pubkey: String, aspect: Option<String>) -> Resu
 // Freenet FFI functions
 // ---------------------------------------------------------------------------
 
-/// Connects to a Freenet node via WebSocket
+/// The persistent Freenet WebSocket client (mirrors `I2P_MANAGER`): one
+/// process-wide connection, reused by every `freenet_*` surface so a connect
+/// survives beyond a single call. Dead connections are re-established once on
+/// demand; per-call clients previously died with their socket, leaving
+/// `freenet_subscribe` with no live subscription and connect reporting success
+/// for a connection that vanished immediately.
+static FREENET_CLIENT: std::sync::Mutex<Option<FreenetWebSocketClient>> =
+    std::sync::Mutex::new(None);
+
+/// Connects to a Freenet node via WebSocket, replacing any stored client so
+/// the connection persists for later `freenet_*` calls.
 #[frb(serialize)]
 pub async fn freenet_connect(url: String, auth_token: String) -> Result<bool, String> {
-    use soshal_network_core::freenet_websocket::FreenetWebSocketClient;
-
-    let client = FreenetWebSocketClient::new(url, auth_token);
+    let client = FreenetWebSocketClient::new(url.clone(), auth_token.clone());
     client
         .connect()
         .await
         .map_err(|e| format!("Freenet connection failed: {e}"))?;
-
+    *crate::ffi::util::lock(&FREENET_CLIENT) = Some(client.clone());
     Ok(true)
 }
 
-/// Fetches contract state from Freenet
+/// Clone of the stored client, if any (sync — never held across an await).
+fn freenet_current() -> Option<FreenetWebSocketClient> {
+    crate::ffi::util::lock(&FREENET_CLIENT).as_ref().cloned()
+}
+
+/// Returns the stored client, reconnecting when the stored socket is gone.
+async fn freenet_stored(url: &str, auth_token: &str) -> Result<FreenetWebSocketClient, String> {
+    let stored = freenet_current();
+    let client = match stored {
+        Some(c) => c,
+        None => {
+            let c = FreenetWebSocketClient::new(url.to_string(), auth_token.to_string());
+            c.connect()
+                .await
+                .map_err(|e| format!("Freenet connection failed: {e}"))?;
+            *crate::ffi::util::lock(&FREENET_CLIENT) = Some(c.clone());
+            c
+        }
+    };
+    if !client.is_socket_open() {
+        client
+            .connect()
+            .await
+            .map_err(|e| format!("Freenet reconnect failed: {e}"))?;
+    }
+    Ok(client)
+}
+
+/// Fetches contract state from Freenet (via the persistent client).
 #[frb(serialize)]
 pub async fn freenet_get_contract(
     url: String,
@@ -637,20 +726,29 @@ pub async fn freenet_get_contract(
     key: String,
     subscribe: bool,
 ) -> Result<String, String> {
-    use soshal_network_core::freenet_websocket::FreenetWebSocketClient;
+    let client = freenet_stored(&url, &auth_token).await?;
 
-    let client = FreenetWebSocketClient::new(url, auth_token);
-    client.connect().await?;
-
-    let state = client
-        .get_contract(&key, subscribe)
-        .await
-        .map_err(|e| format!("Get contract failed: {e}"))?;
-
-    serde_json::to_string(&state).map_err(|e| format!("Failed to serialize state: {e}"))
+    match client.get_contract(&key, subscribe).await {
+        Ok(state) => {
+            serde_json::to_string(&state).map_err(|e| format!("Failed to serialize state: {e}"))
+        }
+        Err(_first) => {
+            // The stored socket may be a stale half-open connection: reconnect
+            // once and retry before giving up.
+            client
+                .connect()
+                .await
+                .map_err(|e| format!("Freenet reconnect failed: {e}"))?;
+            let state = client
+                .get_contract(&key, subscribe)
+                .await
+                .map_err(|e| format!("Get contract failed: {e}"))?;
+            serde_json::to_string(&state).map_err(|e| format!("Failed to serialize state: {e}"))
+        }
+    }
 }
 
-/// Publishes contract state to Freenet
+/// Publishes contract state to Freenet (via the persistent client).
 #[frb(serialize)]
 pub async fn freenet_put_contract(
     url: String,
@@ -658,23 +756,32 @@ pub async fn freenet_put_contract(
     state_json: String,
     subscribe: bool,
 ) -> Result<String, String> {
-    use soshal_network_core::freenet_websocket::{ContractState, FreenetWebSocketClient};
+    use soshal_network_core::freenet_websocket::ContractState;
 
     let state: ContractState =
         serde_json::from_str(&state_json).map_err(|e| format!("Invalid state JSON: {e}"))?;
 
-    let client = FreenetWebSocketClient::new(url, auth_token);
-    client.connect().await?;
+    let client = freenet_stored(&url, &auth_token).await?;
 
-    let key = client
-        .put_contract(state, subscribe)
-        .await
-        .map_err(|e| format!("Put contract failed: {e}"))?;
-
-    Ok(key)
+    match client.put_contract(state, subscribe).await {
+        Ok(key) => Ok(key),
+        Err(_first) => {
+            // Stale half-open socket: reconnect once and retry.
+            client
+                .connect()
+                .await
+                .map_err(|e| format!("Freenet reconnect failed: {e}"))?;
+            let state: ContractState = serde_json::from_str(&state_json)
+                .map_err(|e| format!("Invalid state JSON: {e}"))?;
+            client
+                .put_contract(state, subscribe)
+                .await
+                .map_err(|e| format!("Put contract failed: {e}"))
+        }
+    }
 }
 
-/// Subscribes to Freenet contract updates
+/// Subscribes to Freenet contract updates (via the persistent client).
 #[frb(serialize)]
 pub async fn freenet_subscribe(
     url: String,
@@ -682,7 +789,7 @@ pub async fn freenet_subscribe(
     key: String,
     summary_json: Option<String>,
 ) -> Result<bool, String> {
-    use soshal_network_core::freenet_websocket::{ContractSummary, FreenetWebSocketClient};
+    use soshal_network_core::freenet_websocket::ContractSummary;
 
     let summary = if let Some(summary_str) = summary_json {
         Some(
@@ -693,15 +800,22 @@ pub async fn freenet_subscribe(
         None
     };
 
-    let client = FreenetWebSocketClient::new(url, auth_token);
-    client.connect().await?;
+    let client = freenet_stored(&url, &auth_token).await?;
 
-    client
-        .subscribe_contract(&key, summary)
-        .await
-        .map_err(|e| format!("Subscribe failed: {e}"))?;
-
-    Ok(true)
+    match client.subscribe_contract(&key, summary).await {
+        Ok(()) => Ok(true),
+        Err(_first) => {
+            client
+                .connect()
+                .await
+                .map_err(|e| format!("Freenet reconnect failed: {e}"))?;
+            client
+                .subscribe_contract(&key, None)
+                .await
+                .map_err(|e| format!("Subscribe failed: {e}"))?;
+            Ok(true)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -722,7 +836,17 @@ fn connect_i2p(
     Ok(client)
 }
 
-/// Connects to I2P SAM bridge
+/// Whether the endpoint is the managed default SAM bridge (`I2P_MANAGER`,
+/// 127.0.0.1:7656). Only a session/tunnel on the managed bridge survives
+/// across calls — any other bridge would be dropped with the one-shot client.
+fn managed_sam_endpoint(sam_host: &str, sam_port: u16) -> bool {
+    sam_host == "127.0.0.1" && sam_port == 7656
+}
+
+/// Reachability probe against a SAM bridge: connects and completes the SAM
+/// handshake, then drops the client. Honest as a probe — the result reports
+/// bridge reachability at call time, nothing more. For a durable session use
+/// `i2p_start_session`.
 #[frb(sync, serialize)]
 pub fn i2p_connect(sam_host: String, sam_port: u16) -> Result<bool, String> {
     connect_i2p(sam_host, sam_port)?;
@@ -730,24 +854,34 @@ pub fn i2p_connect(sam_host: String, sam_port: u16) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Creates an I2P session
+/// Creates (or re-binds) an I2P SAM session, returning its destination.
+///
+/// When the endpoint is the managed default bridge the session is created on
+/// the persistent `I2P_MANAGER` so it stays alive across calls (stop it with
+/// `i2p_stop_session`). Any other bridge cannot persist: SAM session state
+/// dies with the control socket, so the surface fails closed instead of
+/// returning a destination that stops working on the next call.
 #[frb(sync, serialize)]
 pub fn i2p_create_session(
     sam_host: String,
     sam_port: u16,
-    session_id: String,
+    _session_id: String,
     destination: Option<String>,
 ) -> Result<String, String> {
-    let mut client = connect_i2p(sam_host, sam_port)?;
-
-    let response = client
-        .create_session(&session_id, destination.as_deref())
-        .map_err(|e| format!("Session creation failed: {e}"))?;
-
-    Ok(response)
+    if !managed_sam_endpoint(&sam_host, sam_port) {
+        return Err("one-shot i2p session state is discarded after the call; \
+             use i2p_start_session for a persistent session"
+            .to_string())
+        .into();
+    }
+    let mut guard = crate::ffi::util::lock(&I2P_MANAGER);
+    let manager = guard.get_or_insert_with(I2PSessionManager::new);
+    manager.start(destination.as_deref())
 }
 
-/// Generates a new I2P destination
+/// Generates a new I2P destination via SAM. Pure keygen — the returned
+/// destination is real and can later be made persistent by passing it to
+/// `i2p_start_session(destination: ...)`.
 #[frb(sync, serialize)]
 pub fn i2p_generate_destination(sam_host: String, sam_port: u16) -> Result<String, String> {
     let mut client = connect_i2p(sam_host, sam_port)?;
@@ -759,24 +893,35 @@ pub fn i2p_generate_destination(sam_host: String, sam_port: u16) -> Result<Strin
     Ok(destination)
 }
 
-/// Connects to a remote I2P destination
+/// Opens an outbound SAM tunnel to a remote I2P destination.
+///
+/// Rides the persistent `I2P_MANAGER` session on the managed default bridge so
+/// the tunnel is established through a session that survives the call; any
+/// other bridge fails closed (one-shot tunnels are dropped with the client and
+/// returning `true` would claim a connection that no longer exists).
 #[frb(sync, serialize)]
 pub fn i2p_connect_to_destination(
     sam_host: String,
     sam_port: u16,
-    session_id: String,
+    _session_id: String,
     destination: String,
 ) -> Result<bool, String> {
-    let mut client = connect_i2p(sam_host, sam_port)?;
-
-    client
-        .create_session(&session_id, None)
-        .map_err(|e| format!("Session creation failed: {e}"))?;
-
-    client
+    if !managed_sam_endpoint(&sam_host, sam_port) {
+        return Err("one-shot i2p session state is discarded after the call; \
+             use i2p_start_session for a persistent session"
+            .to_string())
+        .into();
+    }
+    let guard = crate::ffi::util::lock(&I2P_MANAGER);
+    let manager = guard
+        .as_ref()
+        .ok_or_else(|| "i2p session not started (use i2p_start_session first)".to_string())?;
+    if !manager.is_running() {
+        return Err("i2p session not running".to_string()).into();
+    }
+    manager
         .connect_to_destination(&destination)
         .map_err(|e| format!("Destination connection failed: {e}"))?;
-
     Ok(true)
 }
 
@@ -937,12 +1082,38 @@ pub fn network_reticulum_status() -> Result<String, String> {
     serde_json::to_string(&status).map_err(|e| format!("serialize status: {e}"))
 }
 
-/// Announce the active Reticulum destination.
+/// Announce the active Reticulum destination to known peers. The announce
+/// packet carries the node destination so peers build a path to it; with zero
+/// known peers nothing can be delivered, and that is reported honestly as an
+/// error rather than a silent success.
 #[frb(sync, serialize)]
-pub fn network_reticulum_announce(_pubkey: String) -> Result<bool, String> {
-    use soshal_network_core::reticulum::transport::any_node_status;
-    if any_node_status().is_none() {
+pub fn network_reticulum_announce(pubkey: String) -> Result<bool, String> {
+    use soshal_network_core::reticulum::transport::{any_node_status, node_for};
+    let Some(status) = any_node_status() else {
         return Err("Reticulum not running".to_string());
+    };
+    let node = node_for(&pubkey).map_err(|e| format!("Reticulum node: {e}"))?;
+    let announce = {
+        let guard = node.lock().unwrap_or_else(|e| e.into_inner());
+        guard.create_announce(Some("soshal"))
+    };
+    let peers = {
+        let guard = node.lock().unwrap_or_else(|e| e.into_inner());
+        guard.known_peers()
+    };
+    let mut sent = 0usize;
+    for peer in &peers {
+        let guard = node.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.send_packet(*peer, &announce).is_ok() {
+            sent += 1;
+        }
+    }
+    if sent == 0 {
+        return Err(format!(
+            "Reticulum running (destination {}) but announce reached 0 peers",
+            status.destination_hash
+        ))
+        .into();
     }
     Ok(true)
 }
@@ -1119,20 +1290,39 @@ mod tests {
 
     #[test]
     fn test_skademlia_node_id_pow() {
-        let mut found = None;
-        for nonce in 0..1_000_000u64 {
-            if let Some(id) = super::network_skademlia_generate_node_id(
+        // Mint a valid id under the (raised) 21/8-bit PoW via the core
+        // helper, then confirm the bridge fn reproduces it deterministically.
+        let (static_nonce, dynamic_nonce, id) =
+            soshal_network_core::skademlia::find_pow_nonces("pow_test_pubkey", 1 << 26, 1 << 12)
+                .expect("pow nonce found in budget");
+        let hex = super::network_skademlia_generate_node_id(
+            "pow_test_pubkey".to_string(),
+            static_nonce,
+            dynamic_nonce,
+        )
+        .unwrap()
+        .expect("bridge fn reproduces the minted id");
+        assert_eq!(hex, hex::encode(id));
+        // A different dynamic nonce must fail validation at the wire surface
+        // (bridge maps a rejected pair to None, never a fake id). Scan for a
+        // failing nonce so the assertion is deterministic.
+        let mut rejected = None;
+        for k in 1u64..=1 << 12 {
+            let candidate = super::network_skademlia_generate_node_id(
                 "pow_test_pubkey".to_string(),
-                nonce,
-                nonce,
+                static_nonce,
+                dynamic_nonce.wrapping_add(k),
             )
-            .unwrap()
-            {
-                found = Some(id);
+            .unwrap();
+            if candidate.is_none() {
+                rejected = Some(k);
                 break;
             }
         }
-        assert_eq!(found.expect("pow nonce found").len(), 64);
+        assert!(
+            rejected.is_some(),
+            "some other dynamic nonce must be rejected"
+        );
     }
 
     #[test]
@@ -1221,22 +1411,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_relay_status_snapshot_with_unreachable_relay() {
+    async fn test_init_relays_with_unreachable_relay_errors_honestly() {
         let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        // Init must NOT fake success when no relay can be reached: the call
+        // blocks on a real connect attempt and returns an explicit Err.
         assert!(
             super::network_init_relays(vec!["wss://relay.invalid".to_string()])
                 .await
-                .is_ok()
+                .is_err()
         );
-        let json = super::network_get_relay_status().await.unwrap();
+        // Failed init leaves the client unset (baseline restored).
+        assert!(super::client_guard().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_relay_connection_status_not_probe_green() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        // Mesh node must be stopped for this test (baseline restored after).
+        let _ = crate::ffi::relay::relay_node_stop();
+        assert!(!crate::ffi::relay::mesh_running());
+
+        // Client with zero configured relays + mesh node down → honest
+        // `{connected:0,total:0}`, never a probe-derived "1".
+        let client = nostr_sdk::client::Client::builder().build();
+        *super::client_guard() = Some(client);
+        let json = super::network_relay_connection_status().await.unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let arr = v.as_array().expect("array");
-        assert_eq!(arr.len(), 1, "json: {json}");
-        assert_eq!(arr[0]["url"], "wss://relay.invalid");
-        assert_eq!(arr[0]["connected"], false);
-        // Restore the "no client" baseline for other tests.
+        assert_eq!(v["connected"], 0, "json: {json}");
+        assert_eq!(v["total"], 0, "json: {json}");
+
+        // No client + mesh node down → explicit Err (no fabricated green).
         *super::client_guard() = None;
-        assert!(super::network_get_relay_status().await.is_err());
+        assert!(super::network_relay_connection_status().await.is_err());
     }
 }
 

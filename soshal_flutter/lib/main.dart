@@ -225,6 +225,7 @@ class _SoshalAppState extends State<SoshalApp> {
             stealth: context.read<StealthService>(),
             chatrandom: context.read<ChatrandomService>(),
             p2p: context.read<P2pService>(),
+            network: context.read<NetworkService>(),
             turso: context.read<TursoService>(),
             shell: context.read<ShellService>(),
           );

@@ -8,8 +8,13 @@ use std::collections::BTreeMap;
 pub type NodeId = [u8; 32];
 
 /// Cryptographic Proof-of-Work verification parameters.
-pub const POW_STATIC_DIFFICULTY_BITS: u32 = 8;
-pub const POW_DYNAMIC_DIFFICULTY_BITS: u32 = 4;
+///
+/// Static (node-id binding) difficulty follows S/Kademlia guidance (≥21
+/// bits); the dynamic component gates the final node id at 8 bits. The
+/// previous 8/4-bit settings let a cheap sybil mintage fill the routing
+/// table with adversarial ids — raised 2026-09.
+pub const POW_STATIC_DIFFICULTY_BITS: u32 = 21;
+pub const POW_DYNAMIC_DIFFICULTY_BITS: u32 = 8;
 
 /// Generates a valid S/Kademlia Node ID from a public key and nonces matching PoW difficulty.
 pub fn generate_node_id(pubkey: &str, static_nonce: u64, dynamic_nonce: u64) -> Option<NodeId> {
@@ -58,6 +63,48 @@ pub fn check_leading_zeros(hash: &[u8; 32], bits: u32) -> bool {
     true
 }
 
+/// Searches for a `(static_nonce, dynamic_nonce)` pair that mints a valid
+/// node id for `pubkey` within the given budgets, returning the nonces and
+/// the minted id. Used for DHT node-id bootstrap and PoW tests; `None` when
+/// the budgets are exhausted. Expected search cost is ~2^STATIC hashes plus
+/// 2^DYNAMIC for the first static match.
+pub fn find_pow_nonces(
+    pubkey: &str,
+    static_budget: u64,
+    dynamic_budget: u64,
+) -> Option<(u64, u64, NodeId)> {
+    find_pow_nonces_where(pubkey, static_budget, dynamic_budget, |_| true)
+}
+
+/// [`find_pow_nonces`] variant that only accepts a minted id satisfying
+/// `predicate` (e.g. targeting a specific routing bucket).
+pub fn find_pow_nonces_where(
+    pubkey: &str,
+    static_budget: u64,
+    dynamic_budget: u64,
+    predicate: impl Fn(&NodeId) -> bool,
+) -> Option<(u64, u64, NodeId)> {
+    for static_nonce in 0..static_budget {
+        let mut h = Sha256::new();
+        h.update(pubkey.as_bytes());
+        h.update(static_nonce.to_be_bytes());
+        let static_hash: [u8; 32] = h.finalize().into();
+        if !check_leading_zeros(&static_hash, POW_STATIC_DIFFICULTY_BITS) {
+            continue;
+        }
+        for dynamic_nonce in 0..dynamic_budget {
+            let mut h2 = Sha256::new();
+            h2.update(static_hash);
+            h2.update(dynamic_nonce.to_be_bytes());
+            let node_id: [u8; 32] = h2.finalize().into();
+            if check_leading_zeros(&node_id, POW_DYNAMIC_DIFFICULTY_BITS) && predicate(&node_id) {
+                return Some((static_nonce, dynamic_nonce, node_id));
+            }
+        }
+    }
+    None
+}
+
 /// Computes the XOR distance metric between two Node IDs.
 pub fn xor_distance(a: &NodeId, b: &NodeId) -> NodeId {
     let mut dist = [0u8; 32];
@@ -68,12 +115,21 @@ pub fn xor_distance(a: &NodeId, b: &NodeId) -> NodeId {
 }
 
 /// Represents a peer node in the S/Kademlia DHT.
+///
+/// A record is only trusted once its `node_id` verifies as the PoW binding
+/// of `pubkey` under `static_nonce`/`dynamic_nonce` (enforced by
+/// [`SkademliaRoutingTable::add_peer`]); fabricated ids minted against
+/// another peer's pubkey are refused.
 #[derive(Debug, Clone)]
 pub struct SkademliaPeer {
     pub node_id: NodeId,
     pub pubkey: String,
     pub address: String,
     pub reputation_score: f64,
+    /// Nonce used for the static PoW binding (`H(pubkey ‖ static_nonce)`).
+    pub static_nonce: u64,
+    /// Nonce used for the dynamic PoW binding (`H(static_hash ‖ dynamic_nonce)`).
+    pub dynamic_nonce: u64,
 }
 
 /// S/Kademlia Routing Table with disjoint path bucket routing.
@@ -104,8 +160,20 @@ impl SkademliaRoutingTable {
     }
 
     /// Adds or updates a peer in the routing table.
+    ///
+    /// Refuses self and any record whose `node_id` is not the PoW binding
+    /// of `peer.pubkey` under the peer's claimed nonces — a forged
+    /// (sybil / address-poisoning) insert can otherwise trivially mint
+    /// ids *closer* to the target than honest peers.
     pub fn add_peer(&mut self, peer: SkademliaPeer) -> bool {
         if peer.node_id == self.self_node_id {
+            return false;
+        }
+        // L2: verify PoW binding before routing. generate_node_id re-checks
+        // both difficulty levels and returns the id only on success.
+        if generate_node_id(&peer.pubkey, peer.static_nonce, peer.dynamic_nonce)
+            != Some(peer.node_id)
+        {
             return false;
         }
         let index = self.bucket_index(&peer.node_id);
@@ -187,22 +255,48 @@ mod tests {
         assert!(!check_leading_zeros(&nonzero, 5));
     }
 
+    /// Mints a PoW-valid peer for `pubkey` (first nonce pair found).
+    fn minted_peer(pubkey: &str, rep: f64) -> SkademliaPeer {
+        let (static_nonce, dynamic_nonce, node_id) =
+            find_pow_nonces(pubkey, 1 << 22, 1 << 10).expect("nonce pair found in budget");
+        SkademliaPeer {
+            node_id,
+            pubkey: pubkey.to_string(),
+            address: "10.0.0.1:8000".to_string(),
+            reputation_score: rep,
+            static_nonce,
+            dynamic_nonce,
+        }
+    }
+
     #[test]
     fn test_skademlia_routing_table() {
         let self_id = [1u8; 32];
         let mut table = SkademliaRoutingTable::new(self_id, 4);
 
-        let peer_id = [2u8; 32];
-        let peer = SkademliaPeer {
-            node_id: peer_id,
-            pubkey: "pk_test".to_string(),
-            address: "127.0.0.1:8080".to_string(),
-            reputation_score: 0.9,
-        };
+        let peer = minted_peer("pk_test", 0.9);
 
-        assert!(table.add_peer(peer));
-        let closest = table.find_closest(&peer_id, 10);
+        assert!(table.add_peer(peer.clone()));
+        let closest = table.find_closest(&peer.node_id, 10);
         assert_eq!(closest.len(), 1);
         assert_eq!(closest[0].pubkey, "pk_test");
+    }
+
+    #[test]
+    fn test_add_peer_refuses_forged_node_id() {
+        let mut table = SkademliaRoutingTable::new([1u8; 32], 4);
+        // A fabricated id that is NOT the PoW binding of "eve" — must be
+        // refused even though its bucket looks valid. Nonces chosen so
+        // generate_node_id("eve", 0, 0) can never mint [2u8; 32].
+        let forged = SkademliaPeer {
+            node_id: [2u8; 32],
+            pubkey: "eve".to_string(),
+            address: "10.0.0.9:8000".to_string(),
+            reputation_score: 1.0,
+            static_nonce: 0,
+            dynamic_nonce: 0,
+        };
+        assert!(!table.add_peer(forged), "unverified node_id rejected");
+        assert!(table.k_buckets.values().all(|b| b.is_empty()));
     }
 }

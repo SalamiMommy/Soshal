@@ -115,6 +115,33 @@ async fn download(cfg: SwarmConfig, abort: Arc<AtomicBool>) -> SwarmReport {
         };
     }
 
+    // WP11: refuse a symlink at the final path component. A link dropped in
+    // place (or swapped between this check and open) lets an attacker
+    // redirect the entire sparse-file write + mmap to an arbitrary file.
+    match std::fs::symlink_metadata(&cfg.out_path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            log::warn!(
+                "swarm: refusing symlink out_path {}",
+                cfg.out_path.display()
+            );
+            return SwarmReport {
+                failures: chunks.len(),
+                failed_hashes: chunks.iter().map(|c| c.blake3.clone()).collect(),
+                ..SwarmReport::default()
+            };
+        }
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            log::warn!("swarm: stat {}: {e}", cfg.out_path.display());
+            return SwarmReport {
+                failures: chunks.len(),
+                failed_hashes: chunks.iter().map(|c| c.blake3.clone()).collect(),
+                ..SwarmReport::default()
+            };
+        }
+    }
+
     let file = match File::options()
         .read(true)
         .write(true)
@@ -486,6 +513,32 @@ mod tests {
         let report = download(cfg, Arc::new(AtomicBool::new(false))).await;
         assert_eq!(report.failures, 1);
         assert_eq!(report.failed_hashes, vec!["ef".repeat(32)]);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn swarm_refuses_symlink_out_path() {
+        use std::os::unix::fs::symlink;
+        let root = soshal_test_util::tmp_root("swarm_symlink");
+        let target = root.join("real.bin");
+        let link = root.join("link.bin");
+        symlink(&target, &link).unwrap();
+        let cfg = SwarmConfig {
+            manifest: one_chunk_manifest(),
+            out_path: link,
+            peers: vec!["127.0.0.1:1".parse().unwrap()],
+            quic_ports: vec![None],
+            key: [7u8; 32],
+            my_pubkey: "ab".repeat(32),
+            max_parallel: 2,
+        };
+        let report = download(cfg, Arc::new(AtomicBool::new(false))).await;
+        assert_eq!(
+            report.failures, 1,
+            "final-component symlink must be refused before open"
+        );
+        assert_eq!(report.failed_hashes, vec!["ef".repeat(32)]);
+        assert!(!target.exists(), "symlink target must not be created");
     }
 
     #[test]

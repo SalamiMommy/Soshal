@@ -20,7 +20,7 @@ use crate::quic;
 /// images fit; the relay stream path streams instead.
 pub const MAX_BLOB_FETCH_BYTES: u64 = 512 * 1024 * 1024;
 
-const QUIC_MAX_CHUNK: usize = 1024 * 1024;
+const QUIC_MAX_CHUNK: usize = 16 * 1024 * 1024;
 const QUIC_EXCHANGE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// How many chunk bodies to fetch concurrently per batch. Bounds buffered

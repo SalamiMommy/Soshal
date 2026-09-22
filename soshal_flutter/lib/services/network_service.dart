@@ -126,6 +126,25 @@ class NetworkService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     notifyListeners();
   }
 
+  /// Resets network state on account switch or logout. The Rust-side mesh
+  /// relay node and its ingest thread pin the account pubkey captured at
+  /// `relay_node_start`; leaving them running after a switch routes the new
+  /// account's DM/mention/friend-request/zap traffic under the old identity.
+  /// Stop the node, drop the relay list, and clear cached transport state so
+  /// the next account bootstrap re-initializes everything fresh.
+  void resetForAccountSwitch() {
+    try {
+      stopMeshRelay();
+    } catch (e, st) {
+      setLastError(e, st);
+    }
+    _relays = [];
+    _meshRelayRunning = false;
+    _meshStatus = null;
+    _resolved = null;
+    notifyListeners();
+  }
+
   /// Starts the persistent i2p SAM session; returns the destination address.
   Future<String> startI2pSession({String? destination}) async {
     try {
@@ -219,14 +238,14 @@ class NetworkService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   Future<bool> addRelay(String url) => guard(() async {
         final ok =
             await RustLib.instance.api.crateFfiNetworkNetworkAddRelay(url: url);
-        // Keep the local relay list in step so reinitRelays() pushes the
-        // current set instead of a stale snapshot built only from
-        // fetchRelayStatus().
-        if (ok && !_relays.any((r) => r.url == url)) {
-          _relays = [
-            ..._relays,
-            RelayInfo(url: url, connected: true, latencyMs: 0, lastEventAt: 0)
-          ];
+        if (ok) {
+          // Refresh the local list from bridge truth — the connected flag must
+          // come from real relay status, never fabricated.
+          final json = await RustLib.instance.api
+              .crateFfiNetworkNetworkGetRelayStatus();
+          _relays = (jsonDecode(json) as List<dynamic>)
+              .map((e) => RelayInfo.fromJson(e as Map<String, dynamic>))
+              .toList();
         }
         return ok;
       });
@@ -243,8 +262,17 @@ class NetworkService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
 
   /// (Re)initialize the relay client with a fresh URL list.
   Future<String> initRelays(List<String> relayUrls) => guard(() async {
-        return await RustLib.instance.api
+        final result = await RustLib.instance.api
             .crateFfiNetworkNetworkInitRelays(relayUrls: relayUrls);
+        // Sync the local list with bridge truth (including real connected
+        // flags) so screens never render the stale pre-init list. Only runs
+        // after a successful init — a failed init leaves _relays untouched.
+        final json = await RustLib.instance.api
+            .crateFfiNetworkNetworkGetRelayStatus();
+        _relays = (jsonDecode(json) as List<dynamic>)
+            .map((e) => RelayInfo.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return result;
       });
 
   /// Multi-bearer off-grid mesh status (BLE, Wi-Fi Direct, LAN) as JSON map.
@@ -690,13 +718,16 @@ class RelayInfo {
   final String url;
   final bool connected;
   final int latencyMs;
-  final int lastEventAt;
+
+  /// Unix seconds when the relay connection was last established — NOT an
+  /// event timestamp. Kept measurable per nostr-sdk's connected_at().
+  final int lastConnectAt;
 
   RelayInfo({
     required this.url,
     required this.connected,
     required this.latencyMs,
-    required this.lastEventAt,
+    required this.lastConnectAt,
   });
 
   factory RelayInfo.fromJson(Map<String, dynamic> json) {
@@ -704,7 +735,7 @@ class RelayInfo {
       url: json.strOf('url'),
       connected: json.boolOf('connected'),
       latencyMs: json.intOf('latency_ms'),
-      lastEventAt: json.intOf('last_event_at'),
+      lastConnectAt: json.intOf('last_connect_at'),
     );
   }
 }

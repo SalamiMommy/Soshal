@@ -19,6 +19,7 @@ import 'messaging_service.dart';
 import 'minis_service.dart';
 import 'moderation_service.dart';
 import 'music_service.dart';
+import 'network_service.dart';
 import 'notifications_service.dart';
 import 'p2p_service.dart';
 import 'scheduled_service.dart';
@@ -84,6 +85,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   StealthService? _stealth;
   ChatrandomService? _chatrandom;
   P2pService? _p2p;
+  NetworkService? _network;
   TursoService? _turso;
   ShellService? _shell;
 
@@ -110,6 +112,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     StealthService? stealth,
     ChatrandomService? chatrandom,
     P2pService? p2p,
+    NetworkService? network,
     TursoService? turso,
     ShellService? shell,
   }) {
@@ -133,6 +136,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     _stealth = stealth;
     _chatrandom = chatrandom;
     _p2p = p2p;
+    _network = network;
     _turso = turso;
     _shell = shell;
     if (_activePubkey != null && _activePubkey!.isNotEmpty) {
@@ -161,6 +165,7 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     _stealth?.resetForAccountSwitch();
     _chatrandom?.resetForAccountSwitch();
     _p2p?.resetForAccountSwitch();
+    _network?.resetForAccountSwitch();
     _turso?.resetForAccountSwitch();
     _shell?.resetForAccountSwitch();
   }
