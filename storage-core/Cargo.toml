@@ -10,7 +10,7 @@ soshal-common-core = { path = "../common-core" }
 hex = { workspace = true }
 ring = { workspace = true }
 zeroize = { workspace = true }
-raptorq = "1.8"
+raptorq = "2.0"
 libc = { workspace = true }
 memmap2 = { workspace = true }
 
