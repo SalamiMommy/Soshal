@@ -4,3 +4,5 @@
 pub mod checkin;
 pub mod deletion;
 pub mod event;
+
+pub use event::recurrence::CalendarRecurrence;

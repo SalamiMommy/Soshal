@@ -841,7 +841,28 @@ pub struct LiveStreamRegistry {
 }
 
 impl LiveStreamRegistry {
+    /// Evict streams that have been idle for >10 seconds, releasing buffered groups.
+    pub fn evict_idle(&self) {
+        if let Ok(mut streams) = self.streams.lock() {
+            let now = std::time::Instant::now();
+            let idle_cutoff = now.checked_sub(StdDuration::from_secs(10)).unwrap_or(now);
+            let stale: Vec<String> = streams
+                .iter()
+                .filter(|(_, log)| {
+                    log.lock()
+                        .map(|l| l.last_activity < idle_cutoff)
+                        .unwrap_or(false)
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in stale {
+                streams.remove(&id);
+            }
+        }
+    }
+
     fn get(&self, stream_id: &str) -> Option<Arc<Mutex<LiveStreamLog>>> {
+        self.evict_idle();
         self.streams.lock().ok()?.get(stream_id).cloned()
     }
 
@@ -863,29 +884,11 @@ impl LiveStreamRegistry {
         if encoded.is_empty() || encoded.len() > LIVE_MAX_GROUP_BYTES {
             return Err("bad live group payload".to_string());
         }
+        self.evict_idle();
         let mut streams = self
             .streams
             .lock()
             .map_err(|_| "live registry poisoned".to_string())?;
-        // Opportunistic idle-eviction so a completed broadcast's groups are
-        // released instead of lingering; runs from any publisher. Bounded by
-        // LIVE_MAX_STREAMS, so this sweep is cheap.
-        let now = std::time::Instant::now();
-        let idle_cutoff = now.checked_sub(StdDuration::from_secs(10)).unwrap_or(now);
-        let stale: Vec<String> = streams
-            .iter()
-            .filter(|(id, log)| {
-                *id != stream_id
-                    && log
-                        .lock()
-                        .map(|l| l.last_activity < idle_cutoff)
-                        .unwrap_or(false)
-            })
-            .map(|(id, _)| id.clone())
-            .collect();
-        for id in stale {
-            streams.remove(&id);
-        }
         if streams.len() >= LIVE_MAX_STREAMS && !streams.contains_key(stream_id) {
             return Err("live registry full".to_string());
         }
@@ -1633,7 +1636,17 @@ impl QuicChunkPool {
     }
 
     fn store(&self, addr: SocketAddr, conn: &quinn::Connection) {
+        const MAX_POOLED_QUIC_CONNS: usize = 32;
         if let Ok(mut guard) = self.conns.lock() {
+            if guard.len() >= MAX_POOLED_QUIC_CONNS && !guard.contains_key(&addr) {
+                if let Some(oldest) = guard
+                    .iter()
+                    .min_by_key(|(_, (_, last))| *last)
+                    .map(|(a, _)| *a)
+                {
+                    guard.remove(&oldest);
+                }
+            }
             guard.insert(addr, (conn.clone(), std::time::Instant::now()));
         }
     }
@@ -1700,10 +1713,16 @@ impl QuicChunkPool {
             self.touch(addr);
             match exchange_chunk(&conn, key, my_pubkey, req).await {
                 Ok(data) => return Ok(data),
-                Err(_e) if attempt == 0 => {
-                    self.evict(addr);
+                Err(e) => {
+                    let is_app_err = e.contains("not found")
+                        || e.contains("denied")
+                        || e.contains("bad chunk request");
+                    if attempt == 0 && !is_app_err {
+                        self.evict(addr);
+                    } else {
+                        return Err(e);
+                    }
                 }
-                Err(e) => return Err(e),
             }
         }
         Err("chunk fetch failed".to_string())
@@ -1742,8 +1761,18 @@ pub fn fetch_quic_chunk(
     run_async_blocking(async move {
         tokio::time::timeout(STREAM_EXCHANGE_TIMEOUT, async {
             if let Some(pool) = shared_quic_pool() {
-                if let Ok(data) = pool.fetch_chunk(addr, key, &my_pubkey, &req).await {
-                    return Ok(data);
+                match pool.fetch_chunk(addr, key, &my_pubkey, &req).await {
+                    Ok(data) => return Ok(data),
+                    Err(e)
+                        if e.contains("not found")
+                            || e.contains("denied")
+                            || e.contains("bad chunk request") =>
+                    {
+                        return Err(e);
+                    }
+                    Err(_) => {
+                        // Transport failure - fall through to fresh endpoint
+                    }
                 }
             }
             let (_endpoint, conn) = quic_connect(addr).await?;

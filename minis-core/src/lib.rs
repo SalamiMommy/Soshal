@@ -2,6 +2,11 @@
 
 pub mod events;
 pub mod runtime;
+pub mod version;
+
+pub use version::{
+    check_host_compatibility, is_version_compatible, PluginVersion, VersionRequirement,
+};
 
 use serde::{Deserialize, Serialize};
 

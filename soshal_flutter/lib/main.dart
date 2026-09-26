@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
@@ -55,8 +56,17 @@ import 'services/permissions_service.dart';
 import 'services/profile_service.dart';
 import 'utils/format.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.soshal.audio',
+      androidNotificationChannelName: 'Soshal Audio',
+      androidNotificationIcon: 'mipmap/ic_launcher',
+    );
+  } catch (e) {
+    debugPrint('JustAudioBackground init: $e');
+  }
   JustAudioMediaKit.ensureInitialized();
   MediaKit.ensureInitialized();
   PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024;
@@ -160,6 +170,13 @@ class _SoshalAppState extends State<SoshalApp> {
           await PermissionsService.ensureNotifications();
         } catch (e, st) {
           logRuntimeError('ensureNotifications: $e\n$st');
+        }
+      }());
+      unawaited(() async {
+        try {
+          await NotificationService.initLocalNotifications();
+        } catch (e, st) {
+          logRuntimeError('initLocalNotifications: $e\n$st');
         }
       }());
       context.read<TelemetryService>().init();

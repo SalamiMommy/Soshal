@@ -61,7 +61,12 @@ impl<'a> ReactionRepo<'a> {
             self.upsert_in(&tx, row).await?;
             tx.commit().await?;
             Ok(())
-        })
+        })?;
+        self.db.notify_change(
+            crate::change_bus::Table::Reactions,
+            Some(row.pubkey.clone()),
+        );
+        Ok(())
     }
 
     pub fn get_by_event(&self, event_id: &str) -> Result<Vec<ReactionRow>, crate::error::DbError> {

@@ -47,15 +47,15 @@ pub const MAX_SESSIONS: usize = 256;
 const MAX_KEYGEN_PER_SOURCE: u32 = 4;
 const KEYGEN_WINDOW_SECS: u64 = 60;
 
+/// Number of lock stripes for serializing ratchet steps per peer.
+const STEP_STRIPES: usize = 32;
+
 /// Per-peer ratchet session state kept in memory for the link lifetime.
 pub struct PqcLinkCrypto {
-    states: Mutex<HashMap<String, RatchetOutput>>,
-    keygens: Mutex<HashMap<String, (u32, u64)>>, // peer -> (count, window start)
-    /// Serializes each get→derive→put ratchet step. Without this, two
-    /// concurrent `encrypt` calls for the same peer read the SAME state and
-    /// both overwrite it — one ratchet advance is silently lost (duplicate
-    /// message key + dropped plaintext on the peer).
-    step: Mutex<()>,
+    states: Mutex<HashMap<String, (RatchetOutput, u64, u64)>>, // peer -> (output, created_at, last_act)
+    keygens: Mutex<HashMap<String, (u32, u64)>>,               // peer -> (count, window start)
+    /// Serializes each get→derive→put ratchet step per peer stripe.
+    steps: [Mutex<()>; STEP_STRIPES],
 }
 
 impl Default for PqcLinkCrypto {
@@ -69,11 +69,35 @@ impl PqcLinkCrypto {
         Self {
             states: Mutex::new(HashMap::new()),
             keygens: Mutex::new(HashMap::new()),
-            step: Mutex::new(()),
+            steps: std::array::from_fn(|_| Mutex::new(())),
         }
     }
 
+    fn step_guard(&self, peer: &str) -> std::sync::MutexGuard<'_, ()> {
+        let mut hash = 0u64;
+        for b in peer.bytes() {
+            hash = hash.wrapping_mul(31).wrapping_add(b as u64);
+        }
+        let idx = (hash as usize) % STEP_STRIPES;
+        self.steps[idx].lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn prune_stale_sessions(&self, now: u64) {
+        let mut states = self.states.lock().unwrap_or_else(|e| e.into_inner());
+        states.retain(|_, (s, created_at, last_act)| {
+            if s.peer_pk.is_empty() && now.saturating_sub(*created_at) > 60 {
+                return false;
+            }
+            if now.saturating_sub(*last_act) > 86400 {
+                return false;
+            }
+            true
+        });
+    }
+
     fn at_session_capacity(&self) -> bool {
+        let now = now_secs() as u64;
+        self.prune_stale_sessions(now);
         self.states.lock().unwrap_or_else(|e| e.into_inner()).len() >= MAX_SESSIONS
     }
 
@@ -101,23 +125,31 @@ impl PqcLinkCrypto {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .get(peer)
-            .cloned()
+            .map(|(s, _, _)| s.clone())
             .ok_or("no ratchet session for peer".to_string())
     }
 
     fn put(&self, peer: &str, state: RatchetOutput) {
-        self.states
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(peer.to_string(), state);
+        let now = now_secs() as u64;
+        let mut states = self.states.lock().unwrap_or_else(|e| e.into_inner());
+        let created_at = states.get(peer).map(|(_, c, _)| *c).unwrap_or(now);
+        states.insert(peer.to_string(), (state, created_at, now));
     }
 
     /// Initiator side of a link handshake: generates the session keypair and
     /// returns the own hybrid public key to send to the peer. The session is
     /// registered with an empty peer key; `complete_handshake` fills it.
     pub fn begin_handshake(&self, peer: &str, context: &str) -> Result<String, String> {
-        if self.has_session(peer) {
-            return Err("ratchet session already exists for peer".to_string());
+        let now = now_secs() as u64;
+        {
+            let mut states = self.states.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some((existing, created_at, _)) = states.get(peer) {
+                if existing.peer_pk.is_empty() && now.saturating_sub(*created_at) > 60 {
+                    states.remove(peer);
+                } else {
+                    return Err("ratchet session already exists for peer".to_string());
+                }
+            }
         }
         if self.at_session_capacity() {
             return Err("ratchet session limit reached".to_string());
@@ -137,7 +169,7 @@ impl PqcLinkCrypto {
         if peer_pk.trim().is_empty() {
             return Err("empty peer public key".to_string());
         }
-        let _step = self.step.lock().unwrap_or_else(|e| e.into_inner());
+        let _step = self.step_guard(peer);
         let mut state = self.get(peer)?;
         state.peer_pk = peer_pk.to_string();
         self.put(peer, state);
@@ -245,7 +277,7 @@ impl PqcLinkCrypto {
         }
         // Hold the step lock across get→derive→put so concurrent encrypts for
         // the same peer can't lose a ratchet advance (see struct docs).
-        let _step = self.step.lock().unwrap_or_else(|e| e.into_inner());
+        let _step = self.step_guard(peer);
         let state = self.get(peer)?;
         if state.peer_pk.is_empty() {
             return Err("ratchet handshake incomplete: no peer public key".to_string());
@@ -291,7 +323,7 @@ impl PqcLinkCrypto {
 
         // Same step lock as encrypt: interleaved decrypts must not overwrite
         // each other's ratchet advances.
-        let _step = self.step.lock().unwrap_or_else(|e| e.into_inner());
+        let _step = self.step_guard(peer);
         let state = self.get(peer)?;
         let (new_state, plaintext) = decrypt_ratchet(&state, &header, &ct)?;
         self.put(peer, new_state);

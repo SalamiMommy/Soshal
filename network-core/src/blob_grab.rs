@@ -163,6 +163,28 @@ impl LanPeer {
     }
 }
 
+/// Validate a destination path: parent must exist and not be a symlink,
+/// and no normalized component may escape via `..`.
+fn validate_out_path(path: &std::path::Path) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "out_path has no parent".to_string())?;
+    let canon = std::fs::canonicalize(parent).map_err(|e| format!("parent canonicalize: {e}"))?;
+    let file_name = path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .ok_or_else(|| "out_path has no file name".to_string())?;
+    if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
+        return Err("out_path file name invalid".to_string());
+    }
+    if let Ok(m) = std::fs::symlink_metadata(&canon) {
+        if m.file_type().is_symlink() {
+            return Err("out_path parent is a symlink".to_string());
+        }
+    }
+    Ok(())
+}
+
 /// Crawl-then-fetch a blob from one LAN peer by hash. Returns the number of
 /// bytes written. The blob is also absorbed into the default CAS (verified),
 /// so the local media server + seeding path can serve it afterwards.
@@ -182,6 +204,8 @@ pub fn fetch_blob_from_peer(
     if !crate::lan::is_private_ip(peer.ip) {
         return Err("refusing non-private LAN peer".to_string());
     }
+    let target_path = std::path::Path::new(out_path);
+    validate_out_path(target_path)?;
 
     // 1) Manifest crawl: QUIC preferred, TCP fallback.
     let manifest_json = match peer.quic_addr() {
@@ -210,9 +234,11 @@ pub fn fetch_blob_from_peer(
     // Fetched in bounded parallel batches so per-chunk round-trip latency
     // overlaps instead of serializing the whole blob.
     let absorbed = ChunkStore::new(ChunkStore::default_root());
+    let tmp_path = format!("{out_path}.tmp.{}", std::process::id());
+    let mut newly_absorbed = Vec::new();
     let result = (|| -> Result<u64, String> {
         let mut file =
-            std::fs::File::create(out_path).map_err(|e| format!("write {out_path}: {e}"))?;
+            std::fs::File::create(&tmp_path).map_err(|e| format!("write {tmp_path}: {e}"))?;
         let mut hasher = blake3::Hasher::new();
         let mut written: u64 = 0;
         let quic_addr = peer.quic_addr();
@@ -247,27 +273,36 @@ pub fn fetch_blob_from_peer(
                 // Dedupe is normal (same clip via two peers / earlier run):
                 // only the first writer stores; the whole-blob BLAKE3 check
                 // still guards us.
-                if !absorbed.put_trusted(&chr.blake3, &bytes) && !absorbed.contains(&chr.blake3) {
+                let stored = absorbed.put_trusted(&chr.blake3, &bytes);
+                if stored {
+                    newly_absorbed.push(chr.blake3.clone());
+                } else if !absorbed.contains(&chr.blake3) {
                     return Err(format!("chunk {} store failed", chr.blake3));
                 }
                 file.write_all(&bytes)
-                    .map_err(|e| format!("write {out_path}: {e}"))?;
+                    .map_err(|e| format!("write {tmp_path}: {e}"))?;
                 hasher.update(&bytes);
                 written += bytes.len() as u64;
             }
         }
 
-        // 3) Whole-blob verification + CAS absorb + file write.
+        // 3) Whole-blob verification + CAS absorb + atomic rename.
         if hasher.finalize().to_hex().as_str() != blob_hash {
             return Err("blob hash mismatch after transfer".to_string());
         }
+        std::fs::rename(&tmp_path, out_path)
+            .map_err(|e| format!("atomic rename {tmp_path} -> {out_path}: {e}"))?;
         absorbed
             .save_manifest(&manifest)
             .map_err(|e| format!("manifest persist: {e}"))?;
         Ok(written)
     })();
     if result.is_err() {
-        let _ = std::fs::remove_file(out_path);
+        let _ = std::fs::remove_file(&tmp_path);
+        // Clean up partial chunks newly stored during this failed attempt
+        for hash in &newly_absorbed {
+            let _ = std::fs::remove_file(absorbed.chunk_path(hash));
+        }
     }
     result
 }

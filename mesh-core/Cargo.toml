@@ -7,6 +7,7 @@ edition = "2021"
 base64 = { workspace = true }
 blake3 = { workspace = true }
 bincode = "1"
+crc32fast = { workspace = true }
 freenet-stdlib = "0.8.4"
 futures-util = { workspace = true }
 hex = { workspace = true }

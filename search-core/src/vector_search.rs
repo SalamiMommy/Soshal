@@ -187,6 +187,69 @@ pub fn rank_vector_documents(
         .collect()
 }
 
+/// A wrapper around an embedding vector that implements `instant_distance::Point`
+/// with cosine distance for fast HNSW indexing.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VectorEmbedding(pub Vec<f32>);
+
+impl instant_distance::Point for VectorEmbedding {
+    fn distance(&self, other: &Self) -> f32 {
+        let sim = cosine_similarity(&self.0, &other.0);
+        (1.0 - sim).max(0.0)
+    }
+}
+
+/// An approximate nearest neighbors (ANN) index built using an HNSW graph.
+/// Enables sub-millisecond semantic search retrieval over large document sets.
+#[derive(Clone)]
+pub struct HnswVectorIndex {
+    map: std::sync::Arc<instant_distance::HnswMap<VectorEmbedding, String>>,
+}
+
+impl HnswVectorIndex {
+    /// Builds an HNSW vector index from a slice of `VectorDocument`s.
+    /// Returns `None` if `docs` is empty.
+    pub fn build(docs: &[VectorDocument]) -> Option<Self> {
+        if docs.is_empty() {
+            return None;
+        }
+        let points: Vec<VectorEmbedding> = docs
+            .iter()
+            .map(|d| VectorEmbedding(d.embedding.clone()))
+            .collect();
+        let values: Vec<String> = docs.iter().map(|d| d.id.clone()).collect();
+        let map = instant_distance::Builder::default().build(points, values);
+        Some(Self {
+            map: std::sync::Arc::new(map),
+        })
+    }
+
+    /// Performs approximate nearest neighbor search for `query_embedding` returning top_k (id, similarity).
+    pub fn search(&self, query_embedding: &[f32], top_k: usize) -> Vec<(String, f32)> {
+        if top_k == 0 || query_embedding.is_empty() {
+            return Vec::new();
+        }
+        let query_point = VectorEmbedding(query_embedding.to_vec());
+        let mut search = instant_distance::Search::default();
+        let mut results = Vec::with_capacity(top_k);
+        for item in self.map.search(&query_point, &mut search).take(top_k) {
+            let sim = (1.0 - item.distance).clamp(-1.0, 1.0);
+            results.push((item.value.clone(), sim));
+        }
+        results
+    }
+
+    /// Total number of indexed documents in the HNSW map.
+    pub fn len(&self) -> usize {
+        self.map.values.len()
+    }
+
+    /// True if the index contains no documents.
+    pub fn is_empty(&self) -> bool {
+        self.map.values.is_empty()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,5 +274,22 @@ mod tests {
         let v_inf = vec![f32::INFINITY, 0.0, 0.0];
         let sim_inf = cosine_similarity(&v_inf, &v_normal);
         assert_eq!(sim_inf, 0.0);
+    }
+
+    #[test]
+    fn test_hnsw_vector_index_search() {
+        let doc1 = VectorDocument::new("doc1".into(), vec![1.0, 0.0, 0.0]);
+        let doc2 = VectorDocument::new("doc2".into(), vec![0.0, 1.0, 0.0]);
+        let doc3 = VectorDocument::new("doc3".into(), vec![0.9, 0.1, 0.0]);
+
+        let index = HnswVectorIndex::build(&[doc1, doc2, doc3]).expect("build succeeds");
+        assert_eq!(index.len(), 3);
+
+        let query = vec![1.0, 0.0, 0.0];
+        let results = index.search(&query, 2);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].0, "doc1");
+        assert!((results[0].1 - 1.0).abs() < 1e-4);
+        assert_eq!(results[1].0, "doc3");
     }
 }

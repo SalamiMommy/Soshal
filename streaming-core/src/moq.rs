@@ -90,6 +90,13 @@ pub fn decode_group_stream_bytes(bytes: Bytes) -> Result<MoqGroup, String> {
     if count > MAX_GROUP_OBJECTS {
         return Err("moq object count exceeds cap".to_string());
     }
+    let min_needed = count
+        .checked_mul(33)
+        .and_then(|c| c.checked_add(pos))
+        .ok_or_else(|| "moq length overflow".to_string())?;
+    if bytes.len() < min_needed {
+        return Err("moq input truncated for declared object count".to_string());
+    }
     let mut objects = Vec::with_capacity(count);
     for _ in 0..count {
         let track_id = read_u32(&bytes, &mut pos)?;

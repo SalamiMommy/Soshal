@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 
 /// A single sidebar navigation entry.
@@ -423,7 +424,15 @@ class ShellService extends ChangeNotifier {
     _audioPeaks = const [];
     try {
       await player.stop();
-      await player.setUrl(url).timeout(timeout);
+      final audioSource = AudioSource.uri(
+        Uri.parse(url),
+        tag: MediaItem(
+          id: url,
+          title: title.isEmpty ? 'Soshal Audio' : title,
+          album: 'Soshal',
+        ),
+      );
+      await player.setAudioSource(audioSource).timeout(timeout);
       await player.play().timeout(timeout);
       _audioUrl = url;
       _audioTitle = title;

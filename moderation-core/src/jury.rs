@@ -78,6 +78,7 @@ mod tests {
         FrostSignatureShare {
             participant_id,
             sig_share_hex: "deadbeef_forged".to_string(),
+            commitments_hex: String::new(),
         }
     }
 

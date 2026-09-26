@@ -206,3 +206,25 @@ fn test_compute_interest_score_json_bounds_input() {
         .unwrap()
         .contains(&serde_json::json!("tag0")));
 }
+
+#[test]
+fn test_calendar_recurrence_integration() {
+    use soshal_events_core::CalendarRecurrence;
+
+    // Monthly recurrence on 1st of month at 10:00:00 UTC
+    // 2026-09-01 10:00:00 UTC = 1788256800
+    let dtstart = 1788256800;
+    let rule = "FREQ=MONTHLY;COUNT=3";
+    let recurrence = CalendarRecurrence::parse(dtstart, rule).expect("Must parse monthly rule");
+
+    assert_eq!(recurrence.dtstart(), dtstart);
+
+    // Expand next 180 days
+    let occurrences = recurrence.occurrences_between(dtstart, dtstart + 86400 * 180, 10);
+    assert_eq!(occurrences.len(), 3);
+    assert_eq!(occurrences[0], dtstart);
+
+    // Verify next occurrence
+    let next = recurrence.next_occurrence(dtstart);
+    assert_eq!(next, Some(occurrences[1]));
+}

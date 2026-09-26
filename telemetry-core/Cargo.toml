@@ -10,6 +10,10 @@ zeroize = { workspace = true }
 getrandom = { workspace = true }
 soshal-common-core = { path = "../common-core" }
 soshal-crypto-core = { path = "../crypto-core" }
+hdrhistogram = { workspace = true }
+serde = { workspace = true }
+
+
 
 [lints]
 workspace = true

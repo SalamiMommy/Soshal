@@ -225,20 +225,109 @@ impl ReticulumNode {
                                 let now_secs = now_secs() as u64;
 
                                 if pkt.packet_type == ReticulumPacketType::Announce {
+                                    let next_hop = if pkt.hops == 0 {
+                                        pkt.destination
+                                    } else {
+                                        ReticulumAddress::from_aspect(
+                                            "reticulum.peer",
+                                            &src_addr.to_string(),
+                                        )
+                                    };
                                     let mut path_guard =
                                         path_table.lock().unwrap_or_else(|e| e.into_inner());
                                     path_guard.update_route(
                                         pkt.destination,
-                                        pkt.destination,
+                                        next_hop,
                                         pkt.hops,
                                         now_secs,
                                     );
+                                    // Forward Announce to other peers if hops remain
+                                    let mut seen =
+                                        seen_data.lock().unwrap_or_else(|e| e.into_inner());
+                                    let digest = blake3::hash(&pkt.to_bytes()).to_hex().to_string();
+                                    if !seen.contains(&digest) {
+                                        if seen.len() >= MAX_SEEN_DATA {
+                                            seen.pop_front();
+                                        }
+                                        seen.push_back(digest);
+                                        drop(seen);
+                                        if pkt.hops < MAX_HOPS {
+                                            let mut fwd = pkt.clone();
+                                            fwd.increment_hops_in_place();
+                                            let known: Vec<SocketAddr> = peers
+                                                .lock()
+                                                .unwrap_or_else(|e| e.into_inner())
+                                                .iter()
+                                                .copied()
+                                                .filter(|p| *p != src_addr)
+                                                .collect();
+                                            let fwd_bytes =
+                                                super::slip::slip_encode(&fwd.to_bytes());
+                                            for peer in known {
+                                                let _ = udp_clone.send_to(&fwd_bytes, peer);
+                                            }
+                                        }
+                                    }
                                 } else if pkt.packet_type == ReticulumPacketType::LinkRequest {
-                                    let _ = link_manager
-                                        .handle_link_request(pkt.destination, &pkt.payload);
+                                    if pkt.destination == destination {
+                                        let sender_dest = if pkt.payload.len() > 17
+                                            && pkt.payload[0]
+                                                == super::link::LINK_REQUEST_PQC_SENDER
+                                        {
+                                            let mut d = [0u8; 16];
+                                            d.copy_from_slice(&pkt.payload[1..17]);
+                                            ReticulumAddress(d)
+                                        } else {
+                                            ReticulumAddress::from_aspect(
+                                                "reticulum.peer",
+                                                &src_addr.to_string(),
+                                            )
+                                        };
+                                        if let Ok(proof_pkt) = link_manager
+                                            .handle_link_request_with_own_dest(
+                                                Some(destination),
+                                                sender_dest,
+                                                &pkt.payload,
+                                            )
+                                        {
+                                            let fwd_bytes =
+                                                super::slip::slip_encode(&proof_pkt.to_bytes());
+                                            let _ = udp_clone.send_to(&fwd_bytes, src_addr);
+                                        }
+                                    } else if pkt.hops < MAX_HOPS {
+                                        let mut fwd = pkt.clone();
+                                        fwd.increment_hops_in_place();
+                                        let known: Vec<SocketAddr> = peers
+                                            .lock()
+                                            .unwrap_or_else(|e| e.into_inner())
+                                            .iter()
+                                            .copied()
+                                            .filter(|p| *p != src_addr)
+                                            .collect();
+                                        let fwd_bytes = super::slip::slip_encode(&fwd.to_bytes());
+                                        for peer in known {
+                                            let _ = udp_clone.send_to(&fwd_bytes, peer);
+                                        }
+                                    }
                                 } else if pkt.packet_type == ReticulumPacketType::Proof {
-                                    let _ = link_manager
-                                        .handle_link_proof(pkt.destination, &pkt.payload);
+                                    if pkt.destination == destination {
+                                        let _ = link_manager
+                                            .handle_link_proof(pkt.destination, &pkt.payload);
+                                    } else if pkt.hops < MAX_HOPS {
+                                        let mut fwd = pkt.clone();
+                                        fwd.increment_hops_in_place();
+                                        let known: Vec<SocketAddr> = peers
+                                            .lock()
+                                            .unwrap_or_else(|e| e.into_inner())
+                                            .iter()
+                                            .copied()
+                                            .filter(|p| *p != src_addr)
+                                            .collect();
+                                        let fwd_bytes = super::slip::slip_encode(&fwd.to_bytes());
+                                        for peer in known {
+                                            let _ = udp_clone.send_to(&fwd_bytes, peer);
+                                        }
+                                    }
                                 }
 
                                 link_manager.update_activity(&pkt.destination);
@@ -414,8 +503,13 @@ impl ReticulumNode {
         let now_secs = now_secs() as u64;
 
         if pkt.packet_type == ReticulumPacketType::Announce {
+            let next_hop = if pkt.hops == 0 {
+                pkt.destination
+            } else {
+                ReticulumAddress::from_aspect("reticulum.peer", &pkt.destination.to_hex())
+            };
             let mut path_guard = self.path_table.lock().unwrap_or_else(|e| e.into_inner());
-            path_guard.update_route(pkt.destination, pkt.destination, pkt.hops, now_secs);
+            path_guard.update_route(pkt.destination, next_hop, pkt.hops, now_secs);
         }
 
         if pkt.destination != self.destination {

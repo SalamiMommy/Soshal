@@ -384,6 +384,11 @@ async fn download(cfg: SwarmConfig, abort: Arc<AtomicBool>) -> SwarmReport {
     }
     drop(map);
 
+    // If download failed or was cancelled, clean up the incomplete sparse file
+    if report.failures > 0 || report.cancelled {
+        let _ = std::fs::remove_file(&cfg.out_path);
+    }
+
     log::debug!(
         "swarm: {} verified chunks, {} bytes ({} failures)",
         report.verified_chunks,

@@ -14,4 +14,9 @@ pub mod nip44;
 pub mod pir;
 pub mod pqc;
 pub mod pqc_ratchet;
+pub mod qrcode;
+pub mod totp;
 pub mod zk_trust;
+
+pub use qrcode::{QrEcc, QrMatrix};
+pub use totp::TotpAuthenticator;

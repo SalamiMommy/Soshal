@@ -33,6 +33,8 @@ soshal-crypto-core = { path = "../crypto-core" }
 soshal-media-core = { path = "../media-core" }
 soshal-pqc-core = { path = "../pqc-core" }
 soshal-mesh-core = { path = "../mesh-core" }
+fastbloom = { workspace = true }
+governor = { workspace = true }
 
 [lints]
 workspace = true

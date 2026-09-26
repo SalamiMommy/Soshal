@@ -171,6 +171,8 @@ impl<'a> PostRepo<'a> {
                 post.rsvp_event_id.as_deref(),
             ],
         )?;
+        self.db
+            .notify_change(crate::change_bus::Table::Posts, Some(norm_pk.to_string()));
         Ok(())
     }
 
@@ -183,7 +185,9 @@ impl<'a> PostRepo<'a> {
             self.upsert_batch_in(&tx, posts).await?;
             tx.commit().await?;
             Ok(())
-        })
+        })?;
+        self.db.notify_change(crate::change_bus::Table::Posts, None);
+        Ok(())
     }
 
     pub async fn upsert_in(
@@ -288,6 +292,7 @@ impl<'a> PostRepo<'a> {
             "UPDATE posts SET is_deleted = 1 WHERE LOWER(id) = ?1",
             params![norm_id.as_str()],
         )?;
+        self.db.notify_change(crate::change_bus::Table::Posts, None);
         Ok(())
     }
 
@@ -315,21 +320,29 @@ impl<'a> PostRepo<'a> {
     /// returns the number of rows affected.
     pub fn delete_older_than(&self, cutoff_secs: i64) -> Result<u64, crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::execute(
+        let res = crate::query::execute(
             &conn,
             "UPDATE posts SET is_deleted = 1 WHERE is_deleted = 0 AND created_at < ?1",
             params![cutoff_secs],
-        )
+        )?;
+        if res > 0 {
+            self.db.notify_change(crate::change_bus::Table::Posts, None);
+        }
+        Ok(res)
     }
 
     /// Soft-deletes every cached post; returns the number of rows affected.
     pub fn delete_all_posts(&self) -> Result<u64, crate::error::DbError> {
         let conn = self.db.conn()?;
-        crate::query::execute(
+        let res = crate::query::execute(
             &conn,
             "UPDATE posts SET is_deleted = 1 WHERE is_deleted = 0",
             (),
-        )
+        )?;
+        if res > 0 {
+            self.db.notify_change(crate::change_bus::Table::Posts, None);
+        }
+        Ok(res)
     }
 
     pub fn get_feed(

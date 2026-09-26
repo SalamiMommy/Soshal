@@ -46,6 +46,7 @@ pub struct RelayNode {
     backends: Vec<Box<dyn MeshBackend>>,
     recent: VecDeque<MeshEnvelope>,
     seen: BoundedSet<String>,
+    seen_bloom: crate::bloom_dedup::FastBloomSeenFilter,
     delivered: VecDeque<Vec<u8>>,
     published: u64,
     received: u64,
@@ -64,6 +65,7 @@ impl RelayNode {
             backends: Vec::new(),
             recent: VecDeque::new(),
             seen: BoundedSet::new(SEEN_CAPACITY),
+            seen_bloom: crate::bloom_dedup::FastBloomSeenFilter::new(SEEN_CAPACITY, 0.001),
             delivered: VecDeque::new(),
             published: 0,
             received: 0,
@@ -237,7 +239,7 @@ impl RelayNode {
             // id and suppress delivery/re-broadcast of the real event.
             // Identical payloads still dedup once.
             let digest = payload_digest(&env.payload);
-            if self.seen.contains(&digest) {
+            if self.seen_bloom.contains(&digest) || self.seen.contains(&digest) {
                 continue;
             }
             self.note_seen(digest);
@@ -311,6 +313,7 @@ impl RelayNode {
     }
 
     fn note_seen(&mut self, id: String) {
+        self.seen_bloom.insert(&id);
         self.seen.insert(id);
     }
 

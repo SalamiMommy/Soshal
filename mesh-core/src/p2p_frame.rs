@@ -101,32 +101,11 @@ impl FreenetP2PCommand {
     }
 }
 
-/// Precomputed IEEE 802.3 CRC32 lookup table (polynomial 0xedb8_8320).
-const CRC32_TABLE: [u32; 256] = {
-    let mut table = [0u32; 256];
-    let mut i = 0;
-    while i < 256 {
-        let mut crc = i as u32;
-        let mut j = 0;
-        while j < 8 {
-            let mask = (crc & 1).wrapping_neg();
-            crc = (crc >> 1) ^ (0xedb8_8320 & mask);
-            j += 1;
-        }
-        table[i] = crc;
-        i += 1;
-    }
-    table
-};
-
-/// Computes IEEE CRC32 checksum of bytes using table lookup.
+/// Computes IEEE CRC32 checksum of bytes using SIMD-accelerated instructions (SSE4.2 / ARMv8 PMULL).
 pub fn compute_crc32(bytes: &[u8]) -> u32 {
-    let mut crc = 0xffff_ffffu32;
-    for &byte in bytes {
-        let idx = ((crc ^ u32::from(byte)) & 0xff) as usize;
-        crc = (crc >> 8) ^ CRC32_TABLE[idx];
-    }
-    !crc
+    let mut hasher = crc32fast::Hasher::new();
+    hasher.update(bytes);
+    hasher.finalize()
 }
 
 /// Encodes a string payload into CRC32-validated chunks.

@@ -18,6 +18,17 @@ fn runtime() -> &'static tokio::runtime::Runtime {
     })
 }
 
+fn block_on_async<F, R>(fut: F) -> R
+where
+    F: std::future::Future<Output = R>,
+{
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        tokio::task::block_in_place(|| handle.block_on(fut))
+    } else {
+        runtime().block_on(fut)
+    }
+}
+
 pub struct FreenetBackend {
     client: Option<FreenetWebSocketClient>,
     url: String,
@@ -65,7 +76,7 @@ impl FreenetBackend {
 
     fn reconnect(&mut self) -> bool {
         let client = FreenetWebSocketClient::new(self.url.clone(), self.auth_token.clone());
-        match runtime().block_on(async {
+        match block_on_async(async {
             tokio::time::timeout(std::time::Duration::from_secs(5), client.connect())
                 .await
                 .map_err(|_| "freenet connect timed out".to_string())?
@@ -90,7 +101,7 @@ impl MeshBackend for FreenetBackend {
     }
     fn start(&mut self) -> Result<(), String> {
         let client = FreenetWebSocketClient::new(self.url.clone(), self.auth_token.clone());
-        runtime().block_on(async {
+        block_on_async(async {
             tokio::time::timeout(std::time::Duration::from_secs(5), client.connect())
                 .await
                 .map_err(|_| "freenet connect timed out".to_string())?
@@ -106,7 +117,7 @@ impl MeshBackend for FreenetBackend {
         self.started = false;
         self.connected = false;
         if let Some(client) = self.client.take() {
-            let _ = runtime().block_on(async {
+            let _ = block_on_async(async {
                 tokio::time::timeout(std::time::Duration::from_secs(5), client.disconnect()).await
             });
         }
@@ -127,7 +138,7 @@ impl MeshBackend for FreenetBackend {
             state: payload,
             contract_code: None,
         };
-        runtime().block_on(async {
+        block_on_async(async {
             tokio::time::timeout(
                 std::time::Duration::from_secs(5),
                 client.put_contract(state, false),
@@ -147,7 +158,7 @@ impl MeshBackend for FreenetBackend {
             }
             if self.connected {
                 if let Some(client) = self.client.as_ref() {
-                    if let Ok(state) = runtime().block_on(async {
+                    if let Ok(state) = block_on_async(async {
                         tokio::time::timeout(
                             std::time::Duration::from_secs(5),
                             client.get_contract(&self.contract_key, false),

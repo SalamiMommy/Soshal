@@ -40,8 +40,12 @@ impl PathTable {
         let expires_at = now_secs + DEFAULT_ROUTE_TTL_SECS;
 
         if let Some(existing) = self.routes.get_mut(&destination) {
-            // Update if newer hop count is lower or equal, or if route is refreshed
-            if hop_count <= existing.hop_count || existing.expires_at < now_secs {
+            // Update if from current next-hop (active gateway update/refresh),
+            // or if newer hop count is lower or equal, or if route is expired
+            if existing.next_hop == next_hop
+                || hop_count <= existing.hop_count
+                || existing.expires_at < now_secs
+            {
                 existing.next_hop = next_hop;
                 existing.hop_count = hop_count;
                 existing.expires_at = expires_at;

@@ -249,8 +249,12 @@ async fn serve_video_file(
                 } else if !end_str.is_empty() {
                     match end_str.parse::<u64>() {
                         Ok(n) => {
-                            start = total_size.saturating_sub(n);
-                            end = total_size.saturating_sub(1);
+                            if n == 0 {
+                                invalid_range = true;
+                            } else {
+                                start = total_size.saturating_sub(n);
+                                end = total_size.saturating_sub(1);
+                            }
                         }
                         Err(_) => invalid_range = true,
                     }

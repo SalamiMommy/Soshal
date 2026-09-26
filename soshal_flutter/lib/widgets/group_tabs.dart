@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import '../services/groups_service.dart';
 import '../services/session_service.dart';
 import '../utils/format.dart';
+import '../utils/url_launcher_util.dart';
 
 /// Parses a #rrggbb hex color (falls back to neutral gray).
 Color hexColor(String hex) {
@@ -538,7 +540,14 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
                                     ],
                                   ),
                                   const SizedBox(height: 2),
-                                  Text(m.content),
+                                  MarkdownBody(
+                                    data: m.content,
+                                    onTapLink: (text, href, title) {
+                                      if (href != null) {
+                                        UrlLauncherUtil.launchSafeUrl(context, href);
+                                      }
+                                    },
+                                  ),
                                   const SizedBox(height: 4),
                                   _reactionRow(m.id, api),
                                 ],

@@ -59,23 +59,20 @@ pub fn sanitize_log_message(msg: &str) -> String {
         .into_owned()
 }
 
-/// Strips HTML tags, normalizes whitespace, and truncates notification content.
-/// Mirrors TS `sanitizeNotifContent` in NotificationService.ts.
+/// Strips HTML tags, cleans XSS vectors, normalizes whitespace, and truncates notification content.
+/// Uses `ammonia` for standards-compliant HTML5 parsing and sanitization.
 pub fn sanitize_notif_content(raw: &str, max_len: usize) -> String {
     if max_len == 0 || raw.is_empty() {
         return String::new();
     }
     let no_tags = if raw.contains('<') {
-        static RE_TAGS: OnceLock<Regex> = OnceLock::new();
-        let re = RE_TAGS.get_or_init(|| {
-            RegexBuilder::new(r"<[^>]*>")
-                .size_limit(64 * 1024)
-                .build()
-                .unwrap_or_else(|_| Regex::new(MATCH_NOTHING_REGEX).expect("compile nothing"))
-        });
-        re.replace_all(raw, "")
+        ammonia::Builder::new()
+            .tags(std::collections::HashSet::new())
+            .clean_content_tags(std::collections::HashSet::new())
+            .clean(raw)
+            .to_string()
     } else {
-        std::borrow::Cow::Borrowed(raw)
+        raw.to_string()
     };
 
     let mut words = no_tags.split_whitespace();
@@ -97,6 +94,12 @@ pub fn sanitize_notif_content(raw: &str, max_len: usize) -> String {
         out.truncate(boundary);
     }
     out
+}
+
+/// Sanitizes rich HTML content, allowing safe tags while stripping scripts, styles,
+/// and dangerous attributes/schemes (XSS prevention).
+pub fn sanitize_html(raw: &str) -> String {
+    ammonia::clean(raw)
 }
 
 // ─── Security audit sanitization ──────────────────────────────────────
@@ -215,4 +218,44 @@ pub fn scrub_sensitive_data(text: &str) -> String {
         sanitized = regex.replace_all(&sanitized, *replacement).to_string();
     }
     sanitized
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_notif_content_strips_html_and_xss() {
+        let input = "Hello <script>alert('pwned')</script><b>World</b>!";
+        let clean = sanitize_notif_content(input, 100);
+        assert!(!clean.contains("<script>"));
+        assert!(!clean.contains("</script>"));
+        assert!(!clean.contains("<b>"));
+        assert!(!clean.contains("</b>"));
+        assert!(clean.contains("Hello"));
+        assert!(clean.contains("World"));
+    }
+
+    #[test]
+    fn test_sanitize_notif_content_unclosed_tags() {
+        let input = "Check out <img src=x onerror=alert(1)>this post";
+        let clean = sanitize_notif_content(input, 50);
+        assert!(!clean.contains("onerror"));
+        assert!(!clean.contains("alert"));
+        assert!(clean.contains("Check out"));
+        assert!(clean.contains("this post"));
+    }
+
+    #[test]
+    fn test_sanitize_html_allows_safe_tags() {
+        let input = "<p>Hello <b>bold</b> and <script>malicious()</script> <a href=\"https://example.com\">link</a></p>";
+        let clean = sanitize_html(input);
+        assert!(clean.contains("<b>bold</b>"));
+        assert!(
+            clean.contains("<a href=\"https://example.com\" rel=\"noopener noreferrer\">link</a>")
+                || clean.contains("<a href=\"https://example.com\">link</a>")
+        );
+        assert!(!clean.contains("<script>"));
+        assert!(!clean.contains("malicious"));
+    }
 }

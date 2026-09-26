@@ -312,6 +312,57 @@ struct ParseLinkPreviewInput {
     url: String,
 }
 
+/// Specification-compliant HTML5 metadata extraction using `scraper` CSS selectors.
+pub fn extract_metadata_with_scraper(
+    html: &str,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
+    use scraper::{Html, Selector};
+    let document = Html::parse_document(html);
+
+    let title_sel = Selector::parse("title").ok();
+    let og_title_sel =
+        Selector::parse(r#"meta[property="og:title"], meta[name="twitter:title"]"#).ok();
+    let desc_sel = Selector::parse(
+        r#"meta[property="og:description"], meta[name="description"], meta[name="twitter:description"]"#,
+    )
+    .ok();
+    let img_sel = Selector::parse(r#"meta[property="og:image"], meta[name="twitter:image"]"#).ok();
+
+    let title = og_title_sel
+        .and_then(|s| document.select(&s).next())
+        .and_then(|el| el.value().attr("content"))
+        .map(|s| s.to_string())
+        .or_else(|| {
+            title_sel
+                .and_then(|s| document.select(&s).next())
+                .map(|el| el.text().collect::<Vec<_>>().join("").trim().to_string())
+                .filter(|s| !s.is_empty())
+        });
+
+    let desc = desc_sel
+        .and_then(|s| document.select(&s).next())
+        .and_then(|el| el.value().attr("content"))
+        .map(|s| s.to_string());
+
+    let img = img_sel
+        .and_then(|s| document.select(&s).next())
+        .and_then(|el| el.value().attr("content"))
+        .map(|s| s.to_string());
+
+    let icon_sel = Selector::parse(r#"link[rel~="icon"], link[rel="shortcut icon"]"#).ok();
+    let favicon = icon_sel
+        .and_then(|s| document.select(&s).next())
+        .and_then(|el| el.value().attr("href"))
+        .map(|s| s.to_string());
+
+    (title, desc, img, favicon)
+}
+
 /// Parse HTML into a link preview.
 #[doc(hidden)]
 pub fn parse_link_preview_html(html: &str, url_str: &str) -> Option<LinkPreviewOut> {
@@ -319,8 +370,7 @@ pub fn parse_link_preview_html(html: &str, url_str: &str) -> Option<LinkPreviewO
         return None;
     }
     let scan = scan_html(html);
-    let og_title = scan.og_title.winner();
-    let title = match og_title {
+    let mut title = match scan.og_title.winner() {
         Some(v) if v.len() <= MAX_PREVIEW_URL_LENGTH => decode_html_entities(v),
         _ => match scan.title_tag {
             Some(t) => {
@@ -334,8 +384,7 @@ pub fn parse_link_preview_html(html: &str, url_str: &str) -> Option<LinkPreviewO
             None => url_str.to_string(),
         },
     };
-    let og_description = scan.og_description.winner();
-    let description = match og_description {
+    let mut description = match scan.og_description.winner() {
         Some(v) if v.len() <= MAX_PREVIEW_URL_LENGTH => decode_html_entities(v),
         _ => match scan.description.winner() {
             Some(v) if v.len() <= MAX_PREVIEW_URL_LENGTH => decode_html_entities(v),
@@ -349,8 +398,40 @@ pub fn parse_link_preview_html(html: &str, url_str: &str) -> Option<LinkPreviewO
         .og_image
         .winner()
         .or_else(|| scan.twitter_image.winner());
-    let image = resolve_image_url(raw_image, url_str);
-    let favicon = resolve_favicon(scan.favicon, url_str);
+    let mut image = resolve_image_url(raw_image, url_str);
+    let mut favicon = resolve_favicon(scan.favicon, url_str);
+
+    // Fall back to specification-compliant CSS selector parser if fields are missing
+    if title == url_str || description.is_empty() || image.is_none() {
+        let (s_title, s_desc, s_img, s_fav) = extract_metadata_with_scraper(html);
+        if title == url_str {
+            if let Some(t) = s_title {
+                let decoded = decode_html_entities(&t);
+                if !decoded.trim().is_empty() && decoded.len() <= MAX_PREVIEW_URL_LENGTH {
+                    title = decoded;
+                }
+            }
+        }
+        if description.is_empty() {
+            if let Some(d) = s_desc {
+                let decoded = decode_html_entities(&d);
+                if decoded.len() <= MAX_PREVIEW_URL_LENGTH {
+                    description = decoded;
+                }
+            }
+        }
+        if image.is_none() {
+            if let Some(i) = s_img {
+                image = resolve_image_url(Some(&i), url_str);
+            }
+        }
+        if favicon.is_none() {
+            if let Some(f) = s_fav {
+                favicon = resolve_favicon(Some(&f), url_str);
+            }
+        }
+    }
+
     let domain = url::Url::parse(url_str)
         .ok()
         .and_then(|u| u.host_str().map(|h| h.to_string()))

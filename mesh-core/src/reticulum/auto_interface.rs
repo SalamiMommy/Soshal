@@ -8,7 +8,7 @@ use super::address::ReticulumAddress;
 use super::interface::{ReticulumInterfaceKind, ReticulumInterfaceStatus};
 use serde::{Deserialize, Serialize};
 use std::net::{Ipv6Addr, UdpSocket};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -42,6 +42,8 @@ pub struct AutoInterface {
     running: Arc<AtomicBool>,
     discovery_thread: Option<thread::JoinHandle<()>>,
     local_destination: ReticulumAddress,
+    rx_packets: Arc<AtomicU64>,
+    tx_packets: Arc<AtomicU64>,
 }
 
 impl AutoInterface {
@@ -52,6 +54,8 @@ impl AutoInterface {
             running: Arc::new(AtomicBool::new(false)),
             discovery_thread: None,
             local_destination,
+            rx_packets: Arc::new(AtomicU64::new(0)),
+            tx_packets: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -80,6 +84,8 @@ impl AutoInterface {
         let running = self.running.clone();
         let local_dest = self.local_destination;
         let interval = Duration::from_millis(self.config.discovery_interval_ms);
+        let tx_packets = self.tx_packets.clone();
+        let rx_packets = self.rx_packets.clone();
 
         // Set running BEFORE spawning (mirrors TcpServerInterface::start):
         // otherwise the thread can observe `false` and exit immediately,
@@ -94,16 +100,22 @@ impl AutoInterface {
                 // Send periodic beacons
                 if last_beacon.elapsed() >= interval {
                     let beacon = Self::create_beacon(&local_dest);
-                    let _ = socket_clone.send_to(
-                        &beacon,
-                        format!("{}:{}", AUTO_DISCOVERY_GROUP, AUTO_DISCOVERY_PORT),
-                    );
+                    if socket_clone
+                        .send_to(
+                            &beacon,
+                            format!("[{}]:{}", AUTO_DISCOVERY_GROUP, AUTO_DISCOVERY_PORT),
+                        )
+                        .is_ok()
+                    {
+                        tx_packets.fetch_add(1, Ordering::Relaxed);
+                    }
                     last_beacon = std::time::Instant::now();
                 }
 
                 // Receive beacons from peers
                 match socket_clone.recv_from(&mut buf) {
                     Ok((len, src)) => {
+                        rx_packets.fetch_add(1, Ordering::Relaxed);
                         if len > BEACON_MAGIC.len() && &buf[..BEACON_MAGIC.len()] == BEACON_MAGIC {
                             if let Some(peer_dest) = Self::parse_beacon(&buf[..len]) {
                                 // In a full implementation, this would notify the ReticulumNode
@@ -174,8 +186,8 @@ impl AutoInterface {
             kind: ReticulumInterfaceKind::UdpMulticast,
             bind_address: format!("[::]:{}", self.config.bind_port),
             active: self.running.load(Ordering::Relaxed),
-            rx_packets: 0, // Would need to track actual packet counts
-            tx_packets: 0,
+            rx_packets: self.rx_packets.load(Ordering::Relaxed),
+            tx_packets: self.tx_packets.load(Ordering::Relaxed),
         }
     }
 }

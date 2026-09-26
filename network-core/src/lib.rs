@@ -7,10 +7,14 @@
 pub use soshal_common_core::json_util::{json_in, json_out};
 
 pub mod blob_grab;
+pub mod bloom_inventory;
 pub mod discovery;
 pub mod ebpf;
 pub mod eigentrust;
+pub mod gcra_limiter;
 pub mod geoloc;
+
+pub use gcra_limiter::PeerGcraLimiter;
 pub mod heuristics;
 pub mod http3_client;
 pub mod lan;

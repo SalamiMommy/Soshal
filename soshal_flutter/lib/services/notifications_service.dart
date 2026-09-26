@@ -2,6 +2,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
@@ -12,6 +13,68 @@ import '../utils/service_guard.dart';
 /// Fetches, marks, and counts notifications through the Rust bridge.
 class NotificationService extends ChangeNotifier
     with LastErrorMixin, ServiceGuard {
+  static final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
+  static bool _localNotificationsInitialized = false;
+
+  /// Initialize system local notifications display.
+  static Future<void> initLocalNotifications() async {
+    if (_localNotificationsInitialized) return;
+    try {
+      const androidSettings =
+          AndroidInitializationSettings('@mipmap/ic_launcher');
+      const linuxSettings = LinuxInitializationSettings(
+        defaultActionName: 'Open notification',
+      );
+      const initSettings = InitializationSettings(
+        android: androidSettings,
+        linux: linuxSettings,
+      );
+      await _localNotifications.initialize(
+        settings: initSettings,
+      );
+      _localNotificationsInitialized = true;
+    } catch (e) {
+      debugPrint('initLocalNotifications failed: $e');
+    }
+  }
+
+  /// Display a system notification banner/alert.
+  Future<void> showSystemNotification({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
+    try {
+      if (!_localNotificationsInitialized) {
+        await initLocalNotifications();
+      }
+      const androidDetails = AndroidNotificationDetails(
+        'com.soshal.notifications',
+        'Soshal Notifications',
+        channelDescription:
+            'Notifications for mentions, replies, and reactions',
+        importance: Importance.high,
+        priority: Priority.high,
+      );
+      const linuxDetails = LinuxNotificationDetails();
+      const details = NotificationDetails(
+        android: androidDetails,
+        linux: linuxDetails,
+      );
+      await _localNotifications.show(
+        id: id,
+        title: title,
+        body: body,
+        notificationDetails: details,
+        payload: payload,
+      );
+    } catch (e) {
+      debugPrint('showSystemNotification failed: $e');
+    }
+  }
+
   List<AppNotification> _notifications = [];
   List<AppNotification> _unread = [];
   final Map<String, List<AppNotification>> _byType = {};

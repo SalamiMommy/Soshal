@@ -11,9 +11,17 @@ pub mod decoder;
 pub mod freenet_media;
 pub mod identicon;
 pub mod media;
+pub mod mime_detector;
+pub mod palette;
 pub mod prefetcher;
 pub mod source;
 pub mod thumbhash;
+
+pub use mime_detector::{
+    classify_blob, detect_extension, detect_mime_type, is_audio, is_image, is_video,
+    verify_claimed_mime, BlobMediaType,
+};
+pub use palette::{is_wcag_accessible, wcag_contrast_ratio, DominantPalette};
 
 pub fn trim_media_caches(level: soshal_common_core::memory::MemoryPressureLevel) {
     if level != soshal_common_core::memory::MemoryPressureLevel::Normal {

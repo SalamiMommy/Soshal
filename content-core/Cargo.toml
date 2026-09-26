@@ -12,6 +12,15 @@ zstd = { workspace = true }
 base64 = { workspace = true }
 url = { workspace = true }
 soshal-common-core = { path = "../common-core" }
+scraper = { workspace = true }
+ammonia = { workspace = true }
+pulldown-cmark = { workspace = true }
+whichlang = { workspace = true }
+unicode-normalization = { workspace = true }
+similar = { workspace = true }
+unic-langid = { workspace = true }
+
+
 
 
 [lints]

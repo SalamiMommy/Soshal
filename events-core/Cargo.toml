@@ -8,6 +8,8 @@ serde = { workspace = true }
 soshal-content-core = { path = "../content-core" }
 soshal-common-core = { path = "../common-core" }
 soshal-social-core = { path = "../social-core" }
+rrule = { workspace = true }
+chrono = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

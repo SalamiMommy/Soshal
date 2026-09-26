@@ -101,6 +101,12 @@ impl WifiDirectManager {
         }
         use base64::Engine;
         let frame: ChunkFrame = serde_json::from_str(raw).ok()?;
+        if frame.total_chunks == 0
+            || frame.chunk_index >= frame.total_chunks
+            || frame.chunk_hash.trim().is_empty()
+        {
+            return None;
+        }
         let data = base64::engine::general_purpose::STANDARD
             .decode(&frame.payload_b64)
             .ok()?;

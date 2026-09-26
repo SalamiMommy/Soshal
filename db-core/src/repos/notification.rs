@@ -41,6 +41,10 @@ impl<'a> NotificationRepo<'a> {
                 n.is_read,
             ],
         )?;
+        self.db.notify_change(
+            crate::change_bus::Table::Notifications,
+            Some(norm_pk.to_string()),
+        );
         Ok(())
     }
 
@@ -56,7 +60,10 @@ impl<'a> NotificationRepo<'a> {
             self.upsert_batch_in(&tx, notifications).await?;
             tx.commit().await?;
             Ok(())
-        })
+        })?;
+        self.db
+            .notify_change(crate::change_bus::Table::Notifications, None);
+        Ok(())
     }
 
     /// Transaction-scoped batch upsert (ingest path writes inside its own
@@ -179,6 +186,10 @@ impl<'a> NotificationRepo<'a> {
             "UPDATE notifications SET is_read = 1 WHERE id = ?1 AND LOWER(pubkey) = ?2 AND is_read = 0",
             params![id.trim(), norm_pk.as_str()],
         )?;
+        if affected > 0 {
+            self.db
+                .notify_change(crate::change_bus::Table::Notifications, Some(norm_pk));
+        }
         Ok(affected > 0)
     }
 
@@ -190,6 +201,8 @@ impl<'a> NotificationRepo<'a> {
             "UPDATE notifications SET is_read = 1 WHERE LOWER(pubkey) = ?1",
             params![norm_pk.as_str()],
         )?;
+        self.db
+            .notify_change(crate::change_bus::Table::Notifications, Some(norm_pk));
         Ok(())
     }
 
@@ -201,6 +214,10 @@ impl<'a> NotificationRepo<'a> {
             "DELETE FROM notifications WHERE id = ?1 AND LOWER(pubkey) = ?2",
             params![id.trim(), norm_pk.as_str()],
         )?;
+        if affected > 0 {
+            self.db
+                .notify_change(crate::change_bus::Table::Notifications, Some(norm_pk));
+        }
         Ok(affected > 0)
     }
 }

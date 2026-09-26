@@ -12,7 +12,11 @@ const LINK_TIMEOUT_SECS: u64 = 300; // 5 minutes
 const MAX_PENDING_LINKS: usize = 50;
 
 /// Link-request payload marker byte: a PQC hybrid public key follows.
-const LINK_REQUEST_PQC: u8 = 0x01;
+pub const LINK_REQUEST_PQC: u8 = 0x01;
+/// Link-request payload marker byte with explicit sender destination prefix (16 bytes).
+pub const LINK_REQUEST_PQC_SENDER: u8 = 0x02;
+/// Link-proof payload marker byte with explicit responder destination prefix (16 bytes).
+pub const PROOF_PQC_SENDER: u8 = 0x02;
 
 fn link_peer_id(dest: &ReticulumAddress) -> String {
     format!("reticulum:{}", dest)
@@ -55,7 +59,11 @@ impl LinkManager {
     /// Initiates a link request to a remote destination. The request payload
     /// carries this side's hybrid PQC public key; the peer answers with its
     /// own in the proof packet, completing the ratchet handshake.
-    pub fn request_link(&self, remote_dest: ReticulumAddress) -> Result<ReticulumPacket, String> {
+    pub fn request_link_from(
+        &self,
+        sender_dest: Option<ReticulumAddress>,
+        remote_dest: ReticulumAddress,
+    ) -> Result<ReticulumPacket, String> {
         let mut links = self.links.lock().unwrap_or_else(|e| e.into_inner());
 
         if links.len() >= MAX_PENDING_LINKS {
@@ -81,8 +89,13 @@ impl LinkManager {
 
         links.insert(remote_dest, link_info);
 
-        let mut payload = Vec::with_capacity(1 + own_pk.len());
-        payload.push(LINK_REQUEST_PQC);
+        let mut payload = Vec::with_capacity(1 + 16 + own_pk.len());
+        if let Some(snd) = sender_dest {
+            payload.push(LINK_REQUEST_PQC_SENDER);
+            payload.extend_from_slice(&snd.0);
+        } else {
+            payload.push(LINK_REQUEST_PQC);
+        }
         payload.extend_from_slice(own_pk.as_bytes());
 
         Ok(ReticulumPacket::new(
@@ -90,6 +103,10 @@ impl LinkManager {
             ReticulumPacketType::LinkRequest,
             payload,
         ))
+    }
+
+    pub fn request_link(&self, remote_dest: ReticulumAddress) -> Result<ReticulumPacket, String> {
+        self.request_link_from(None, remote_dest)
     }
 
     /// Processes an incoming link request: bootstraps the responder-side
@@ -100,13 +117,37 @@ impl LinkManager {
         from_dest: ReticulumAddress,
         request_payload: &[u8],
     ) -> Result<ReticulumPacket, String> {
+        self.handle_link_request_with_own_dest(None, from_dest, request_payload)
+    }
+
+    /// Variant of [`handle_link_request`] that embeds our local destination in the
+    /// Proof payload so the initiator can unambiguously bind the proof to this link.
+    pub fn handle_link_request_with_own_dest(
+        &self,
+        own_dest: Option<ReticulumAddress>,
+        from_dest: ReticulumAddress,
+        request_payload: &[u8],
+    ) -> Result<ReticulumPacket, String> {
         let mut links = self.links.lock().unwrap_or_else(|e| e.into_inner());
 
-        if request_payload.first() != Some(&LINK_REQUEST_PQC) {
-            return Err("unsupported link request payload".to_string());
-        }
-        let initiator_pk = std::str::from_utf8(&request_payload[1..])
-            .map_err(|_| "link request pk not ascii".to_string())?;
+        let tag = *request_payload
+            .first()
+            .ok_or_else(|| "empty link request payload".to_string())?;
+        let (actual_from_dest, initiator_pk) = match tag {
+            LINK_REQUEST_PQC_SENDER if request_payload.len() > 17 => {
+                let mut addr = [0u8; 16];
+                addr.copy_from_slice(&request_payload[1..17]);
+                let pk = std::str::from_utf8(&request_payload[17..])
+                    .map_err(|_| "link request pk not ascii".to_string())?;
+                (ReticulumAddress(addr), pk)
+            }
+            LINK_REQUEST_PQC => {
+                let pk = std::str::from_utf8(&request_payload[1..])
+                    .map_err(|_| "link request pk not ascii".to_string())?;
+                (from_dest, pk)
+            }
+            _ => return Err("unsupported link request payload".to_string()),
+        };
 
         // Inbound cap: attacker LinkRequest floods must not grow the map
         // (MAX_PENDING_LINKS only guarded outbound requests before).
@@ -118,13 +159,13 @@ impl LinkManager {
 
         // Create the ratchet session keyed to the initiator's public key.
         let own_pk = self.crypto.accept_handshake_pk(
-            &link_peer_id(&from_dest),
-            &link_context(&from_dest),
+            &link_peer_id(&actual_from_dest),
+            &link_context(&actual_from_dest),
             initiator_pk,
         )?;
 
         let link_info = LinkInfo {
-            remote_destination: from_dest,
+            remote_destination: actual_from_dest,
             state: LinkState::Established,
             created_at: now,
             last_activity: now,
@@ -132,13 +173,20 @@ impl LinkManager {
             rx_packets: 0,
         };
 
-        links.insert(from_dest, link_info);
+        links.insert(actual_from_dest, link_info);
 
-        // Return proof packet carrying our hybrid public key.
+        // Return proof packet carrying our hybrid public key (and optional sender prefix).
+        let mut proof_payload = Vec::new();
+        if let Some(od) = own_dest {
+            proof_payload.push(PROOF_PQC_SENDER);
+            proof_payload.extend_from_slice(&od.0);
+        }
+        proof_payload.extend_from_slice(own_pk.as_bytes());
+
         Ok(ReticulumPacket::new(
-            from_dest,
+            actual_from_dest,
             ReticulumPacketType::Proof,
-            own_pk.into_bytes(),
+            proof_payload,
         ))
     }
 
@@ -151,16 +199,36 @@ impl LinkManager {
     ) -> Result<(), String> {
         let mut links = self.links.lock().unwrap_or_else(|e| e.into_inner());
 
-        if let Some(link) = links.get_mut(&from_dest) {
+        let (target_dest, responder_pk) =
+            if proof_data.first() == Some(&PROOF_PQC_SENDER) && proof_data.len() > 17 {
+                let mut addr = [0u8; 16];
+                addr.copy_from_slice(&proof_data[1..17]);
+                let pk = std::str::from_utf8(&proof_data[17..])
+                    .map_err(|_| "link proof pk not ascii".to_string())?;
+                (ReticulumAddress(addr), pk)
+            } else {
+                let pk = std::str::from_utf8(proof_data)
+                    .map_err(|_| "link proof pk not ascii".to_string())?;
+                let dest = if links.contains_key(&from_dest) {
+                    from_dest
+                } else if let Some((dest, _)) =
+                    links.iter().find(|(_, l)| l.state == LinkState::Pending)
+                {
+                    *dest
+                } else {
+                    from_dest
+                };
+                (dest, pk)
+            };
+
+        if let Some(link) = links.get_mut(&target_dest) {
             if link.state == LinkState::Pending {
+                // Complete the ratchet handshake with the responder's key.
+                self.crypto
+                    .complete_handshake(&link_peer_id(&target_dest), responder_pk)?;
+
                 link.state = LinkState::Established;
                 link.last_activity = now_secs() as u64;
-
-                // Complete the ratchet handshake with the responder's key.
-                let responder_pk = std::str::from_utf8(proof_data)
-                    .map_err(|_| "link proof pk not ascii".to_string())?;
-                self.crypto
-                    .complete_handshake(&link_peer_id(&from_dest), responder_pk)?;
 
                 Ok(())
             } else {

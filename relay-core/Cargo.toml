@@ -13,6 +13,8 @@ soshal-network-core = { path = "../network-core" }
 soshal-nostr-core = { path = "../nostr-core" }
 tokio = { workspace = true }
 rayon = { workspace = true }
+dashmap = { workspace = true }
+fastbloom = { workspace = true }
 
 [lints]
 workspace = true

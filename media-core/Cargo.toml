@@ -18,6 +18,8 @@ soshal-common-core = { path = "../common-core" }
 thumbhash.workspace = true
 url.workspace = true
 tokio = { workspace = true }
+infer = { workspace = true }
+palette = { workspace = true }
 
 [lints]
 workspace = true

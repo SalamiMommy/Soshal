@@ -10,6 +10,11 @@ soshal-nostr-core = { path = "../nostr-core" }
 soshal-content-core = { path = "../content-core" }
 soshal-common-core = { path = "../common-core" }
 rayon = { workspace = true }
+instant-distance = { workspace = true }
+strsim = { workspace = true }
+rust-stemmers = { workspace = true }
+radix_trie = { workspace = true }
+
 
 [dev-dependencies]
 soshal-test-util = { path = "../test-util" }

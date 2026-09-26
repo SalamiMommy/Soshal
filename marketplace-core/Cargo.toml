@@ -10,6 +10,7 @@ nostr = { workspace = true }
 soshal-content-core = { path = "../content-core" }
 soshal-common-core = { path = "../common-core" }
 soshal-nostr-core = { path = "../nostr-core" }
+rust_decimal = { workspace = true }
 
 [lints]
 workspace = true

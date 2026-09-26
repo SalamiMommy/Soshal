@@ -57,8 +57,7 @@ pub fn pubkey_fragment_from_device_name(name: &str) -> Option<String> {
     Some(frag.to_ascii_lowercase())
 }
 
-/// Usable chunk size for a given negotiated MTU. BLE default MTU carries
-/// 20 user bytes; the framing adds `i:count:` → 3-byte overhead.
+/// Usable chunk size for a given negotiated MTU.
 pub fn chunk_size(mtu: usize) -> usize {
     let mtu = mtu.clamp(DEFAULT_MTU, MAX_MTU);
     (mtu - 3).max(20)

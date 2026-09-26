@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'dart:convert';
 import 'dart:io';
@@ -16,12 +17,15 @@ import '../services/moderation_service.dart';
 import '../services/media_service.dart';
 import '../services/p2p_service.dart';
 import '../services/session_service.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import '../utils/format.dart';
 import '../utils/safe_url.dart';
 import '../utils/dialog_guard.dart';
 import 'composer_screen.dart';
 import '../services/zap_service.dart';
 import '../services/friends_service.dart';
+import '../widgets/photo_lightbox.dart';
+import '../widgets/shimmer_loading.dart';
 import '../widgets/app_snack.dart';
 import '../widgets/audience_filter_dropdown.dart';
 import '../widgets/empty_state.dart';
@@ -226,7 +230,14 @@ class _FeedScreenState extends State<FeedScreen> {
 
     final Widget body;
     if (feedView.loading && feedView.posts.isEmpty) {
-      body = const Center(child: CircularProgressIndicator());
+      body = ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        children: const [
+          ShimmerPostCard(),
+          ShimmerPostCard(),
+          ShimmerPostCard(),
+        ],
+      );
     } else if (feedView.posts.isEmpty) {
       body = Center(
         child: Column(
@@ -260,10 +271,7 @@ class _FeedScreenState extends State<FeedScreen> {
         itemBuilder: (context, index) {
           if (index == effectiveDisplay.length) {
             if (feedView.loading) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
-                child: Center(child: CircularProgressIndicator()),
-              );
+              return const ShimmerPostCard();
             }
             return const SizedBox.shrink();
           }
@@ -496,7 +504,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       Text(
-                        prefixEllipsis(widget.post.pubkey, 16),
+                        '${prefixEllipsis(widget.post.pubkey, 16)}${widget.post.createdAt > 0 ? " · ${formatRelativeTime(widget.post.createdAt)}" : ""}',
                         style: const TextStyle(
                           fontSize: 12,
                           color: Colors.grey,
@@ -663,6 +671,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
                   },
                   label: '${widget.post.reactions}',
                   tooltip: _liked ? 'Unlike' : 'Like',
+                  animatePop: _liked,
                 ),
                 _buildReactionButton(
                   Icons.chat_bubble_outline,
@@ -693,9 +702,10 @@ class _FeedPostCardState extends State<FeedPostCard> {
                     _showZapDialog();
                   },
                   label: _totalMsat > 0
-                      ? '${(_totalMsat / 1000).toStringAsFixed(1)} sats'
+                      ? formatSats((_totalMsat / 1000).round())
                       : null,
                   tooltip: 'Zap',
+                  animatePop: _totalMsat > 0,
                 ),
               ],
             ),
@@ -920,13 +930,24 @@ class _FeedPostCardState extends State<FeedPostCard> {
 
   Widget _buildReactionButton(
       IconData icon, Color color, VoidCallback onPressed,
-      {String? label, String? tooltip}) {
+      {String? label, String? tooltip, bool animatePop = false}) {
+    Widget iconWidget = Icon(icon);
+    if (animatePop) {
+      iconWidget = iconWidget
+          .animate(key: ValueKey('$icon-$color'))
+          .scale(
+            duration: 250.ms,
+            curve: Curves.easeOutBack,
+            begin: const Offset(0.7, 0.7),
+            end: const Offset(1.0, 1.0),
+          );
+    }
     return Expanded(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            icon: Icon(icon),
+            icon: iconWidget,
             color: color,
             tooltip: tooltip,
             onPressed: onPressed,
@@ -987,6 +1008,19 @@ class _FeedPostCardState extends State<FeedPostCard> {
                 Navigator.pop(sheetContext);
                 Clipboard.setData(ClipboardData(text: widget.post.content));
                 _snack('Post text copied to clipboard');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share),
+              title: const Text('Share via...'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                SharePlus.instance.share(
+                  ShareParams(
+                    text: widget.post.content,
+                    subject: 'Soshal Post',
+                  ),
+                );
               },
             ),
             ListTile(
@@ -1326,21 +1360,32 @@ class _BlobImageState extends State<_BlobImage> {
         ),
       );
     }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Image.network(
-        url,
-        cacheWidth: 800,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          return Container(
-            height: 200,
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            child: const Center(
-              child: Text('Failed to load image'),
-            ),
-          );
-        },
+    final heroTag = 'blob_${widget.postId}_${widget.blobHash ?? widget.url}';
+    return GestureDetector(
+      onTap: () => PhotoLightbox.show(
+        context,
+        imageUrl: url,
+        heroTag: heroTag,
+      ),
+      child: Hero(
+        tag: heroTag,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.network(
+            url,
+            cacheWidth: 800,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(
+                height: 200,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: const Center(
+                  child: Text('Failed to load image'),
+                ),
+              );
+            },
+          ),
+        ),
       ),
     );
   }

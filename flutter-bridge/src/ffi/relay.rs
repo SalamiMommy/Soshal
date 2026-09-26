@@ -248,31 +248,31 @@ fn spawn_ingest(db_path: String, my_pubkey: String) {
                 {
                     break;
                 }
-                {
+                let payloads = {
                     let mut guard = node_guard();
                     let Some(node) = guard.as_mut() else {
                         break;
                     };
                     node.poll();
-                    let payloads = node.drain_delivered();
-                    if !payloads.is_empty() {
-                        // Batched ingest mirrors the relay engine path:
-                        // signature verification is pooled + parallelized
-                        // (rayon) inside handle_batch, and all rows land in a
-                        // single transaction instead of one per event.
-                        let mut events: Vec<Event> = Vec::with_capacity(payloads.len());
-                        for payload in payloads {
-                            if let Ok(event) = Event::from_json(&payload) {
-                                events.push(event);
-                            }
+                    node.drain_delivered()
+                };
+                if !payloads.is_empty() {
+                    // Batched ingest mirrors the relay engine path:
+                    // signature verification is pooled + parallelized
+                    // (rayon) inside handle_batch, and all rows land in a
+                    // single transaction instead of one per event.
+                    let mut events: Vec<Event> = Vec::with_capacity(payloads.len());
+                    for payload in payloads {
+                        if let Ok(event) = Event::from_json(&payload) {
+                            events.push(event);
                         }
-                        if !events.is_empty()
-                            && soshal_sync_core::ingest::handle_batch(&db, &my_pubkey, &events, &tx)
-                                .is_err()
-                        {
-                            // Count (never silently drop) ingest failures.
-                            MESH_INGEST_ERRORS.fetch_add(1, Ordering::Relaxed);
-                        }
+                    }
+                    if !events.is_empty()
+                        && soshal_sync_core::ingest::handle_batch(&db, &my_pubkey, &events, &tx)
+                            .is_err()
+                    {
+                        // Count (never silently drop) ingest failures.
+                        MESH_INGEST_ERRORS.fetch_add(1, Ordering::Relaxed);
                     }
                 }
                 tokio::time::sleep(Duration::from_millis(500)).await;

@@ -21,6 +21,8 @@ tokio = { workspace = true }
 soshal-crypto-core = { path = "../crypto-core" }
 soshal-common-core = { path = "../common-core" }
 soshal-nostr-core = { path = "../nostr-core" }
+petgraph = { workspace = true }
+email_address = { workspace = true }
 
 [lints]
 workspace = true

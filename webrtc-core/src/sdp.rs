@@ -18,7 +18,7 @@ pub fn sanitize_sdp(sdp: &str, force_relay: bool) -> String {
     }
     let mut out = String::with_capacity(sdp.len() + 32);
     let mut first = true;
-    for raw_line in sdp.lines() {
+    for raw_line in sdp.lines().take(MAX_LINES) {
         let trimmed_line = raw_line.trim();
         let norm_storage;
         let line = if let Some(rest) = trimmed_line.strip_prefix("c=INIP4") {

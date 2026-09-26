@@ -48,6 +48,7 @@ pub struct PlumTreeNode {
     pub lazy_peers: HashSet<String>,
     pub received_messages: BoundedSet<String>,
     pub pending_grafts: BoundedMap<String, String>,
+    pub payload_cache: BoundedMap<String, Arc<str>>,
     /// Per-peer graft credit (window start, remaining credits) for IHave
     /// floods. Cleared implicitly when the window elapses.
     graft_windows: HashMap<String, (Instant, u32)>,
@@ -61,6 +62,7 @@ impl PlumTreeNode {
             lazy_peers: HashSet::new(),
             received_messages: BoundedSet::new(MAX_RECEIVED_MESSAGES),
             pending_grafts: BoundedMap::new(MAX_PENDING_GRAFTS),
+            payload_cache: BoundedMap::new(MAX_RECEIVED_MESSAGES),
             graft_windows: HashMap::new(),
         }
     }
@@ -115,6 +117,8 @@ impl PlumTreeNode {
                     // New payload accepted
                     self.received_messages.insert(message_id.clone());
                     self.pending_grafts.remove(&message_id);
+                    self.payload_cache
+                        .insert(message_id.clone(), payload_json.clone());
 
                     // Forward eagerly to all eager peers except sender
                     for eager_peer in &self.eager_peers {
@@ -171,13 +175,19 @@ impl PlumTreeNode {
                 // peer must not be able to inject itself into the eager tree
                 // (and from there into every payload fan-out) with a spoofed
                 // Graft.
-                if self.eager_peers.contains(from_peer) || self.lazy_peers.contains(from_peer) {
-                    // Promote peer to eager link
+                if self.lazy_peers.contains(from_peer) && self.eager_peers.len() < EAGER_PEER_CAP {
                     self.lazy_peers.remove(from_peer);
                     self.eager_peers.insert(from_peer.to_string());
-
-                    // Note: caller will re-send payload for message_id if available in local DB
-                    let _ = message_id;
+                }
+                if let Some(payload) = self.payload_cache.get(&message_id) {
+                    outgoing.push((
+                        from_peer.to_string(),
+                        PlumTreeMessage::Gossip {
+                            message_id,
+                            payload_json: payload.clone(),
+                            round: 0,
+                        },
+                    ));
                 }
             }
             PlumTreeMessage::Prune { .. } => {

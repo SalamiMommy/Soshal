@@ -11,10 +11,12 @@
 //! signer module. The engine only forwards encrypted payloads addressed to
 //! the local pubkey.
 
+pub mod bitmap_index;
 pub mod delta;
 pub mod engine;
 pub mod epoch_gc;
 pub mod gossip;
+pub mod hash_routing;
 pub mod ingest;
 pub mod outbox;
 pub mod prolly_sync;
@@ -22,6 +24,9 @@ pub mod prolly_tree;
 pub mod revert;
 pub mod tx;
 pub mod zk_rollup;
+
+pub use bitmap_index::SyncBitmapIndex;
+pub use hash_routing::{xxhash64_bytes, xxhash64_str, ConsistentHashRing, PartitionRouter};
 
 use serde::{Deserialize, Serialize};
 

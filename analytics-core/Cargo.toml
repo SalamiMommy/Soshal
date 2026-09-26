@@ -7,6 +7,8 @@ edition = "2021"
 serde = { workspace = true }
 serde_json = { workspace = true }
 soshal-nostr-core = { path = "../nostr-core" }
+streaming_algorithms = { workspace = true }
+ulid = { workspace = true }
 
 
 [lints]

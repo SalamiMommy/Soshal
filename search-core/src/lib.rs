@@ -3,10 +3,16 @@
 // Re-export json utilities from common-core
 pub use soshal_common_core::json_util::{json_in, json_out};
 
+pub mod autocomplete;
 pub mod event_map;
 pub mod fts5;
+pub mod fuzzy;
 pub mod row_map;
+pub mod stemmer;
 pub mod vector_search;
+
+pub use autocomplete::{AutocompleteMatch, HashtagAutocomplete, RadixAutocomplete};
+pub use stemmer::{stem_text, stem_word, StemLanguage};
 
 pub use soshal_content_core::fts5::{MAX_FTS5_TERMS, MAX_FTS5_TERM_LEN};
 

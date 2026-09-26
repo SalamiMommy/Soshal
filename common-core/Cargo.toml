@@ -10,6 +10,8 @@ serde_json = { workspace = true }
 url = { workspace = true }
 libc = { workspace = true }
 subtle = { workspace = true }
+simdutf8 = { workspace = true }
+itertools = { workspace = true }
 
 
 [lints]

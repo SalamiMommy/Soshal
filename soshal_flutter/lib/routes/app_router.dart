@@ -56,6 +56,7 @@ import '../services/session_service.dart';
 import '../widgets/app_shell.dart';
 
 import '../services/signer_service.dart';
+import '../widgets/account_scope.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
@@ -100,7 +101,13 @@ class AppRouter {
         builder: (context, state) => const AuthScreen(),
       ),
       ShellRoute(
-        builder: (context, state, child) => AppShell(child: child),
+        builder: (context, state, child) {
+          final pubkey = context.watch<SessionService>().activePubkey ?? '';
+          return AccountScope(
+            pubkey: pubkey,
+            child: AppShell(child: child),
+          );
+        },
         routes: [
           GoRoute(
             path: '/feed',

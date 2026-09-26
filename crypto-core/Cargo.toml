@@ -21,6 +21,11 @@ zeroize = { workspace = true }
 soshal-pqc-core = { path = "../pqc-core" }
 soshal-content-core = { path = "../content-core" }
 soshal-common-core = { path = "../common-core" }
+frost-secp256k1 = { workspace = true }
+rand_core = { version = "0.6", features = ["getrandom"] }
+totp-rs = { workspace = true }
+qrcodegen = { workspace = true }
+
 
 
 [dev-dependencies]

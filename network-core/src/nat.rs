@@ -528,7 +528,7 @@ async fn run_manager(
             break;
         }
         prune_failed_sessions(&mut sessions).await;
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(15)).await;
     }
     // Best-effort close of all agents on shutdown.
     for (_, session) in sessions.drain() {
@@ -651,7 +651,7 @@ async fn gather_session(
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .len();
-        if n == last {
+        if n > 0 && n == last {
             break;
         }
         last = n;

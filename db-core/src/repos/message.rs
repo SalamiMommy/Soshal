@@ -74,6 +74,10 @@ impl<'a> MessageRepo<'a> {
             ],
         )?;
         self.touch_conversation(&conn, &msg.conversation_id, msg.created_at)?;
+        self.db.notify_change(
+            crate::change_bus::Table::Messages,
+            Some(norm_pk.to_string()),
+        );
         Ok(())
     }
 
@@ -152,7 +156,10 @@ impl<'a> MessageRepo<'a> {
             }
             tx.commit().await?;
             Ok(())
-        })
+        })?;
+        self.db
+            .notify_change(crate::change_bus::Table::Messages, None);
+        Ok(())
     }
 
     fn map_row(row: &libsql::Row) -> libsql::Result<MessageRow> {

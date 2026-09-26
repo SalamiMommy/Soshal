@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../widgets/qr_scanner_modal.dart';
 import '../services/friends_service.dart';
 import '../services/media_service.dart';
 import '../services/messaging_service.dart';
@@ -17,6 +20,8 @@ import '../utils/blob_resolver.dart';
 import '../utils/format.dart';
 import '../utils/media_upload.dart';
 import '../widgets/blob_image.dart';
+import '../utils/url_launcher_util.dart';
+import '../widgets/photo_lightbox.dart';
 
 /// ProfileRendererScreen. Displays custom profile widgets with optional
 /// drag-and-drop layout editing mode.
@@ -282,7 +287,19 @@ class _ProfileRendererScreenState extends State<ProfileRendererScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.qr_code),
+            tooltip: 'Show QR',
             onPressed: _showQrCode,
+          ),
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner),
+            tooltip: 'Scan Profile QR',
+            onPressed: () async {
+              final result = await QrScannerModal.scan(context);
+              if (!context.mounted) return;
+              if (result != null && result.isNotEmpty) {
+                context.push('/profile/$result');
+              }
+            },
           ),
           if (isMine)
             _editMode
@@ -603,6 +620,16 @@ class _WidgetRenderer extends StatelessWidget {
     switch (node.type) {
       case 'text_block':
         final props = TextBlockProperties.fromJson(node.properties);
+        if (props.markdownEnabled) {
+          return MarkdownBody(
+            data: props.content,
+            onTapLink: (text, href, title) {
+              if (href != null) {
+                UrlLauncherUtil.launchSafeUrl(context, href);
+              }
+            },
+          );
+        }
         return Text(props.content);
       case 'media_gallery':
         final props = MediaGalleryProperties.fromJson(node.properties);
@@ -623,7 +650,23 @@ class _WidgetRenderer extends StatelessWidget {
             if (!SafeUrl.isSafeMediaUrl(item.url)) {
               return Container(color: Colors.grey.shade300);
             }
-            return Image.network(item.url, fit: BoxFit.cover, cacheWidth: 256);
+            return GestureDetector(
+              onTap: () => PhotoLightbox.show(
+                context,
+                imageUrl: item.url,
+                heroTag: 'gallery_${node.id}_$index',
+              ),
+              child: Hero(
+                tag: 'gallery_${node.id}_$index',
+                child: CachedNetworkImage(
+                  imageUrl: item.url,
+                  fit: BoxFit.cover,
+                  memCacheWidth: 256,
+                  errorWidget: (_, __, ___) =>
+                      Container(color: Colors.grey.shade300),
+                ),
+              ),
+            );
           },
         );
       case 'friend_grid':

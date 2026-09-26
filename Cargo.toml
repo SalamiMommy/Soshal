@@ -108,6 +108,83 @@ thumbhash = "0.1"
 mp4parse = "0.17"
 rust_h264 = "0.4"
 rav1d-safe = "0.6"
+# Pure-Rust WebAssembly interpreter for client plugins (minis-core).
+wasmi = "2.0.0"
+# IETF RFC 9591 / BIP-340 FROST threshold signatures on secp256k1 (crypto-core).
+frost-secp256k1 = { version = "3.0.0", default-features = false, features = ["serde"] }
+# Graph structures and algorithms for Web of Trust traversal (identity-core).
+petgraph = "0.8.3"
+# HTML parsing with CSS selectors for OpenGraph link previews (content-core).
+scraper = "0.27.0"
+# Standards-compliant HTML sanitization & XSS prevention (content-core).
+ammonia = "4.2.0"
+# Fast minimal HNSW maps for approximate nearest neighbor search (search-core).
+instant-distance = "0.6.1"
+# Lock-free concurrent hash maps for relay & sync engines (relay-core).
+dashmap = "6.1.0"
+# SIMD-accelerated UTF-8 stream validation (common-core).
+simdutf8 = { version = "0.1.5", default-features = false, features = ["std"] }
+# String similarity metrics & fuzzy matching for typo tolerance (search-core).
+strsim = "0.11.1"
+# SIMD-accelerated Bloom filter for mesh dedup & swarm sync (relay-core, network-core).
+fastbloom = "0.17.0"
+# iCalendar RFC 5545 recurrence rules for NIP-52 calendar events (events-core).
+rrule = "0.14.0"
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
+# R*-tree spatial indexing for proximity lookups & geofencing (spatial-core).
+rstar = { version = "0.13.0", default-features = false }
+# Streaming CommonMark parser for rich text & NIP-23 articles (content-core).
+pulldown-cmark = { version = "0.13.4", default-features = false, features = ["simd"] }
+# Magic-byte file type detection & MIME validation (media-core).
+infer = { version = "0.22.0", default-features = false }
+# 128-bit fixed-point decimal arithmetic for marketplace & payments (marketplace-core).
+rust_decimal = { version = "1.43.0", default-features = false, features = ["serde"] }
+# Atomic, lock-free GCRA rate limiter & traffic shaper (network-core, relay-core).
+governor = { version = "0.10.4", default-features = false, features = ["std", "jitter"] }
+# Probabilistic streaming algorithms (HLL, Count-Min Sketch) with bounded RAM (analytics-core).
+streaming_algorithms = { version = "0.3.3", default-features = false }
+# Compressed Roaring Bitmaps for high-speed set operations (sync-core).
+roaring = { version = "0.11.5", default-features = false, features = ["std"] }
+# Fast zero-dependency on-device natural language detection (content-core).
+whichlang = "0.1.1"
+# RFC 6238 Time-based One-Time Passwords for two-factor authentication (crypto-core).
+totp-rs = { version = "6.0.0", default-features = false, features = ["gen_secret", "otpauth", "std"] }
+# High Dynamic Range latency histograms with percentile tracking (telemetry-core).
+hdrhistogram = { version = "7.6.0", default-features = false }
+# Geospatial primitives, polygon containment & geodesic distance (spatial-core).
+geo = { version = "0.33.1", default-features = false }
+# Semantic Versioning 2.0.0 parsing and requirement matching (minis-core).
+semver = { version = "1.0.28", default-features = false, features = ["std", "serde"] }
+# High-performance, bounded O(1) LRU cache (feed-core).
+lru = "0.18.2"
+# High-quality, pure-Rust QR Code generator (crypto-core).
+qrcodegen = "1.8.0"
+# Snowball stemming algorithms for multilingual full-text search (search-core).
+rust-stemmers = "1.2.0"
+# Unicode Normalization Forms NFC/NFKC (content-core).
+unicode-normalization = { version = "0.1.25", default-features = false, features = ["std"] }
+# Perceptual color science, dominant palette extraction & WCAG contrast (media-core).
+palette = { version = "0.7.7", default-features = false, features = ["std", "approx"] }
+# Memory-compact Radix trie for O(k) prefix autocomplete (search-core).
+radix_trie = "0.3.0"
+# Strict RFC 5322 email address validation for NIP-05 & Lightning Addresses (identity-core).
+email_address = { version = "0.2.9", default-features = false, features = ["serde"] }
+# Fast Myers/Patience diffing for post edit history (content-core).
+similar = { version = "3.2.0", default-features = false, features = ["std", "text"] }
+# Advanced iterator adaptors & feed chunking (common-core).
+itertools = "0.14.0"
+# Type-safe bitmask flags for messages, permissions, and moderation (messaging-core).
+bitflags = { version = "2.8.0", default-features = false, features = ["serde"] }
+# Fast hardware-accelerated CRC32 checksums for P2P chunk verification (mesh-core).
+crc32fast = "1.5.0"
+# Safe, O(n) wildcard and shell-style pattern matching for mute lists and rules (moderation-core).
+glob = "0.3.4"
+# BCP-47 / CLDR language identifier parsing and canonicalization (content-core).
+unic-langid = { version = "0.9.5", default-features = false }
+# 128-bit millisecond-ordered lexicographically sortable identifiers (analytics-core).
+ulid = { version = "1.2.0", default-features = false, features = ["std", "serde"] }
+# High-speed XXHash non-cryptographic hashing (sync-core).
+twox-hash = { version = "1.6.3", default-features = false }
 
 # Dev-profile optimization: debug builds are what `cargo test` and the Linux
 # host bridge run under. opt-level=1 makes the ~1385-test suite and hot

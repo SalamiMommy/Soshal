@@ -407,4 +407,52 @@ mod tests {
             .unwrap();
         assert_eq!(row2.content, "batch note 2");
     }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn graft_returns_cached_gossip_payload() {
+        let db = soshal_test_util::test_db();
+        let bridge = GossipSyncBridge::new("self");
+        bridge.node.write().await.add_peer("peer_a");
+        bridge
+            .node
+            .write()
+            .await
+            .lazy_peers
+            .insert("lazy_b".to_string());
+
+        let keys = Keys::generate();
+        let event =
+            soshal_test_util::signed_event(&keys, Kind::TextNote, "graft test", 1_700_001_005);
+        let event_id = event.id.to_hex();
+        let msg = PlumTreeMessage::Gossip {
+            message_id: event_id.clone(),
+            payload_json: serde_json::to_string(&event).unwrap().into(),
+            round: 0,
+        };
+        let (tx, _rx) = channel();
+        // Node receives gossip from peer_a (accepted and cached)
+        let _ = bridge.process_gossip(&db, "peer_a", msg, &tx).await;
+
+        // Now lazy_b sends Graft for that event
+        let graft = PlumTreeMessage::Graft {
+            message_id: event_id.clone(),
+        };
+        let outgoing = bridge.process_gossip(&db, "lazy_b", graft, &tx).await;
+
+        assert_eq!(outgoing.len(), 1);
+        let (target, reply) = &outgoing[0];
+        assert_eq!(target, "lazy_b");
+        match reply {
+            PlumTreeMessage::Gossip {
+                message_id,
+                payload_json,
+                round,
+            } => {
+                assert_eq!(message_id, &event_id);
+                assert_eq!(*round, 0);
+                assert!(payload_json.contains("graft test"));
+            }
+            _ => panic!("expected Gossip reply to Graft"),
+        }
+    }
 }

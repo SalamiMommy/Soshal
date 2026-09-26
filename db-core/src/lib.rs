@@ -1,11 +1,13 @@
 //! Turso (libSQL) database access with local-first embedded SQLite storage and edge replication.
 
+pub mod change_bus;
 pub mod error;
 pub mod query;
 pub mod repos;
 pub mod schema;
 pub mod turso;
 
+pub use change_bus::{ChangeBus, Table, TableChangeEvent};
 pub use libsql;
 
 use libsql::Connection;
@@ -62,6 +64,7 @@ struct PoolInner {
     state: Mutex<PoolState>,
     available: Condvar,
     max_connections: usize,
+    change_bus: Arc<ChangeBus>,
 }
 
 struct PoolState {
@@ -85,6 +88,7 @@ impl Database {
                 }),
                 available: Condvar::new(),
                 max_connections: max_connections(),
+                change_bus: Arc::new(ChangeBus::default()),
             }),
         })
     }
@@ -104,8 +108,24 @@ impl Database {
                 }),
                 available: Condvar::new(),
                 max_connections: 1,
+                change_bus: Arc::new(ChangeBus::default()),
             }),
         })
+    }
+
+    /// Returns a reference to the table change bus.
+    pub fn change_bus(&self) -> &Arc<ChangeBus> {
+        &self.inner.change_bus
+    }
+
+    /// Broadcast a table change event to all active reactive subscribers.
+    pub fn notify_change(&self, table: Table, affected_account: Option<String>) {
+        self.inner.change_bus.notify(table, affected_account);
+    }
+
+    /// Subscribe to the reactive table change stream.
+    pub fn subscribe_changes(&self) -> tokio::sync::broadcast::Receiver<TableChangeEvent> {
+        self.inner.change_bus.subscribe()
     }
 
     /// Configure remote Turso database URL and auth bearer token for replication.

@@ -8,6 +8,7 @@ hex = { workspace = true }
 image = { workspace = true }
 mp4parse = { workspace = true }
 regex = { workspace = true }
+glob = { workspace = true }
 rust_h264 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

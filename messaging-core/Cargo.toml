@@ -8,6 +8,7 @@ soshal-common-core = { path = "../common-core" }
 soshal-crypto-core = { path = "../crypto-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+bitflags = { workspace = true }
 
 [dev-dependencies]
 soshal-test-util = { path = "../test-util" }

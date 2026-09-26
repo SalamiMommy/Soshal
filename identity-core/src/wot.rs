@@ -310,6 +310,96 @@ fn partition_wot_peers(
     result
 }
 
+use petgraph::algo::dijkstra;
+use petgraph::graph::{DiGraph, NodeIndex};
+use petgraph::visit::Bfs;
+
+/// Directed Web of Trust graph backed by `petgraph`.
+#[derive(Debug, Clone, Default)]
+pub struct WotGraph {
+    graph: DiGraph<String, f32>,
+    node_map: HashMap<String, NodeIndex>,
+}
+
+impl WotGraph {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a user pubkey if not present, returning its NodeIndex.
+    pub fn get_or_insert_node(&mut self, pubkey: &str) -> NodeIndex {
+        let pk_lower = pubkey.to_ascii_lowercase();
+        if let Some(&idx) = self.node_map.get(&pk_lower) {
+            idx
+        } else {
+            let idx = self.graph.add_node(pk_lower.clone());
+            self.node_map.insert(pk_lower, idx);
+            idx
+        }
+    }
+
+    /// Add a follow/trust directed edge from `source` to `target` with a trust weight (default 1.0).
+    pub fn add_trust_edge(&mut self, source: &str, target: &str, weight: f32) {
+        let u = self.get_or_insert_node(source);
+        let v = self.get_or_insert_node(target);
+        self.graph.update_edge(u, v, weight);
+    }
+
+    /// Build a WotGraph from a list of WotUsers.
+    pub fn from_users(users: &[WotUser]) -> Self {
+        let mut g = Self::new();
+        for user in users {
+            let u = g.get_or_insert_node(&user.pubkey);
+            for contact in &user.contacts {
+                let v = g.get_or_insert_node(contact);
+                g.graph.update_edge(u, v, 1.0);
+            }
+        }
+        g
+    }
+
+    /// Compute shortest path trust distance between two pubkeys using Dijkstra.
+    pub fn shortest_distance(&self, source: &str, target: &str) -> Option<f32> {
+        let src_idx = *self.node_map.get(&source.to_ascii_lowercase())?;
+        let tgt_idx = *self.node_map.get(&target.to_ascii_lowercase())?;
+        if src_idx == tgt_idx {
+            return Some(0.0);
+        }
+        let node_scores = dijkstra(&self.graph, src_idx, Some(tgt_idx), |edge| *edge.weight());
+        node_scores.get(&tgt_idx).copied()
+    }
+
+    /// Perform a BFS to find all pubkeys within `max_hops` from `root`.
+    pub fn find_k_hop_peers(&self, root: &str, max_hops: usize) -> HashMap<String, usize> {
+        let mut results = HashMap::new();
+        let Some(&root_idx) = self.node_map.get(&root.to_ascii_lowercase()) else {
+            return results;
+        };
+        let mut bfs = Bfs::new(&self.graph, root_idx);
+        let mut distances: HashMap<NodeIndex, usize> = HashMap::new();
+        distances.insert(root_idx, 0);
+
+        while let Some(nx) = bfs.next(&self.graph) {
+            let dist = *distances.get(&nx).unwrap_or(&0);
+            if dist >= max_hops {
+                continue;
+            }
+            for neighbor in self.graph.neighbors(nx) {
+                if let std::collections::hash_map::Entry::Vacant(e) = distances.entry(neighbor) {
+                    e.insert(dist + 1);
+                    results.insert(self.graph[neighbor].clone(), dist + 1);
+                }
+            }
+        }
+        results
+    }
+
+    /// Number of nodes and edges in the graph.
+    pub fn stats(&self) -> (usize, usize) {
+        (self.graph.node_count(), self.graph.edge_count())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,5 +422,27 @@ mod tests {
         assert_eq!(compute_distance("alice", "ALICE", &follows, 0), 0);
         assert_eq!(compute_distance("alice", "bob", &follows, 0), 1);
         assert_eq!(compute_distance("alice", "BOB", &follows, 0), 1);
+    }
+
+    #[test]
+    fn test_wot_graph_traversal() {
+        let mut graph = WotGraph::new();
+        graph.add_trust_edge("alice", "bob", 1.0);
+        graph.add_trust_edge("bob", "charlie", 1.0);
+        graph.add_trust_edge("alice", "david", 1.0);
+
+        let (nodes, edges) = graph.stats();
+        assert_eq!(nodes, 4);
+        assert_eq!(edges, 3);
+
+        assert_eq!(graph.shortest_distance("alice", "alice"), Some(0.0));
+        assert_eq!(graph.shortest_distance("alice", "bob"), Some(1.0));
+        assert_eq!(graph.shortest_distance("alice", "charlie"), Some(2.0));
+        assert_eq!(graph.shortest_distance("charlie", "alice"), None);
+
+        let hops = graph.find_k_hop_peers("alice", 2);
+        assert_eq!(hops.get("bob"), Some(&1));
+        assert_eq!(hops.get("david"), Some(&1));
+        assert_eq!(hops.get("charlie"), Some(&2));
     }
 }

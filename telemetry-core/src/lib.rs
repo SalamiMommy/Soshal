@@ -16,7 +16,10 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use zeroize::Zeroize;
 
+pub mod latency_histogram;
 pub mod ring;
+
+pub use latency_histogram::{LatencyHistogram, LatencySummary};
 
 const HEADER_LEN: usize = 4096;
 const MAGIC: &[u8; 8] = b"SOSHTELE";

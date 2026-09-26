@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/media_service.dart';
@@ -145,14 +146,17 @@ class _BlobImageState extends State<BlobImage> {
           widget.width != null ? (widget.width! * dpr).round() : null;
       final cacheH =
           widget.height != null ? (widget.height! * dpr).round() : null;
-      return Image.network(
-        widget.source.trim(),
+      return CachedNetworkImage(
+        imageUrl: widget.source.trim(),
         width: widget.width,
         height: widget.height,
-        cacheWidth: cacheW,
-        cacheHeight: cacheH,
+        memCacheWidth: cacheW,
+        memCacheHeight: cacheH,
         fit: widget.fit,
-        errorBuilder: (_, __, ___) => widget.errorBuilder != null
+        placeholder: widget.placeholderBuilder != null
+            ? (context, url) => widget.placeholderBuilder!(context)
+            : null,
+        errorWidget: (context, url, error) => widget.errorBuilder != null
             ? widget.errorBuilder!(context)
             : Container(
                 width: widget.width,

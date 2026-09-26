@@ -9,5 +9,7 @@
 //! (flood-style store-and-forward, torrent-like).
 
 pub mod backends;
+pub mod bloom_dedup;
 pub mod envelope;
+pub mod local_store;
 pub mod relay;

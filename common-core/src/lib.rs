@@ -7,6 +7,7 @@
 pub mod bounded;
 pub mod consts;
 pub mod format;
+pub mod iter;
 pub mod json_util;
 pub mod memory;
 pub mod mime;
@@ -16,3 +17,7 @@ pub mod thread_governor;
 pub mod ui_safe;
 pub mod url;
 pub mod util;
+
+pub use iter::{
+    batch_items, cartesian_pairs, group_consecutive_by, interleave_items, unique_by_key,
+};

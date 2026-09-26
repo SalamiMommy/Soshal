@@ -27,10 +27,11 @@ pub struct Http3Client {
     /// SSRF defense). Cached so repeated fetches of the same host reuse the
     /// TLS session + connection pool instead of building a fresh client (and
     /// re-resolving) per request.
-    pinned: Arc<Mutex<HashMap<String, Client>>>,
+    pinned: Arc<Mutex<HashMap<String, (Client, std::time::Instant)>>>,
 }
 
 const PINNED_CLIENT_CACHE_CAP: usize = 64;
+const PINNED_CLIENT_TTL: Duration = Duration::from_secs(300);
 
 /// Filters resolved addresses down to public ones. Fails closed if ANY
 /// address (including mixed A/AAAA results) is private, loopback,
@@ -145,12 +146,23 @@ impl Http3Client {
             // proxy is set it rides the pinned-resolve path and uses SOCKS5
             // (the client sends the verified IP), so the proxy cannot
             // re-resolve the hostname to an internal address either.
+            let now = std::time::Instant::now();
             let mut guard = self.pinned.lock().unwrap_or_else(|e| e.into_inner());
-            match guard.get(&host) {
-                Some(c) => c.clone(),
+            let client_opt = guard.get(&host).and_then(|(c, ts)| {
+                if now.duration_since(*ts) < PINNED_CLIENT_TTL {
+                    Some(c.clone())
+                } else {
+                    None
+                }
+            });
+            match client_opt {
+                Some(c) => c,
                 None => {
                     if guard.len() >= PINNED_CLIENT_CACHE_CAP {
-                        guard.clear();
+                        guard.retain(|_, (_, ts)| now.duration_since(*ts) < PINNED_CLIENT_TTL);
+                        if guard.len() >= PINNED_CLIENT_CACHE_CAP {
+                            guard.clear();
+                        }
                     }
                     let mut b = reqwest::Client::builder()
                         .timeout(Duration::from_secs(30))
@@ -167,7 +179,7 @@ impl Http3Client {
                     let c = b
                         .build()
                         .map_err(|e| format!("HTTP client build error: {e}"))?;
-                    guard.insert(host.clone(), c.clone());
+                    guard.insert(host.clone(), (c.clone(), now));
                     c
                 }
             }

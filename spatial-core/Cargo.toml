@@ -8,6 +8,9 @@ soshal-common-core = { path = "../common-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 geohash = { workspace = true }
+rstar = { workspace = true }
+geo = { workspace = true }
+
 
 [lints]
 workspace = true

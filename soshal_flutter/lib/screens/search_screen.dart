@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../services/search_service.dart';
 import '../services/session_service.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/qr_scanner_modal.dart';
 
 /// Search: posts, profiles, hashtags and trending (local FTS5).
 class SearchScreen extends StatefulWidget {
@@ -143,6 +144,17 @@ class _SearchScreenState extends State<SearchScreen> {
                 : const Icon(Icons.public),
             tooltip: 'Remote search (relays)',
             onPressed: _remoteLoading ? null : _runRemoteSearch,
+          ),
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner),
+            tooltip: 'Scan QR code',
+            onPressed: () async {
+              final result = await QrScannerModal.scan(context);
+              if (result != null && result.isNotEmpty) {
+                _query.text = result;
+                _runSearch();
+              }
+            },
           ),
           IconButton(
             icon: const Icon(Icons.search),

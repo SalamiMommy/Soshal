@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../widgets/mini_video_player.dart';
 import '../services/feed_service.dart';
 import '../services/friends_service.dart';
@@ -797,9 +798,13 @@ class _MinisScreenState extends State<MinisScreen>
                         const Icon(Icons.share, color: Colors.white, size: 28),
                     tooltip: 'Share',
                     onPressed: () {
-                      Clipboard.setData(ClipboardData(text: mini.videoUrl));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Reels link copied!')),
+                      SharePlus.instance.share(
+                        ShareParams(
+                          text: mini.videoUrl,
+                          subject: mini.textOverlay.isNotEmpty
+                              ? mini.textOverlay
+                              : 'Soshal Mini',
+                        ),
                       );
                     },
                   ),

@@ -14,8 +14,11 @@ pub mod jury;
 pub mod media;
 pub mod nn;
 pub mod normalize;
+pub mod pattern_filter;
 pub mod pdq;
 pub mod regex_util;
 pub mod roberta;
 pub mod spam;
 pub mod video_nn;
+
+pub use pattern_filter::{PatternMatch, WildcardFilterSet};
