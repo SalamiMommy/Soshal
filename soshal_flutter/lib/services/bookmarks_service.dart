@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'feed_service.dart';
 import 'error_log.dart';
+import '../utils/offthread.dart';
 import '../utils/service_guard.dart';
 
 /// Bookmarks Service
@@ -61,6 +62,12 @@ class BookmarksService extends ChangeNotifier
         return ok;
       }, onNotify: notifyDeferred);
 
+  /// Resolve bookmarked event ids to full posts.
+  ///
+  /// The bridge returns one complete post per id — content, media, tags, author
+  /// — so a 100-item bookmarks list is a multi-hundred-KB JSON document. The
+  /// decode and the per-post model build run on a background isolate
+  /// ([runOffThreadCompute]); only the resulting [FeedPost] map crosses back.
   Future<Map<String, FeedPost>> resolvePosts(List<String> eventIds) async {
     final out = <String, FeedPost>{};
     if (eventIds.isEmpty) return out;
@@ -68,15 +75,7 @@ class BookmarksService extends ChangeNotifier
       final json = RustLib.instance.api.crateFfiBookmarksBookmarksResolvePosts(
         idsJson: jsonEncode(eventIds),
       );
-      final decoded = jsonDecode(json) as Map<String, dynamic>;
-      for (final entry in decoded.entries) {
-        final value = entry.value;
-        if (value is Map<String, dynamic>) {
-          out[entry.key] = FeedPost.fromJson(value);
-        } else if (value is Map) {
-          out[entry.key] = FeedPost.fromJson(Map<String, dynamic>.from(value));
-        }
-      }
+      out.addAll(await runOffThreadCompute(_parseResolvedPosts, json));
       clearLastError();
       return out;
     } catch (e, st) {
@@ -85,6 +84,22 @@ class BookmarksService extends ChangeNotifier
       return out;
     }
   }
+}
+
+/// JSON map of event id → post → [FeedPost] map, top-level so
+/// [runOffThreadCompute] can run it on a background isolate.
+Map<String, FeedPost> _parseResolvedPosts(String json) {
+  final decoded = jsonDecode(json) as Map<String, dynamic>;
+  final out = <String, FeedPost>{};
+  for (final entry in decoded.entries) {
+    final value = entry.value;
+    if (value is Map<String, dynamic>) {
+      out[entry.key] = FeedPost.fromJson(value);
+    } else if (value is Map) {
+      out[entry.key] = FeedPost.fromJson(Map<String, dynamic>.from(value));
+    }
+  }
+  return out;
 }
 
 /// A saved bookmark row.

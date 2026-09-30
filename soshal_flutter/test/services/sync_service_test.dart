@@ -1,5 +1,6 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/feed_service.dart';
@@ -108,6 +109,82 @@ void main() {
       await sync.stop();
       expect(api.callCount('crateFfiSyncSyncStop'), 1,
           reason: 'stop is idempotent');
+    });
+
+    test('reconcileFeedWithPeer sends [id, content] pairs and returns the map',
+        () async {
+      final sync = SyncService();
+      final feed = FeedService();
+      sync.attach(feed: feed, messaging: MessagingService(), p2p: P2pService());
+      feed.insertLivePost(FeedPost(
+        eventId: 'ev-1',
+        pubkey: 'pk-1',
+        content: 'a "quoted" post\nwith a newline',
+        createdAt: 1,
+        reactions: 0,
+        replies: 0,
+        reposts: 0,
+        liked: false,
+      ));
+      feed.insertLivePost(FeedPost(
+        eventId: 'ev-2',
+        pubkey: 'pk-2',
+        content: 'second',
+        createdAt: 2,
+        reactions: 0,
+        replies: 0,
+        reposts: 0,
+        liked: false,
+      ));
+      api.stubString(
+        'crateFfiNetworkNetworkReconcileProllyTree',
+        '{"branches":["b1"],"deltas":[]}',
+      );
+
+      final res = await sync.reconcileFeedWithPeer('root-hash');
+
+      expect(res['branches'], ['b1']);
+      final inv = api.callsOf('crateFfiNetworkNetworkReconcileProllyTree').single;
+      expect(api.namedArg(inv, 'remoteRootHash'), 'root-hash');
+      // The encode moved off the UI isolate, so the payload must still be the
+      // exact [eventId, content] pair list it was before. `feed.posts` is not
+      // insertion-ordered, so compare as an unordered set of pairs.
+      final kv = (jsonDecode(api.namedArg(inv, 'localKvJson') as String)
+          as List<dynamic>)
+          .map((e) => (e as List<dynamic>).cast<String>())
+          .toList();
+      expect(kv.toSet(), {
+        ['ev-1', 'a "quoted" post\nwith a newline'],
+        ['ev-2', 'second'],
+      });
+      expect(sync.lastError, isNull);
+    });
+
+    test('reconcileFeedWithPeer refuses an empty feed and records failures',
+        () async {
+      final sync = SyncService();
+      final feed = FeedService();
+      sync.attach(feed: feed, messaging: MessagingService(), p2p: P2pService());
+
+      expect((await sync.reconcileFeedWithPeer('root'))['error_msg'],
+          contains('no local feed state'));
+
+      feed.insertLivePost(FeedPost(
+        eventId: 'ev-1',
+        pubkey: 'pk-1',
+        content: 'x',
+        createdAt: 1,
+        reactions: 0,
+        replies: 0,
+        reposts: 0,
+        liked: false,
+      ));
+      api.stub('crateFfiNetworkNetworkReconcileProllyTree',
+          (_) => throw Exception('reconcile down'));
+
+      final res = await sync.reconcileFeedWithPeer('root');
+      expect(res['error_msg'], contains('reconcile down'));
+      expect(sync.lastError.toString(), contains('reconcile down'));
     });
   });
 }

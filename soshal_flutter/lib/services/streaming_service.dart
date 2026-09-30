@@ -422,11 +422,9 @@ class StreamingService extends ChangeNotifier
         streamId: streamId,
         windowMs: BigInt.from(windowMs),
       );
-      final parsed = jsonDecode(json) as Map<String, dynamic>;
-      final frames = (parsed['groups'] as List<dynamic>? ?? [])
-          .map((g) => _hexToBytes(g as String))
-          .toList();
+      final frames = await runOffThreadCompute(_parseMoqFrames, json);
       if (clearLastError()) notifyDeferred();
+      // `decodeMoqGroup` crosses into Rust, so it has to stay on this isolate.
       return frames.map(decodeMoqGroup).toList();
     } catch (e, st) {
       setLastError(e, st);
@@ -442,6 +440,19 @@ class StreamingService extends ChangeNotifier
       out[i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
     }
     return out;
+  }
+
+  /// JSON → one `Uint8List` per encoded group, top-level and static so
+  /// [runOffThreadCompute] can run it on a background isolate.
+  ///
+  /// This is the per-frame hot path of a live pull: the hex decode is two
+  /// allocations plus an `int.parse` per *byte* of every media frame, which for
+  /// an H.264 keyframe group is hundreds of KB of JSON hex.
+  static List<Uint8List> _parseMoqFrames(String json) {
+    final parsed = jsonDecode(json) as Map<String, dynamic>;
+    return (parsed['groups'] as List<dynamic>? ?? [])
+        .map((g) => _hexToBytes(g as String))
+        .toList();
   }
 
   Future<List<StreamRow>> _decode(String Function() call) => guard(() async {

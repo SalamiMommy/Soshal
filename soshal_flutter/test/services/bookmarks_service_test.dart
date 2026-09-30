@@ -1,4 +1,6 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/bookmarks_service.dart';
 
@@ -92,6 +94,64 @@ void main() {
 
       await expectLater(bookmarks.delete('bm-1'), throwsException);
       expect(bookmarks.lastError, contains('delete failed'));
+    });
+
+    test('resolvePosts builds posts from both map shapes and skips others',
+        () async {
+      final bookmarks = BookmarksService();
+      api.stubString(
+        'crateFfiBookmarksBookmarksResolvePosts',
+        jsonEncode({
+          'ev-1': {
+            'event_id': 'ev-1',
+            'pubkey': 'pk-1',
+            'content': 'hello',
+            'created_at': 1700000000,
+            'reactions': 3,
+          },
+          // Decoded by `jsonDecode` as a plain `Map<dynamic, dynamic>`, which
+          // the parser has to re-key — the value is a valid post.
+          'ev-2': {
+            'event_id': 'ev-2',
+            'pubkey': 'pk-2',
+            'content': 'second',
+            'created_at': 1700000001,
+          },
+          // Not an object at all — skipped, not thrown.
+          'ev-3': 'garbage',
+        }),
+      );
+
+      final out = await bookmarks.resolvePosts(['ev-1', 'ev-2', 'ev-3']);
+
+      expect(out.keys.toSet(), {'ev-1', 'ev-2'});
+      expect(out['ev-1']!.content, 'hello');
+      expect(out['ev-1']!.reactions, 3);
+      expect(out['ev-2']!.content, 'second');
+      expect(bookmarks.lastError, isNull);
+
+      final inv = api.callsOf('crateFfiBookmarksBookmarksResolvePosts').single;
+      expect(jsonDecode(api.namedArg(inv, 'idsJson') as String),
+          ['ev-1', 'ev-2', 'ev-3']);
+    });
+
+    test('resolvePosts short-circuits an empty id list without a bridge call',
+        () async {
+      final bookmarks = BookmarksService();
+
+      expect(await bookmarks.resolvePosts(const []), isEmpty);
+      expect(api.callCount('crateFfiBookmarksBookmarksResolvePosts'), 0);
+    });
+
+    test('resolvePosts failure returns empty and records the error', () async {
+      final bookmarks = BookmarksService();
+      api.stub('crateFfiBookmarksBookmarksResolvePosts',
+          (_) => throw Exception('resolve down'));
+
+      final out = await bookmarks.resolvePosts(['ev-1']);
+
+      expect(out, isEmpty);
+      expect(bookmarks.lastError.toString(), contains('resolve down'));
     });
   });
 }

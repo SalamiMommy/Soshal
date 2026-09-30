@@ -103,5 +103,53 @@ void main() {
       expect(aHeader['track_id'], 2);
       expect(api.calls, isEmpty);
     });
+
+    test('subscribeLiveFetch hex-decodes groups and decodes each in order',
+        () async {
+      final streaming = StreamingService();
+      api.stubString('crateFfiP2PP2PMoqSubscribeFetch', '{"groups":["0a0b","0c",""]}');
+      // `decodeMoqGroup` must stay on this isolate, so it goes through the
+      // bridge — the per-frame call is what proves the split.
+      api.stub('crateFfiP2PP2PMoqDecodeGroup', (inv) {
+        final bytes = api.namedArg(inv, 'bytes') as List<dynamic>;
+        return '{"len":${bytes.length}}';
+      });
+
+      final out = await streaming.subscribeLiveFetch(
+        addr: '10.0.0.1:9000',
+        streamId: 's1',
+        windowMs: 2000,
+      );
+
+      expect(out.map((g) => g['len']), [2, 1, 0]);
+      expect(api.callCount('crateFfiP2PP2PMoqDecodeGroup'), 3);
+      final first = api.callsOf('crateFfiP2PP2PMoqDecodeGroup').first;
+      expect(api.namedArg(first, 'bytes'), [0x0a, 0x0b]);
+    });
+
+    test('subscribeLiveFetch handles an absent groups key', () async {
+      final streaming = StreamingService();
+      api.stubString('crateFfiP2PP2PMoqSubscribeFetch', '{"count":0}');
+
+      expect(
+        await streaming.subscribeLiveFetch(
+            addr: '10.0.0.1:9000', streamId: 's1', windowMs: 2000),
+        isEmpty,
+      );
+      expect(api.callCount('crateFfiP2PP2PMoqDecodeGroup'), 0);
+    });
+
+    test('subscribeLiveFetch records a transport error', () async {
+      final streaming = StreamingService();
+      api.stub('crateFfiP2PP2PMoqSubscribeFetch',
+          (_) => throw Exception('stream not found'));
+
+      await expectLater(
+        streaming.subscribeLiveFetch(
+            addr: '10.0.0.1:9000', streamId: 's1', windowMs: 2000),
+        throwsException,
+      );
+      expect(streaming.lastError.toString(), contains('stream not found'));
+    });
   });
 }

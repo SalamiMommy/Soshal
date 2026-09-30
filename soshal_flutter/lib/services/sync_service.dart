@@ -9,6 +9,7 @@ import 'feed_service.dart';
 import 'ffi_bridge.dart';
 import 'messaging_service.dart';
 import 'p2p_service.dart';
+import '../utils/offthread.dart';
 
 /// Sync Service
 /// Subscribes to the Rust-side background sync engine (published via the
@@ -53,16 +54,19 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
   }
 
   /// Attach downstream consumers (called from main.dart wiring).
-  void attach(
-      {required FeedService feed,
-      required MessagingService messaging,
-      required P2pService p2p}) {
+  void attach({
+    FeedService? feed,
+    MessagingService? messaging,
+    required P2pService p2p,
+  }) {
     _feed = feed;
     _messaging = messaging;
-    feed.onRefreshed = () {
-      if (p2p.peers.isEmpty) return;
-      unawaited(reconcileFeedWithPeer(''));
-    };
+    if (feed != null) {
+      feed.onRefreshed = () {
+        if (p2p.peers.isEmpty) return;
+        unawaited(reconcileFeedWithPeer(''));
+      };
+    }
   }
 
   /// Start the engine + stream subscription for the given relays.
@@ -232,9 +236,12 @@ class SyncService extends ChangeNotifier with LastErrorMixin {
       for (final p in feed.posts) [p.eventId, p.content]
     ];
     try {
+      // Serialising every post's full content is the expensive half here —
+      // a full feed is a multi-MB document. Encode on a background isolate.
+      final localKvJson = await runOffThreadCompute(jsonEncode, kv);
       final resJson =
           await RustLib.instance.api.crateFfiNetworkNetworkReconcileProllyTree(
-        localKvJson: jsonEncode(kv),
+        localKvJson: localKvJson,
         remoteRootHash: remoteRootHash,
       );
       final Map<String, dynamic> res =
