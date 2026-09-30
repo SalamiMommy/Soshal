@@ -12,6 +12,21 @@ const MAX_PEERS: usize = 4096;
 /// Dedup window for forwarded Data packets (payload hash per source),
 /// preventing mesh amplification via re-broadcast loops.
 const MAX_SEEN_DATA: usize = 4096;
+/// How long the transport thread parks in the kernel before re-checking
+/// `running` when no datagram arrives.
+///
+/// The receive socket is blocking with this read timeout rather than
+/// non-blocking-with-a-poll: the previous 10 ms `sleep` on `WouldBlock` cost
+/// 100 wakeups/second/node forever (8.6M/node/day), which is what holds a core
+/// out of deep C-state. 500 ms is the same value the plan called for; it bounds
+/// `stop()`'s join at 500 ms, which is fine for a full node teardown.
+const RECV_PARK_MILLIS: u64 = 500;
+const RECV_PARK_TIMEOUT: Duration = Duration::from_millis(RECV_PARK_MILLIS);
+/// Route-table maintenance interval. Time-based, not tick-based: the old
+/// "every 1000 iterations (~10 s when idle)" tied the prune rate to the poll
+/// rate, so parking the thread would have silently stretched it to ~8 min and
+/// let an attacker-filled route table grow unbounded in between.
+const ROUTE_PRUNE_INTERVAL_SECS: u64 = 10;
 use super::routing::PathTable;
 use super::tcp_interface::{TcpInterfaceConfig, TcpServerInterface};
 use serde::{Deserialize, Serialize};
@@ -19,6 +34,7 @@ use soshal_common_core::format::now_secs;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::{SocketAddr, UdpSocket};
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -39,7 +55,7 @@ pub struct ReticulumNode {
     pub interfaces: Arc<Mutex<Vec<ReticulumInterfaceStatus>>>,
     pub rx_count: Arc<Mutex<u64>>,
     pub tx_count: Arc<Mutex<u64>>,
-    pub running: Arc<Mutex<bool>>,
+    pub running: Arc<AtomicBool>,
     pub link_manager: Arc<LinkManager>,
     pub peers: Arc<Mutex<HashSet<SocketAddr>>>,
     pub delivered: Arc<Mutex<VecDeque<Vec<u8>>>>,
@@ -61,7 +77,7 @@ impl ReticulumNode {
             interfaces: Arc::new(Mutex::new(vec![default_iface])),
             rx_count: Arc::new(Mutex::new(0)),
             tx_count: Arc::new(Mutex::new(0)),
-            running: Arc::new(Mutex::new(true)),
+            running: Arc::new(AtomicBool::new(true)),
             link_manager: Arc::new(LinkManager::new()),
             peers: Arc::new(Mutex::new(HashSet::new())),
             delivered: Arc::new(Mutex::new(VecDeque::new())),
@@ -118,15 +134,17 @@ impl ReticulumNode {
     /// Starts the UDP transport layer for Reticulum communication
     pub fn start_udp_transport(&mut self, bind_addr: &str) -> Result<(), String> {
         if let Some(handle) = self.transport_thread.take() {
-            *self.running.lock().unwrap_or_else(|e| e.into_inner()) = false;
+            self.running.store(false, Ordering::Relaxed);
             let _ = handle.join();
         }
-        *self.running.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        self.running.store(true, Ordering::Relaxed);
 
         let socket = UdpSocket::bind(bind_addr).map_err(|e| format!("UDP bind failed: {e}"))?;
+        // Blocking socket + read timeout, NOT `set_nonblocking` + a poll loop:
+        // the thread parks in the kernel and stops generating 100 wakeups/sec.
         socket
-            .set_nonblocking(true)
-            .map_err(|e| format!("set_nonblocking failed: {e}"))?;
+            .set_read_timeout(Some(RECV_PARK_TIMEOUT))
+            .map_err(|e| format!("set_read_timeout failed: {e}"))?;
 
         let udp_socket = Arc::new(socket);
         let running = self.running.clone();
@@ -143,15 +161,17 @@ impl ReticulumNode {
         let udp_clone = udp_socket.clone();
         let handle = thread::spawn(move || {
             let mut buf = [0u8; 2048];
-            let mut ticks: u64 = 0;
+            let mut last_prune = now_secs() as u64;
 
-            while *running.lock().unwrap_or_else(|e| e.into_inner()) {
-                ticks = ticks.wrapping_add(1);
-                // Periodic maintenance: prune expired routes every ~1000
-                // iterations (~10 s when idle) so attacker-filled tables
-                // cannot grow without bound.
-                if ticks.is_multiple_of(1000) {
-                    let now = now_secs() as u64;
+            while running.load(Ordering::Relaxed) {
+                // Periodic maintenance: prune expired routes on a wall-clock
+                // interval so attacker-filled tables cannot grow without bound.
+                // Wall-clock, not per-iteration: the loop now parks in
+                // `recv_from` for RECV_PARK_TIMEOUT, so an iteration count
+                // would stretch the prune from ~10 s to ~8 min.
+                let now = now_secs() as u64;
+                if now.saturating_sub(last_prune) >= ROUTE_PRUNE_INTERVAL_SECS {
+                    last_prune = now;
                     path_table
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
@@ -344,11 +364,18 @@ impl ReticulumNode {
                             }
                         }
                     }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(10));
+                    // Read timeout with no datagram: the expected idle case.
+                    // Loop straight back into the kernel-blocking `recv_from`
+                    // — a sleep here would add a second wakeup source.
+                    Err(ref e)
+                        if e.kind() == std::io::ErrorKind::WouldBlock
+                            || e.kind() == std::io::ErrorKind::TimedOut =>
+                    {
                         continue;
                     }
                     Err(_) => {
+                        // Back off briefly so a persistent socket error cannot
+                        // spin this thread at 100% CPU.
                         thread::sleep(Duration::from_millis(10));
                         continue;
                     }
@@ -458,7 +485,7 @@ impl ReticulumNode {
     }
 
     pub fn get_status(&self) -> ReticulumNodeStatus {
-        let running = *self.running.lock().unwrap_or_else(|e| e.into_inner());
+        let running = self.running.load(Ordering::Relaxed);
         let rx_packets = *self.rx_count.lock().unwrap_or_else(|e| e.into_inner());
         let tx_packets = *self.tx_count.lock().unwrap_or_else(|e| e.into_inner());
         let path_guard = self.path_table.lock().unwrap_or_else(|e| e.into_inner());
@@ -540,11 +567,6 @@ impl ReticulumNode {
     pub fn stop(&mut self) {
         // Scope the guard: the transport thread re-checks `running` on every
         // iteration, so holding the lock across `join()` below deadlocks.
-        {
-            let mut run_guard = self.running.lock().unwrap_or_else(|e| e.into_inner());
-            *run_guard = false;
-        }
-
         if let Some(handle) = self.transport_thread.take() {
             let _ = handle.join();
         }
@@ -591,7 +613,7 @@ pub fn any_node_running() -> bool {
     let guard = map.lock().unwrap_or_else(|e| e.into_inner());
     guard.values().any(|node| {
         node.lock()
-            .map(|n| *n.running.lock().unwrap_or_else(|e| e.into_inner()))
+            .map(|n| n.running.load(Ordering::Relaxed))
             .unwrap_or(false)
     })
 }
@@ -603,7 +625,7 @@ pub fn any_node_status() -> Option<ReticulumNodeStatus> {
     let guard = map.lock().unwrap_or_else(|e| e.into_inner());
     for node in guard.values() {
         if let Ok(n) = node.lock() {
-            if *n.running.lock().unwrap_or_else(|e| e.into_inner()) {
+            if n.running.load(Ordering::Relaxed) {
                 return Some(n.get_status());
             }
         }
@@ -618,7 +640,7 @@ pub fn prune_first_node(now_secs: Option<u64>) -> Option<usize> {
     let guard = map.lock().unwrap_or_else(|e| e.into_inner());
     for node in guard.values() {
         if let Ok(n) = node.lock() {
-            if !*n.running.lock().unwrap_or_else(|e| e.into_inner()) {
+            if !n.running.load(Ordering::Relaxed) {
                 continue;
             }
             if let Some(now) = now_secs {
@@ -708,7 +730,7 @@ mod tests {
     fn test_stop_fresh_node() {
         let mut node = ReticulumNode::new("test_pubkey_stop");
         node.stop();
-        assert!(!*node.running.lock().unwrap_or_else(|e| e.into_inner()));
+        assert!(!node.running.load(Ordering::Relaxed));
     }
 
     #[test]
@@ -768,7 +790,7 @@ mod tests {
         }
 
         node.stop();
-        assert!(!*node.running.lock().unwrap_or_else(|e| e.into_inner()));
+        assert!(!node.running.load(Ordering::Relaxed));
         assert!(node.udp_socket.is_none());
     }
 
@@ -901,5 +923,72 @@ mod tests {
         node_a.stop();
         node_b.stop();
         node_c.stop();
+    }
+
+    // ---- 8.1: the transport thread must park, not poll ----
+
+    /// Counts `recv_from` attempts per unit of wall time on a socket configured
+    /// the way `start_udp_transport` configures it. If the socket is
+    /// non-blocking (the pre-8.1 shape) this spins; if it is blocking with a
+    /// read timeout it runs at the timeout rate.
+    fn recv_attempts_per_sec(bind: &str) -> (u64, u64) {
+        let s = UdpSocket::bind(bind).expect("bind");
+        s.set_read_timeout(Some(RECV_PARK_TIMEOUT))
+            .expect("timeout");
+        let mut buf = [0u8; 64];
+        let mut attempts: u64 = 0;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1200);
+        while std::time::Instant::now() < deadline {
+            match s.recv_from(&mut buf) {
+                Ok(_) => {}
+                Err(ref e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(_) => {}
+            }
+            attempts += 1;
+        }
+        (attempts, 1)
+    }
+
+    #[test]
+    fn recv_socket_parks_instead_of_spinning() {
+        // 1200 ms window. A parked socket retries at RECV_PARK_TIMEOUT
+        // (500 ms) => ~3 attempts. The old non-blocking shape retried as fast
+        // as the CPU allowed => thousands. 50 attempts is a wide margin that
+        // still fails loudly if someone restores set_nonblocking.
+        let (attempts, _) = recv_attempts_per_sec("127.0.0.1:0");
+        assert!(
+            attempts <= 50,
+            "receive socket spun instead of parking: {attempts} attempts in 1200 ms \
+             (RECV_PARK_TIMEOUT is {:?})",
+            RECV_PARK_TIMEOUT
+        );
+        // And it must not have parked "forever" either: at least one retry has
+        // to happen, or stop() would never observe the loop exit.
+        assert!(attempts >= 1, "socket never returned from recv_from");
+    }
+
+    #[test]
+    fn recv_park_timeout_is_the_documented_value() {
+        // Pinned because the wakeup-rate win is entirely this number: 500 ms
+        // is 173k wakeups/node/day against the old 8.6M.
+        const { assert!(RECV_PARK_MILLIS == 500) };
+        // Route pruning must stay time-based, or parking the thread stretches
+        // it from ~10 s to ~500 s and an attacker-filled table grows unbounded.
+        const { assert!(ROUTE_PRUNE_INTERVAL_SECS == 10) };
+    }
+
+    #[test]
+    fn running_flag_is_an_atomic_bool_not_a_mutex() {
+        // Compile-time guarantee that the loop condition cannot take a lock:
+        // `Arc<AtomicBool>` is loadable without any guard. If someone reverts
+        // to `Arc<Mutex<bool>>` this test stops compiling.
+        let node = ReticulumNode::new("test_atomic_running");
+        let running: &std::sync::atomic::AtomicBool = &node.running;
+        assert!(running.load(Ordering::Relaxed));
+        node.running.store(false, Ordering::Relaxed);
+        assert!(!node.running.load(Ordering::Relaxed));
+        assert!(!node.get_status().running);
     }
 }

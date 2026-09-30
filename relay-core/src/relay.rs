@@ -276,11 +276,17 @@ impl RelayNode {
             while self.delivered.len() > DELIVERED_CAPACITY {
                 self.delivered.pop_front();
             }
+            // One clone, not two. The `recent` ring keeps the envelope as it
+            // arrived (hop_count unchanged), and the re-broadcast copy needs
+            // hop_count + 1. `increment_hop` cloned the whole envelope —
+            // including the payload `Vec<u8>`, up to MAX_PAYLOAD_BYTES — to
+            // bump one byte; `into_incremented_hop` consumes and edits in
+            // place, so the single remaining clone is the ring's.
             self.recent.push_back(env.clone());
             while self.recent.len() > RECENT_CAPACITY {
                 self.recent.pop_front();
             }
-            if let Some(next) = env.increment_hop() {
+            if let Some(next) = env.into_incremented_hop() {
                 self.re_broadcast(next, idx);
             }
         }
@@ -737,5 +743,46 @@ mod tests {
         assert_eq!(recent.len(), 1);
         assert_eq!(node.recent[0].event_id, "uppercase_id");
         assert_eq!(node.recent[0].author, "uppercase_author");
+    }
+
+    /// 8.8: the recent ring must hold the envelope as it *arrived* while the
+    /// re-broadcast copy carries hop_count + 1. The old code produced both by
+    /// cloning the whole envelope (payload included) twice; if the
+    /// `into_incremented_hop` swap ever reverts to a shared clone, the ring
+    /// would start observing a mutated hop_count.
+    #[test]
+    fn recent_ring_holds_arrived_hop_count_and_rebroadcast_increments() {
+        let mut node = RelayNode::new();
+        let (b0, s0) = mock(BackendKind::Reticulum, 2);
+        let (b1, s1) = mock(BackendKind::I2p, 2);
+        node.add_backend(Box::new(b0));
+        node.add_backend(Box::new(b1));
+        node.start().unwrap();
+
+        let sent = env_bytes(0);
+        let arrived = MeshEnvelope::from_bytes(&sent).unwrap();
+        assert_eq!(arrived.hop_count, 0);
+        s0.lock().unwrap().inbox.push(sent);
+
+        assert_eq!(node.poll(), 1);
+
+        // Ring: exactly the bytes that arrived, hop_count untouched.
+        assert_eq!(node.recent.len(), 1);
+        assert_eq!(
+            node.recent[0].hop_count, 0,
+            "recent ring must hold the envelope as arrived, not the re-broadcast copy"
+        );
+        assert_eq!(node.recent[0].payload, arrived.payload);
+        assert_eq!(node.recent[0].event_id, arrived.event_id);
+        assert_eq!(node.recent[0].author, arrived.author);
+
+        // Re-broadcast goes to the *other* backend, never back to the origin.
+        let outbox = s1.lock().unwrap().outbox.clone();
+        assert_eq!(outbox.len(), 1);
+        let fwd = MeshEnvelope::from_bytes(&outbox[0]).unwrap();
+        assert_eq!(fwd.hop_count, 1, "re-broadcast must carry hop_count + 1");
+        assert_eq!(fwd.payload, arrived.payload);
+        assert_eq!(fwd.event_id, arrived.event_id);
+        assert_eq!(fwd.author, arrived.author);
     }
 }

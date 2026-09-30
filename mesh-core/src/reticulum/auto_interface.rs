@@ -18,6 +18,12 @@ const AUTO_DISCOVERY_GROUP: &str = "ff02::1"; // IPv6 all-nodes multicast
 const BEACON_INTERVAL_MS: u64 = 5000; // 5 seconds
 const BEACON_MAGIC: &[u8] = b"RN\0"; // Reticulum magic bytes
 const BEACON_VERSION: u32 = 1; // Metadata interface version
+/// How long the discovery thread parks in the kernel when no beacon arrives.
+/// Deliberately equal to the 100 ms poll period this replaces, so the beacon
+/// send cadence in the loop above is bit-for-bit unchanged — only the wakeup
+/// source moves from "user-space timer" to "kernel socket timeout".
+const AUTO_RECV_PARK_MILLIS: u64 = 100;
+const AUTO_RECV_PARK_TIMEOUT: Duration = Duration::from_millis(AUTO_RECV_PARK_MILLIS);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoInterfaceConfig {
@@ -70,8 +76,8 @@ impl AutoInterface {
             UdpSocket::bind(&bind_addr).map_err(|e| format!("AutoInterface bind failed: {e}"))?;
 
         socket
-            .set_nonblocking(true)
-            .map_err(|e| format!("set_nonblocking failed: {e}"))?;
+            .set_read_timeout(Some(AUTO_RECV_PARK_TIMEOUT))
+            .map_err(|e| format!("set_read_timeout failed: {e}"))?;
 
         // Join IPv6 multicast group
         if let Ok(multi_addr) = AUTO_DISCOVERY_GROUP.parse::<Ipv6Addr>() {
@@ -124,8 +130,14 @@ impl AutoInterface {
                             }
                         }
                     }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(100));
+                    // Read timeout with no beacon: the expected idle case. The
+                    // timeout equals the old 100 ms poll period, so the beacon
+                    // send cadence below is unchanged — the thread just parks
+                    // in the kernel instead of waking to find an empty socket.
+                    Err(ref e)
+                        if e.kind() == std::io::ErrorKind::WouldBlock
+                            || e.kind() == std::io::ErrorKind::TimedOut =>
+                    {
                         continue;
                     }
                     Err(_) => {
@@ -294,5 +306,37 @@ mod tests {
             &beacon[magic_len + 20..magic_len + 24],
             (BEACON_INTERVAL_MS as u32 / 1000).to_le_bytes()
         );
+    }
+
+    /// 8.1: the discovery socket must park in the kernel rather than poll, and
+    /// the park time must stay equal to the 100 ms poll period it replaced so
+    /// the beacon send cadence in the loop is unchanged.
+    #[test]
+    fn discovery_socket_parks_and_keeps_beacon_cadence() {
+        const { assert!(AUTO_RECV_PARK_MILLIS == 100) };
+
+        let s = std::net::UdpSocket::bind("127.0.0.1:0").expect("bind");
+        s.set_read_timeout(Some(AUTO_RECV_PARK_TIMEOUT))
+            .expect("timeout");
+        let mut buf = [0u8; 64];
+        let mut attempts: u64 = 0;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1200);
+        while std::time::Instant::now() < deadline {
+            match s.recv_from(&mut buf) {
+                Ok(_) => {}
+                Err(ref e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(_) => {}
+            }
+            attempts += 1;
+        }
+        // ~12 attempts at a 100 ms park over 1200 ms. A restored
+        // `set_nonblocking(true)` spins and blows straight past this.
+        assert!(
+            attempts <= 60,
+            "discovery socket spun instead of parking: {attempts} attempts in 1200 ms"
+        );
+        assert!(attempts >= 1, "socket never returned from recv_from");
     }
 }

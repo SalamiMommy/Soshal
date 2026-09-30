@@ -573,6 +573,10 @@ struct PooledLanConn {
 
 struct LanChunkPool {
     conns: std::sync::Mutex<std::collections::HashMap<SocketAddr, PooledLanConn>>,
+    /// Timestamp of the last idle sweep. Held under its own mutex (not
+    /// `conns`) so the throttle check never blocks on the connection map, and
+    /// `try_lock` there so a fetch never waits behind a sweep.
+    sweep_gate: std::sync::Mutex<std::time::Instant>,
 }
 
 static LAN_CHUNK_POOL: std::sync::OnceLock<LanChunkPool> = std::sync::OnceLock::new();
@@ -580,14 +584,48 @@ static LAN_CHUNK_POOL: std::sync::OnceLock<LanChunkPool> = std::sync::OnceLock::
 fn lan_chunk_pool() -> &'static LanChunkPool {
     LAN_CHUNK_POOL.get_or_init(|| LanChunkPool {
         conns: std::sync::Mutex::new(std::collections::HashMap::new()),
+        // Zeroed so the first fetch performs a sweep immediately, matching the
+        // old unconditional behavior on the first call.
+        sweep_gate: std::sync::Mutex::new(
+            std::time::Instant::now() - POOL_IDLE_TIMEOUT - POOL_IDLE_TIMEOUT,
+        ),
     })
 }
 
 impl LanChunkPool {
+    /// Drop pooled connections idle for longer than `POOL_IDLE_TIMEOUT`.
+    ///
+    /// Amortized: the sweep is O(pooled connections) and this runs once per
+    /// chunk fetch, so sweeping unconditionally made every fetch pay an O(n)
+    /// pass on both take and put purely for idle expiry — and n grows with the
+    /// number of in-flight swarm workers. Throttled to at most one sweep per
+    /// `POOL_IDLE_TIMEOUT`, matching `QuicChunkPool::evict_idle`.
+    ///
+    /// Throttling is safe because neither caller depends on the sweep: `take`
+    /// validates its own entry's `last_used` under the connection lock, and
+    /// `put` inserts a connection stamped `now`. A skipped sweep only means a
+    /// stale connection can linger up to one extra interval.
+    fn sweep_idle(&self) {
+        // A concurrent sweep may already be running; skipping rather than
+        // waiting keeps the fetch path free of sweep contention. Losing a
+        // sweep is harmless — the next interval re-checks.
+        let Ok(mut gate) = self.sweep_gate.try_lock() else {
+            return;
+        };
+        if gate.elapsed() < POOL_IDLE_TIMEOUT {
+            return;
+        }
+        *gate = std::time::Instant::now();
+
+        if let Ok(mut conns) = self.conns.lock() {
+            let now = std::time::Instant::now();
+            conns.retain(|_, c| now.saturating_duration_since(c.last_used) <= POOL_IDLE_TIMEOUT);
+        }
+    }
+
     fn take(&self, addr: SocketAddr) -> Option<TcpStream> {
+        self.sweep_idle();
         let mut guard = self.conns.lock().ok()?;
-        let now = std::time::Instant::now();
-        guard.retain(|_, c| now.duration_since(c.last_used) <= POOL_IDLE_TIMEOUT);
         let conn = guard.remove(&addr)?;
         if conn.last_used.elapsed() > POOL_IDLE_TIMEOUT {
             return None;
@@ -596,9 +634,9 @@ impl LanChunkPool {
     }
 
     fn put(&self, addr: SocketAddr, stream: TcpStream) {
+        self.sweep_idle();
         if let Ok(mut guard) = self.conns.lock() {
             let now = std::time::Instant::now();
-            guard.retain(|_, c| now.duration_since(c.last_used) <= POOL_IDLE_TIMEOUT);
             if guard.len() >= MAX_POOLED_LAN_CONNS && !guard.contains_key(&addr) {
                 if let Some(oldest) = guard
                     .iter()
@@ -910,5 +948,127 @@ pub(crate) mod tests {
             assert_eq!(got, data[off..off + len]);
         }
         server.stop();
+    }
+
+    // ---- 8.13: the idle sweep is throttled, but a stale socket is still refused ----
+
+    /// A connected loopback `TcpStream` pair, so pooled entries are real
+    /// sockets rather than stand-ins.
+    fn loopback_streams() -> (TcpStream, TcpStream) {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        let client = TcpStream::connect(addr).unwrap();
+        let (server, _) = l.accept().unwrap();
+        (client, server)
+    }
+
+    fn pool_len(pool: &LanChunkPool) -> usize {
+        pool.conns.lock().unwrap().len()
+    }
+
+    #[test]
+    fn idle_sweep_is_throttled_not_unconditional() {
+        let pool = LanChunkPool {
+            conns: std::sync::Mutex::new(std::collections::HashMap::new()),
+            sweep_gate: std::sync::Mutex::new(
+                std::time::Instant::now() - POOL_IDLE_TIMEOUT - POOL_IDLE_TIMEOUT,
+            ),
+        };
+
+        // Seed three already-stale entries directly, so the only thing that can
+        // remove them is the sweep inside `sweep_idle`.
+        {
+            let mut conns = pool.conns.lock().unwrap();
+            for i in 0..3u16 {
+                let (client, _server) = loopback_streams();
+                conns.insert(
+                    SocketAddr::from(([127, 0, 0, 1], 9000 + i)),
+                    PooledLanConn {
+                        stream: client,
+                        last_used: std::time::Instant::now()
+                            - POOL_IDLE_TIMEOUT
+                            - POOL_IDLE_TIMEOUT,
+                    },
+                );
+            }
+            assert_eq!(conns.len(), 3);
+        }
+
+        // First sweep runs: the gate starts older than one interval.
+        pool.sweep_idle();
+        assert_eq!(pool_len(&pool), 0, "first sweep did not evict stale conns");
+
+        // Re-seed, then sweep again immediately. The gate now blocks it, which
+        // is the whole point of 8.13: without the throttle every fetch paid
+        // this O(n) pass.
+        {
+            let mut conns = pool.conns.lock().unwrap();
+            for i in 0..3u16 {
+                let (client, _server) = loopback_streams();
+                conns.insert(
+                    SocketAddr::from(([127, 0, 0, 1], 9100 + i)),
+                    PooledLanConn {
+                        stream: client,
+                        last_used: std::time::Instant::now()
+                            - POOL_IDLE_TIMEOUT
+                            - POOL_IDLE_TIMEOUT,
+                    },
+                );
+            }
+        }
+        pool.sweep_idle();
+        assert_eq!(
+            pool_len(&pool),
+            3,
+            "sweep was not throttled: a second sweep ran inside one interval"
+        );
+    }
+
+    #[test]
+    fn take_refuses_a_stale_connection_even_when_the_sweep_is_throttled() {
+        // The safety property the throttle must not break: `take` re-checks its
+        // own entry under the connection lock, so a skipped sweep can never
+        // hand back an idle socket past POOL_IDLE_TIMEOUT.
+        let pool = LanChunkPool {
+            conns: std::sync::Mutex::new(std::collections::HashMap::new()),
+            sweep_gate: std::sync::Mutex::new(std::time::Instant::now()),
+        };
+        let addr = SocketAddr::from(([127, 0, 0, 1], 9200));
+        let (client, _server) = loopback_streams();
+        pool.conns.lock().unwrap().insert(
+            addr,
+            PooledLanConn {
+                stream: client,
+                last_used: std::time::Instant::now()
+                    - POOL_IDLE_TIMEOUT
+                    - std::time::Duration::from_millis(1),
+            },
+        );
+        // Gate is fresh, so the sweep is skipped entirely.
+        assert_eq!(pool_len(&pool), 1);
+        assert!(
+            pool.take(addr).is_none(),
+            "take handed back a connection idle for longer than POOL_IDLE_TIMEOUT"
+        );
+        assert_eq!(
+            pool_len(&pool),
+            0,
+            "stale entry should be consumed, not kept"
+        );
+    }
+
+    #[test]
+    fn put_still_enforces_the_pool_capacity_cap() {
+        // The cap is a hard bound, not idle expiry: it must stay unconditional
+        // even with the sweep throttled, or the pool grows without limit.
+        let pool = LanChunkPool {
+            conns: std::sync::Mutex::new(std::collections::HashMap::new()),
+            sweep_gate: std::sync::Mutex::new(std::time::Instant::now()),
+        };
+        for i in 0..(MAX_POOLED_LAN_CONNS + 4) {
+            let (client, _server) = loopback_streams();
+            pool.put(SocketAddr::from(([127, 0, 0, 1], 9300 + i as u16)), client);
+        }
+        assert_eq!(pool_len(&pool), MAX_POOLED_LAN_CONNS);
     }
 }
