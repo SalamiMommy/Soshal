@@ -150,3 +150,134 @@ async fn test_database_notification_repo_emits_change() {
     assert_eq!(read_evt.table, Table::Notifications);
     assert_eq!(read_evt.affected_account.as_deref(), Some("notified_user"));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_database_block_repo_emits_change() {
+    let db = Database::open_in_memory().expect("open in memory db");
+    db.migrate().expect("migrate db");
+
+    let mut rx = db.subscribe_changes();
+
+    let user_repo = soshal_db_core::repos::user::UserRepo::new(&db);
+    user_repo.ensure_exists("alice_pk").expect("insert user");
+    user_repo.ensure_exists("spammer_pk").expect("insert user");
+
+    let repo = soshal_db_core::repos::block::BlockRepo::new(&db);
+    let row = soshal_db_core::repos::block::BlockRow {
+        pubkey: "alice_pk".to_string(),
+        blocked_pubkey: "spammer_pk".to_string(),
+        created_at: 1004,
+    };
+
+    repo.upsert(&row).expect("upsert block");
+    let evt = rx.recv().await.expect("receive change event");
+    assert_eq!(evt.table, Table::Blocks);
+    assert_eq!(evt.affected_account.as_deref(), Some("alice_pk"));
+
+    repo.delete("alice_pk", "spammer_pk").expect("delete block");
+    let del_evt = rx.recv().await.expect("receive delete change event");
+    assert_eq!(del_evt.table, Table::Blocks);
+    assert_eq!(del_evt.affected_account.as_deref(), Some("alice_pk"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_database_bookmark_repo_emits_change() {
+    let db = Database::open_in_memory().expect("open in memory db");
+    db.migrate().expect("migrate db");
+
+    let mut rx = db.subscribe_changes();
+
+    let repo = soshal_db_core::repos::bookmark::BookmarkRepo::new(&db);
+    let row = soshal_db_core::repos::bookmark::BookmarkRow {
+        id: "bm_1".to_string(),
+        pubkey: "alice_pk".to_string(),
+        event_id: "evt_1".to_string(),
+        created_at: 1005,
+    };
+
+    repo.upsert(&row).expect("upsert bookmark");
+    let evt = rx.recv().await.expect("receive change event");
+    assert_eq!(evt.table, Table::Bookmarks);
+    assert_eq!(evt.affected_account.as_deref(), Some("alice_pk"));
+
+    repo.delete("bm_1").expect("delete bookmark");
+    let del_evt = rx.recv().await.expect("receive delete change event");
+    assert_eq!(del_evt.table, Table::Bookmarks);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_database_settings_repo_emits_change() {
+    let db = Database::open_in_memory().expect("open in memory db");
+    db.migrate().expect("migrate db");
+
+    let mut rx = db.subscribe_changes();
+
+    let repo = soshal_db_core::repos::settings::SettingsRepo::new(&db);
+    repo.set("dark_mode", "true").expect("set setting");
+    let evt = rx.recv().await.expect("receive change event");
+    assert_eq!(evt.table, Table::Settings);
+
+    repo.delete("dark_mode").expect("delete setting");
+    let del_evt = rx.recv().await.expect("receive delete change event");
+    assert_eq!(del_evt.table, Table::Settings);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_database_relay_repo_emits_change() {
+    let db = Database::open_in_memory().expect("open in memory db");
+    db.migrate().expect("migrate db");
+
+    let mut rx = db.subscribe_changes();
+
+    let repo = soshal_db_core::repos::relay::RelayRepo::new(&db);
+    let row = soshal_db_core::repos::relay::RelayRow {
+        url: "wss://relay.damus.io".to_string(),
+        pubkey: None,
+        name: Some("Damus".to_string()),
+        read_enabled: true,
+        write_enabled: true,
+        priority: 1,
+        last_connected_at: None,
+        health_score: 1.0,
+    };
+
+    repo.upsert(&row).expect("upsert relay");
+    let evt = rx.recv().await.expect("receive change event");
+    assert_eq!(evt.table, Table::Relays);
+
+    repo.delete("wss://relay.damus.io").expect("delete relay");
+    let del_evt = rx.recv().await.expect("receive delete change event");
+    assert_eq!(del_evt.table, Table::Relays);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_database_user_repo_emits_change() {
+    let db = Database::open_in_memory().expect("open in memory db");
+    db.migrate().expect("migrate db");
+
+    let mut rx = db.subscribe_changes();
+
+    let repo = soshal_db_core::repos::user::UserRepo::new(&db);
+    let row = soshal_db_core::repos::user::UserRow {
+        pubkey: "carol_pk".to_string(),
+        npub: "npub1carol".to_string(),
+        name: Some("Carol".to_string()),
+        display_name: Some("Carolyn".to_string()),
+        about: Some("Hello".to_string()),
+        picture: None,
+        banner: None,
+        nip05: None,
+        lud16: None,
+        created_at: 1006,
+        updated_at: 1006,
+        metadata_json: None,
+        contact_pubkeys: "".to_string(),
+        relay_list: "".to_string(),
+        follower_count: 0,
+    };
+
+    repo.upsert(&row).expect("upsert user");
+    let evt = rx.recv().await.expect("receive change event");
+    assert_eq!(evt.table, Table::Profiles);
+    assert_eq!(evt.affected_account.as_deref(), Some("carol_pk"));
+}

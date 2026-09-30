@@ -22,6 +22,9 @@ impl<'a> IgnoredNotificationRepo<'a> {
     ) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
         execute_ignore(&conn, user_pubkey, kind, from_pubkey, "", at)?;
+        let norm_pk = user_pubkey.trim().to_ascii_lowercase();
+        self.db
+            .notify_change(crate::change_bus::Table::Notifications, Some(norm_pk));
         Ok(())
     }
 
@@ -35,6 +38,9 @@ impl<'a> IgnoredNotificationRepo<'a> {
     ) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
         execute_ignore(&conn, user_pubkey, kind, "", event_id, at)?;
+        let norm_pk = user_pubkey.trim().to_ascii_lowercase();
+        self.db
+            .notify_change(crate::change_bus::Table::Notifications, Some(norm_pk));
         Ok(())
     }
 
@@ -47,6 +53,9 @@ impl<'a> IgnoredNotificationRepo<'a> {
     ) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
         delete_ignore(&conn, user_pubkey, kind, from_pubkey, "")?;
+        let norm_pk = user_pubkey.trim().to_ascii_lowercase();
+        self.db
+            .notify_change(crate::change_bus::Table::Notifications, Some(norm_pk));
         Ok(())
     }
 
@@ -59,6 +68,9 @@ impl<'a> IgnoredNotificationRepo<'a> {
     ) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
         delete_ignore(&conn, user_pubkey, kind, "", event_id)?;
+        let norm_pk = user_pubkey.trim().to_ascii_lowercase();
+        self.db
+            .notify_change(crate::change_bus::Table::Notifications, Some(norm_pk));
         Ok(())
     }
 

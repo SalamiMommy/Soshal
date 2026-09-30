@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -81,6 +82,7 @@ class NotificationService extends ChangeNotifier
   final Map<String, DateTime> _byTypeFetchedAt = {};
   int _unreadCount = 0;
   bool _isLoading = false;
+  StreamSubscription<List<AppNotification>>? _notificationSub;
 
   /// Category tab results are considered fresh for this long; switching tabs
   /// within the window skips the refetch (DB query) entirely.
@@ -94,9 +96,48 @@ class NotificationService extends ChangeNotifier
   /// Notifications for a category tab (mention/like/reply/message/follow).
   List<AppNotification> byType(String type) => _byType[type] ?? const [];
 
+  @override
+  void dispose() {
+    _notificationSub?.cancel();
+    _notificationSub = null;
+    super.dispose();
+  }
+
+  /// Observe real-time notification stream directly from the Rust SQLite engine.
+  Stream<List<AppNotification>> watchNotifications(String pubkey,
+      {int limit = 50}) {
+    return RustLib.instance.api
+        .crateFfiNotificationsNotificationsWatch(
+          userPubkey: pubkey,
+          limit: limit,
+        )
+        .asyncMap((json) => runOffThreadCompute(parseNotifications, json));
+  }
+
+  /// Subscribe to real-time notification updates, keeping in-memory lists fresh
+  /// and notifying listeners whenever notifications are added or read-states change.
+  void subscribeToNotifications(String pubkey, {int limit = 50}) {
+    _notificationSub?.cancel();
+    _notificationSub = watchNotifications(pubkey, limit: limit).listen((items) {
+      final capped = items.length > 100 ? items.sublist(0, 100) : items;
+      _notifications = capped;
+      _unread = _notifications.where((n) => !n.read).toList();
+      _unreadCount = _unread.length;
+      _isLoading = false;
+      clearLastError();
+      notifyListeners();
+    }, onError: (e, st) {
+      _isLoading = false;
+      setLastError(e, st);
+      notifyListeners();
+    });
+  }
+
   /// Clear all account-scoped state on account switch so Account B never sees
   /// Account A's cached notifications.
   void resetForAccountSwitch() {
+    _notificationSub?.cancel();
+    _notificationSub = null;
     _notifications = [];
     _unread = [];
     _byType.clear();
@@ -110,6 +151,7 @@ class NotificationService extends ChangeNotifier
   /// Fetch recent notifications (all types).
   Future<List<AppNotification>> fetchNotifications(String pubkey,
       {int limit = 50}) async {
+    subscribeToNotifications(pubkey, limit: limit);
     _isLoading = true;
     notifyListeners();
     try {

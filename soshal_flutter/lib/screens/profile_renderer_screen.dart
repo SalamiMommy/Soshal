@@ -1020,12 +1020,9 @@ class _FriendGridWidgetState extends State<_FriendGridWidget> {
       final pubkeys = decoded is List
           ? decoded.whereType<String>().take(widget.limit).toList()
           : <String>[];
-      final profiles = <ProfileInfo>[];
-      for (final pk in pubkeys) {
-        try {
-          profiles.add(await identity.getProfile(pk));
-        } catch (_) {}
-      }
+      // One batched call: the per-pubkey loop cost one blocking FFI round-trip
+      // (and two indexed queries each) per friend.
+      final profiles = await identity.getProfiles(pubkeys);
       if (mounted) setState(() => _friends = profiles);
     } catch (e) {
       debugPrint('friend grid load: $e');

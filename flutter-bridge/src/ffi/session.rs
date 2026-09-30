@@ -609,6 +609,11 @@ pub fn session_switch_account(pubkey: String) -> Result<bool, String> {
             let data = session.clone();
             drop(session_lock);
             persist_session(&data);
+            let _ = super::db::with_db(|db| {
+                soshal_db_core::repos::settings::SettingsRepo::new(db)
+                    .set("active_pubkey", &pubkey)?;
+                Ok(())
+            });
             Ok(true).into()
         } else {
             Err("Account not found".to_string()).into()
@@ -642,9 +647,15 @@ pub fn session_remove_account(pubkey: String) -> Result<bool, String> {
         .map(|s| s.eq_ignore_ascii_case(&pubkey))
         .unwrap_or(false)
     {
-        session.active_pubkey = session.accounts.first().map(|a| a.pubkey.clone());
+        let new_active = session.accounts.first().map(|a| a.pubkey.clone());
+        session.active_pubkey = new_active.clone();
         // Invalidate unlocked signer keys from the removed active account.
         let _ = super::signer::signer_lock();
+        let _ = super::db::with_db(|db| {
+            soshal_db_core::repos::settings::SettingsRepo::new(db)
+                .set("active_pubkey", new_active.as_deref().unwrap_or(""))?;
+            Ok(())
+        });
     }
     // Persist the removal so it survives process kill (matches add/switch).
     let data = session.clone();

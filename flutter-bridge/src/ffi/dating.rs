@@ -5,9 +5,11 @@
 //! reactions targeted at the profile event id. Compatibility scoring and
 //! filtering delegate to dating-core (pure policy, no scoring logic here).
 
+use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
 use soshal_common_core::consts::KIND_PROFILE;
+use soshal_db_core::error::DbError;
 
 const D_TAG: &str = "dating_profile";
 
@@ -484,6 +486,56 @@ pub fn dating_fetch_profiles(
 ) -> Result<String, String> {
     let cards = fetch_profiles_internal(&user_pubkey, limit, &audience)?;
     super::util::json_ok(cards)
+}
+
+/// Observe live dating discovery profiles from the local DB. Streams updated profiles JSON
+/// whenever `posts`, `reactions`, or `blocks` undergoes mutation, with automatic debouncing.
+#[frb(serialize)]
+pub fn dating_watch_profiles(
+    sink: StreamSink<String>,
+    user_pubkey: String,
+    limit: i32,
+    audience: String,
+) -> Result<(), String> {
+    let db = super::db::db_handle()?;
+    let u_pk = user_pubkey.clone();
+    let aud = audience.clone();
+
+    let query_cards = move || -> Result<String, String> {
+        dating_fetch_profiles(u_pk.clone(), limit, aud.clone())
+    };
+
+    let initial = query_cards()?;
+    if sink.add(initial).is_err() {
+        return Ok(());
+    }
+
+    let handle = db
+        .observe(
+            &[
+                soshal_db_core::change_bus::Table::Posts,
+                soshal_db_core::change_bus::Table::Reactions,
+                soshal_db_core::change_bus::Table::Blocks,
+            ],
+            soshal_db_core::observable::ObservableOptions::default()
+                .with_debounce(std::time::Duration::from_millis(50)),
+            move |_db| query_cards().map_err(|e| DbError::Migration(e)),
+        )
+        .map_err(|e| format!("observe failed: {e}"))?;
+
+    let mut rx = handle.subscribe();
+
+    tokio::spawn(async move {
+        let _keep_handle = handle;
+        while rx.changed().await.is_ok() {
+            let val = rx.borrow().clone();
+            if sink.add(val).is_err() {
+                break;
+            }
+        }
+    });
+
+    Ok(())
 }
 
 /// Fetch a single dating profile by profile event id.

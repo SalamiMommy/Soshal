@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -14,6 +15,7 @@ class GroupsService extends ChangeNotifier
     with LastErrorMixin, DeferredNotify, ServiceGuard {
   List<SoshalGroup> _groups = [];
   bool _groupsLoading = false;
+  StreamSubscription<List<SoshalGroup>>? _groupsSub;
   SoshalGroup? _current;
   List<String> _members = [];
   List<GroupMessage> _messages = [];
@@ -52,10 +54,18 @@ class GroupsService extends ChangeNotifier
   List<GroupVoiceChannel> get voiceChannels => _voiceChannels;
   List<GroupVoicePresence> get presence => _presence;
 
+  @override
+  void dispose() {
+    _groupsSub?.cancel();
+    super.dispose();
+  }
+
   /// Clear all account-scoped state on account switch so Account B never
   /// sees Account A's cached groups, members, messages, roles, rooms,
   /// threads, reactions, or voice presences.
   void resetForAccountSwitch() {
+    _groupsSub?.cancel();
+    _groupsSub = null;
     _groups = [];
     _groupsLoading = false;
     _current = null;
@@ -98,6 +108,37 @@ class GroupsService extends ChangeNotifier
     return out;
   }
 
+  /// Reactive stream of groups for [userPubkey], updating live when groups change.
+  Stream<List<SoshalGroup>> watchGroups(String userPubkey,
+      {String audience = 'public'}) {
+    return RustLib.instance.api
+        .crateFfiGroupsGroupsWatchGroups(
+          userPubkey: userPubkey,
+          audience: audience,
+        )
+        .map((json) => _decodeGroups(json));
+  }
+
+  /// Subscribe to live group updates for [userPubkey].
+  void subscribeToGroups(String userPubkey, {String audience = 'public'}) {
+    _groupsSub?.cancel();
+    _groupsLoading = true;
+    notifyDeferred();
+    _groupsSub = watchGroups(userPubkey, audience: audience).listen(
+      (updated) {
+        _groups = updated;
+        _groupsLoading = false;
+        clearLastError();
+        notifyDeferred();
+      },
+      onError: (e, st) {
+        _groupsLoading = false;
+        setLastError(e, st);
+        notifyDeferred();
+      },
+    );
+  }
+
   Future<List<SoshalGroup>> fetchGroups(String userPubkey) async {
     _groupsLoading = true;
     notifyDeferred();
@@ -132,6 +173,40 @@ class GroupsService extends ChangeNotifier
           groupId: groupId,
         );
         return _members;
+      }, onNotify: notifyDeferred);
+
+  /// Loads the group row plus its members, member roles, custom roles, rooms
+  /// and voice channels in one bridge call, populating every corresponding
+  /// field on this service.
+  ///
+  /// All six underlying facets are `#[frb(sync)]`, so awaiting them one after
+  /// another blocks the UI isolate six times over and re-enters Rust six
+  /// times — `Future.wait` cannot overlap them, since a sync fn has already
+  /// run by the time its `Future` is created. Threads and messages stay on
+  /// their own calls: the message list is unbounded (folding it in would move
+  /// a large `jsonDecode` onto the UI isolate) and threads runs its own
+  /// access-control checks whose empty-result paths must keep their
+  /// semantics.
+  Future<void> loadDetailBundle(String groupId) => guard(() {
+        final bundle = jsonDecode(
+          RustLib.instance.api.crateFfiGroupsGroupsGetDetailBundle(
+            groupId: groupId,
+          ),
+        ) as Map<String, dynamic>;
+        _current = SoshalGroup.fromJson(bundle['group'] as Map<String, dynamic>);
+        _members = (bundle['members'] as List<dynamic>).cast<String>();
+        _memberRoles = (bundle['memberRoles'] as List<dynamic>)
+            .map((e) => GroupMemberWithRole.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _roles = (bundle['roles'] as List<dynamic>)
+            .map((e) => GroupRole.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _rooms = (bundle['rooms'] as List<dynamic>)
+            .map((e) => GroupRoom.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _voiceChannels = (bundle['voiceChannels'] as List<dynamic>)
+            .map((e) => GroupVoiceChannel.fromJson(e as Map<String, dynamic>))
+            .toList();
       }, onNotify: notifyDeferred);
 
   Future<bool> join(String groupId, String userPubkey, {String? password}) =>

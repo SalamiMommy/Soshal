@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/notifications_service.dart';
 
@@ -157,6 +158,65 @@ void main() {
       await expectLater(notif.markRead('n-1'), throwsException);
       expect(notif.lastError, contains('db locked'));
       expect(notif.unreadCount, 3);
+    });
+
+    test('watchNotifications parses streamed notifications', () async {
+      final notif = NotificationService();
+      final controller = StreamController<String>();
+      addTearDown(controller.close);
+
+      api.stub(
+        'crateFfiNotificationsNotificationsWatch',
+        (_) => controller.stream,
+      );
+
+      final stream = notif.watchNotifications('me', limit: 20);
+      final emissions = <List<AppNotification>>[];
+      final sub = stream.listen(emissions.add);
+      addTearDown(sub.cancel);
+
+      controller.add('[${notifJson('s-1', 'mention', read: false)}]');
+      await pumpEventQueue();
+
+      expect(emissions.length, 1);
+      expect(emissions[0].single.id, 's-1');
+      expect(emissions[0].single.notificationType, 'mention');
+    });
+
+    test('subscribeToNotifications updates notifications and unreadCount live', () async {
+      final notif = NotificationService();
+      final controller = StreamController<String>();
+      addTearDown(controller.close);
+
+      api.stub(
+        'crateFfiNotificationsNotificationsWatch',
+        (_) => controller.stream,
+      );
+
+      var notified = 0;
+      notif.addListener(() => notified++);
+
+      notif.subscribeToNotifications('me', limit: 50);
+
+      controller.add(
+        '[${notifJson('live-1', 'like', read: false)}, ${notifJson('live-2', 'reply', read: true)}]',
+      );
+      await pumpEventQueue();
+
+      expect(notif.notifications.length, 2);
+      expect(notif.unread.length, 1);
+      expect(notif.unreadCount, 1);
+      expect(notified, greaterThanOrEqualTo(1));
+
+      // Account switch should clean up subscription and clear lists
+      notif.resetForAccountSwitch();
+      expect(notif.notifications.isEmpty, true);
+      expect(notif.unreadCount, 0);
+
+      controller.add('[${notifJson('live-3', 'like', read: false)}]');
+      await pumpEventQueue();
+      // Should remain empty because subscription was cancelled
+      expect(notif.notifications.isEmpty, true);
     });
   });
 }

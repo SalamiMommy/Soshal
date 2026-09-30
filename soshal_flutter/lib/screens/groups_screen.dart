@@ -478,21 +478,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     setState(() => _loading = true);
     try {
       final api = context.read<GroupsService>();
-      await api.getGroup(widget.groupId);
+      // One blocking FFI round-trip for group info, members, member roles,
+      // custom roles, rooms and voice channels (was six).
       try {
-        await api.getMembers(widget.groupId);
+        await api.loadDetailBundle(widget.groupId);
       } catch (e) {
-        debugPrint('group members: $e');
-      }
-      try {
-        await api.fetchMembersWithRoles(widget.groupId);
-      } catch (e) {
-        debugPrint('group roles fetch: $e');
-      }
-      try {
-        await api.fetchRoles(widget.groupId);
-      } catch (e) {
-        debugPrint('group roles: $e');
+        debugPrint('group detail: $e');
       }
       try {
         await api.fetchMessages(widget.groupId);
@@ -500,19 +491,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         debugPrint('group messages: $e');
       }
       try {
-        await api.fetchRooms(widget.groupId);
-      } catch (e) {
-        debugPrint('group rooms: $e');
-      }
-      try {
         await api.fetchThreads(widget.groupId);
       } catch (e) {
         debugPrint('group threads: $e');
-      }
-      try {
-        await api.fetchVoiceChannels(widget.groupId);
-      } catch (e) {
-        debugPrint('group voice: $e');
       }
     } catch (e) {
       debugPrint('group detail: $e');

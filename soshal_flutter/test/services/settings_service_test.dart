@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/settings_service.dart';
 
@@ -76,6 +77,54 @@ void main() {
         sql,
         'UPDATE posts SET is_deleted = 1 WHERE is_deleted = 0',
       );
+    });
+
+    test('watchSetting streams value changes from SQLite', () async {
+      final settings = SettingsService();
+      final controller = StreamController<String>();
+      addTearDown(controller.close);
+
+      api.stub('crateFfiDbDbWatchSetting', (_) => controller.stream);
+
+      final stream = settings.watchSetting('theme');
+      final emissions = <String>[];
+      final sub = stream.listen(emissions.add);
+      addTearDown(sub.cancel);
+
+      controller.add('dark');
+      controller.add('light');
+      await pumpEventQueue();
+
+      expect(emissions, ['dark', 'light']);
+    });
+
+    test('subscribeToSetting updates cached setting and notifies listeners', () async {
+      final settings = SettingsService();
+      final controller = StreamController<String>();
+      addTearDown(controller.close);
+
+      api.stub('crateFfiDbDbWatchSetting', (_) => controller.stream);
+
+      var notified = 0;
+      settings.addListener(() => notified++);
+
+      settings.subscribeToSetting('theme');
+      controller.add('dark');
+      await pumpEventQueue();
+
+      expect(settings.getCachedSetting('theme'), 'dark');
+      expect(notified, 1);
+
+      controller.add('system');
+      await pumpEventQueue();
+
+      expect(settings.getCachedSetting('theme'), 'system');
+      expect(notified, 2);
+
+      settings.dispose();
+      controller.add('light');
+      await pumpEventQueue();
+      expect(settings.getCachedSetting('theme'), 'system');
     });
   });
 }

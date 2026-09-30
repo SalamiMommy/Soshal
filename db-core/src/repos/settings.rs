@@ -17,6 +17,8 @@ impl<'a> SettingsRepo<'a> {
             "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             params![key, value],
         )?;
+        self.db
+            .notify_change(crate::change_bus::Table::Settings, None);
         Ok(())
     }
 
@@ -59,6 +61,8 @@ impl<'a> SettingsRepo<'a> {
     pub fn delete(&self, key: &str) -> Result<(), DbError> {
         let conn = self.db.conn()?;
         crate::query::execute(&conn, "DELETE FROM settings WHERE key = ?1", params![key])?;
+        self.db
+            .notify_change(crate::change_bus::Table::Settings, None);
         Ok(())
     }
 }

@@ -5,6 +5,7 @@
 //! all other domains query through this connection. Raw SQL helpers are kept
 //! for the sparse Dart service layer; domain logic lives in the Rust cores.
 
+use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use libsql::params_from_iter;
 use libsql::Value;
@@ -85,7 +86,7 @@ const COUNTABLE_TABLES: &[&str] = &[
     "zk_state_rollups",
 ];
 
-fn with_db<T>(f: impl FnOnce(&Database) -> Result<T, DbError>) -> Result<T, String> {
+pub(crate) fn with_db<T>(f: impl FnOnce(&Database) -> Result<T, DbError>) -> Result<T, String> {
     let db = {
         let guard = crate::ffi::util::lock(&DB);
         match guard.as_ref() {
@@ -481,8 +482,7 @@ fn raw_sql_allowed(sql: &str) -> bool {
     !lower.contains("settings") && !PROTECTED_SETTING_KEYS.iter().any(|k| lower.contains(k))
 }
 
-/// Internal helper: raw SELECT with bound ?N parameters (Vec<String>),
-/// Internal helper: raw SELECT with bound ?N parameters (Vec<String>),
+/// Internal helper: raw SELECT with bound ?N parameters (`Vec<String>`),
 /// rows as a JSON array of objects. Not an FFI surface.
 pub fn db_query_params(sql: &str, params: &[String]) -> Result<String, String> {
     with_db(|db| {
@@ -629,7 +629,7 @@ pub fn db_execute_raw(sql: String) -> Result<usize, String> {
 }
 
 /// Internal helper: raw INSERT/UPDATE/DELETE with bound ?N parameters
-/// (Vec<String>); returns rows affected. Not an FFI surface.
+/// (`Vec<String>`); returns rows affected. Not an FFI surface.
 pub fn db_execute_params(sql: &str, params: &[String]) -> Result<usize, String> {
     with_db(|db| {
         let conn = db.conn()?;
@@ -700,6 +700,45 @@ pub fn db_get_setting(key: String) -> Result<Option<String>, String> {
             .get(&key)
             .map(|v| v.filter(|s| !s.is_empty()))
     })
+}
+
+/// Observe changes to a setting key. Streams the updated setting value whenever the
+/// `settings` table undergoes mutation. PIN-related keys are denied.
+#[frb(serialize)]
+pub fn db_watch_setting(sink: StreamSink<String>, key: String) -> Result<(), String> {
+    if PROTECTED_SETTING_KEYS.contains(&key.as_str()) {
+        return Err(format!("setting key is protected: {key}"));
+    }
+    let db = db_handle()?;
+    let key_clone = key.clone();
+
+    let handle = db
+        .observe(
+            &[soshal_db_core::change_bus::Table::Settings],
+            soshal_db_core::observable::ObservableOptions::default()
+                .with_debounce(std::time::Duration::from_millis(30)),
+            move |db| {
+                soshal_db_core::repos::settings::SettingsRepo::new(db)
+                    .get(&key_clone)
+                    .map(|v| v.unwrap_or_default())
+            },
+        )
+        .map_err(|e| format!("observe failed: {e}"))?;
+
+    let mut rx = handle.subscribe();
+    let _ = sink.add(handle.current());
+
+    tokio::spawn(async move {
+        let _keep_handle = handle;
+        while rx.changed().await.is_ok() {
+            let val = rx.borrow().clone();
+            if sink.add(val).is_err() {
+                break;
+            }
+        }
+    });
+
+    Ok(())
 }
 
 /// Delete a setting key. PIN-related keys are denied: deleting them would
@@ -1084,6 +1123,15 @@ pub(crate) fn with_db_string<T>(
 ) -> Result<T, String> {
     with_db(|db| f(db).map_err(DbError::Migration))
         .map_err(|e| e.trim_start_matches("db: migration: ").to_string())
+}
+
+/// Returns a clone of the shared [`Database`] handle for setting up observable queries.
+pub(crate) fn db_handle() -> Result<Database, String> {
+    let guard = crate::ffi::util::lock(&DB);
+    match guard.as_ref() {
+        Some(db) => Ok(db.clone()),
+        None => Err("database not initialized".to_string()),
+    }
 }
 
 pub(crate) fn upsert_post_row(

@@ -11,23 +11,14 @@ import 'routes/app_router.dart';
 import 'services/ffi_bridge.dart';
 
 import 'services/auth_service.dart';
-import 'services/feed_service.dart';
 import 'services/session_service.dart';
 import 'services/settings_service.dart';
 import 'services/sync_service.dart';
-import 'services/messaging_service.dart';
+import 'services/messaging_service.dart' show IdentityService;
 import 'services/notifications_service.dart';
-import 'services/search_service.dart';
 import 'services/crypto_service.dart';
-import 'services/dating_service.dart';
-import 'services/events_service.dart';
-import 'services/groups_service.dart';
-import 'services/marketplace_service.dart';
-import 'services/zap_service.dart';
-import 'services/streaming_service.dart';
 import 'services/network_service.dart';
 import 'services/p2p_service.dart';
-import 'services/moderation_service.dart';
 import 'services/ebpf_service.dart';
 import 'services/error_log.dart';
 import 'services/logging_scaffold_messenger.dart';
@@ -37,18 +28,10 @@ import 'services/turso_service.dart';
 import 'services/shell_service.dart';
 import 'services/signer_service.dart';
 import 'services/theme_service.dart';
-import 'services/music_service.dart';
-import 'services/friends_service.dart';
-import 'services/minis_service.dart';
 import 'services/analytics_service.dart';
 import 'services/audit_service.dart';
 import 'services/backup_service.dart';
-import 'services/bookmarks_service.dart';
-import 'services/scheduled_service.dart';
-import 'services/stealth_service.dart';
 import 'services/vouch_service.dart';
-import 'services/calls_service.dart';
-import 'services/chatrandom_service.dart';
 import 'services/daemon_service.dart';
 import 'services/media_service.dart';
 import 'services/mesh_service.dart';
@@ -80,19 +63,9 @@ void main() async {
         ChangeNotifierProvider<TelemetryService>(create: (_) => telemetry),
         ChangeNotifierProvider<LayoutService>(create: (_) => LayoutService()),
         ChangeNotifierProvider(create: (_) => AuthService()),
-        ChangeNotifierProvider(create: (_) => FeedService()),
         ChangeNotifierProvider(create: (_) => SessionService()),
         ChangeNotifierProvider(create: (_) => SyncService()),
-        ChangeNotifierProvider(create: (_) => MessagingService()),
         ChangeNotifierProvider(create: (_) => IdentityService()),
-        ChangeNotifierProvider(create: (_) => NotificationService()),
-        ChangeNotifierProvider(create: (_) => SearchService()),
-        ChangeNotifierProvider(create: (_) => DatingService()),
-        ChangeNotifierProvider(create: (_) => EventsService()),
-        ChangeNotifierProvider(create: (_) => GroupsService()),
-        ChangeNotifierProvider(create: (_) => MarketplaceService()),
-        ChangeNotifierProvider(create: (_) => ZapService()),
-        ChangeNotifierProvider(create: (_) => StreamingService()),
         ChangeNotifierProvider(create: (_) => NetworkService()),
         ChangeNotifierProvider(
           create: (ctx) => MeshService(
@@ -101,27 +74,18 @@ void main() async {
         ),
         ChangeNotifierProvider(create: (_) => ProfileService()),
         ChangeNotifierProvider(create: (_) => P2pService()),
-        ChangeNotifierProvider(create: (_) => ModerationService()),
         ChangeNotifierProvider(create: (_) => EbpfService()),
         ChangeNotifierProvider(create: (_) => TursoService()),
         ChangeNotifierProvider(create: (_) => ShellService()),
         ChangeNotifierProvider(create: (_) => SettingsService()),
         ChangeNotifierProvider(create: (_) => ThemeService()),
-        ChangeNotifierProvider(create: (_) => MusicService()),
-        ChangeNotifierProvider(create: (_) => FriendsService()),
         ChangeNotifierProvider(create: (_) => AnalyticsService()),
         ChangeNotifierProvider(create: (_) => AuditService()),
-        ChangeNotifierProvider(create: (_) => BookmarksService()),
-        ChangeNotifierProvider(create: (_) => ScheduledService()),
-        ChangeNotifierProvider(create: (_) => StealthService()),
         ChangeNotifierProvider(create: (_) => VouchService()),
-        ChangeNotifierProvider(create: (_) => CallsService()),
-        ChangeNotifierProvider(create: (_) => ChatrandomService()),
         ChangeNotifierProvider(create: (_) => MediaService()),
         ChangeNotifierProvider(create: (_) => SignerService()),
         ChangeNotifierProvider(create: (_) => BackupService()),
         ChangeNotifierProvider(create: (_) => CryptoService()),
-        ChangeNotifierProvider(create: (_) => MinisService()),
       ],
       child: const SoshalApp(),
     ),
@@ -197,8 +161,6 @@ class _SoshalAppState extends State<SoshalApp> {
       if (!mounted) return;
       final syncService = context.read<SyncService>();
       syncService.attach(
-        feed: context.read<FeedService>(),
-        messaging: context.read<MessagingService>(),
         p2p: context.read<P2pService>(),
       );
       context.read<SessionService>().attachSync(context.read<SyncService>());
@@ -222,25 +184,6 @@ class _SoshalAppState extends State<SoshalApp> {
         }
       };
       context.read<SessionService>().attachAccountScopedServices(
-            feed: context.read<FeedService>(),
-            messaging: context.read<MessagingService>(),
-            notifications: context.read<NotificationService>(),
-            search: context.read<SearchService>(),
-            dating: context.read<DatingService>(),
-            marketplace: context.read<MarketplaceService>(),
-            events: context.read<EventsService>(),
-            groups: context.read<GroupsService>(),
-            bookmarks: context.read<BookmarksService>(),
-            moderation: context.read<ModerationService>(),
-            calls: context.read<CallsService>(),
-            friends: context.read<FriendsService>(),
-            minis: context.read<MinisService>(),
-            music: context.read<MusicService>(),
-            zap: context.read<ZapService>(),
-            streaming: context.read<StreamingService>(),
-            scheduled: context.read<ScheduledService>(),
-            stealth: context.read<StealthService>(),
-            chatrandom: context.read<ChatrandomService>(),
             p2p: context.read<P2pService>(),
             network: context.read<NetworkService>(),
             turso: context.read<TursoService>(),

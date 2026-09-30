@@ -518,7 +518,7 @@ pub fn media_get_cache_path() -> Result<String, String> {
 }
 
 /// Start a local HTTP range server for media playback (sendfile zero-copy).
-/// Binds 127.0.0.1 on an ephemeral port; /blob/<hash> serves blob files out
+/// Binds 127.0.0.1 on an ephemeral port; `/blob/<hash>` serves blob files out
 /// of the chunk-store cache directory.
 #[frb(sync, serialize)]
 pub fn media_start_local_server() -> Result<u64, String> {

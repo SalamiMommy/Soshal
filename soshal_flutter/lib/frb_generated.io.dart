@@ -11,8 +11,10 @@ import 'ffi/auth.dart';
 import 'ffi/content.dart';
 import 'ffi/daemon.dart';
 import 'ffi/db.dart';
+import 'ffi/feed.dart';
 import 'ffi/h264.dart';
 import 'ffi/media.dart';
+import 'ffi/messaging.dart';
 import 'ffi/network.dart';
 import 'ffi/p2p.dart';
 import 'ffi/permissions.dart';
@@ -56,11 +58,23 @@ CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_ZeroizingStringPtr
 
 @protected RustStreamSink<String> dco_decode_StreamSink_String_Dco(dynamic raw);
 
+@protected RustStreamSink<List<String>> dco_decode_StreamSink_list_String_Dco(dynamic raw);
+
+@protected RustStreamSink<List<DirectMessageDto>> dco_decode_StreamSink_list_direct_message_dto_Dco(dynamic raw);
+
+@protected RustStreamSink<List<FeedPostDto>> dco_decode_StreamSink_list_feed_post_dto_Dco(dynamic raw);
+
 @protected String dco_decode_String(dynamic raw);
 
 @protected bool dco_decode_bool(dynamic raw);
 
+@protected FeedQueryOptions dco_decode_box_autoadd_feed_query_options(dynamic raw);
+
+@protected PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
+
 @protected LocationFixDto dco_decode_box_autoadd_location_fix_dto(dynamic raw);
+
+@protected PostMediaDto dco_decode_box_autoadd_post_media_dto(dynamic raw);
 
 @protected int dco_decode_box_autoadd_u_16(dynamic raw);
 
@@ -68,9 +82,15 @@ CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_ZeroizingStringPtr
 
 @protected DecodedImageRgbaDto dco_decode_decoded_image_rgba_dto(dynamic raw);
 
+@protected DirectMessageDto dco_decode_direct_message_dto(dynamic raw);
+
 @protected double dco_decode_f_32(dynamic raw);
 
 @protected double dco_decode_f_64(dynamic raw);
+
+@protected FeedPostDto dco_decode_feed_post_dto(dynamic raw);
+
+@protected FeedQueryOptions dco_decode_feed_query_options(dynamic raw);
 
 @protected HttpResponseDto dco_decode_http_response_dto(dynamic raw);
 
@@ -83,6 +103,10 @@ CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_ZeroizingStringPtr
 @protected ImpellerFrameBufferInfo dco_decode_impeller_frame_buffer_info(dynamic raw);
 
 @protected List<String> dco_decode_list_String(dynamic raw);
+
+@protected List<DirectMessageDto> dco_decode_list_direct_message_dto(dynamic raw);
+
+@protected List<FeedPostDto> dco_decode_list_feed_post_dto(dynamic raw);
 
 @protected List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
 
@@ -102,7 +126,11 @@ CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_ZeroizingStringPtr
 
 @protected String? dco_decode_opt_String(dynamic raw);
 
+@protected PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
+
 @protected LocationFixDto? dco_decode_opt_box_autoadd_location_fix_dto(dynamic raw);
+
+@protected PostMediaDto? dco_decode_opt_box_autoadd_post_media_dto(dynamic raw);
 
 @protected int? dco_decode_opt_box_autoadd_u_16(dynamic raw);
 
@@ -115,6 +143,8 @@ CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_ZeroizingStringPtr
 @protected P2pPowerDto dco_decode_p_2_p_power_dto(dynamic raw);
 
 @protected P2pSwarmStatusDto dco_decode_p_2_p_swarm_status_dto(dynamic raw);
+
+@protected PostMediaDto dco_decode_post_media_dto(dynamic raw);
 
 @protected PowerStateDto dco_decode_power_state_dto(dynamic raw);
 
@@ -146,11 +176,23 @@ CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_ZeroizingStringPtr
 
 @protected RustStreamSink<String> sse_decode_StreamSink_String_Dco(SseDeserializer deserializer);
 
+@protected RustStreamSink<List<String>> sse_decode_StreamSink_list_String_Dco(SseDeserializer deserializer);
+
+@protected RustStreamSink<List<DirectMessageDto>> sse_decode_StreamSink_list_direct_message_dto_Dco(SseDeserializer deserializer);
+
+@protected RustStreamSink<List<FeedPostDto>> sse_decode_StreamSink_list_feed_post_dto_Dco(SseDeserializer deserializer);
+
 @protected String sse_decode_String(SseDeserializer deserializer);
 
 @protected bool sse_decode_bool(SseDeserializer deserializer);
 
+@protected FeedQueryOptions sse_decode_box_autoadd_feed_query_options(SseDeserializer deserializer);
+
+@protected PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
+
 @protected LocationFixDto sse_decode_box_autoadd_location_fix_dto(SseDeserializer deserializer);
+
+@protected PostMediaDto sse_decode_box_autoadd_post_media_dto(SseDeserializer deserializer);
 
 @protected int sse_decode_box_autoadd_u_16(SseDeserializer deserializer);
 
@@ -158,9 +200,15 @@ CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_ZeroizingStringPtr
 
 @protected DecodedImageRgbaDto sse_decode_decoded_image_rgba_dto(SseDeserializer deserializer);
 
+@protected DirectMessageDto sse_decode_direct_message_dto(SseDeserializer deserializer);
+
 @protected double sse_decode_f_32(SseDeserializer deserializer);
 
 @protected double sse_decode_f_64(SseDeserializer deserializer);
+
+@protected FeedPostDto sse_decode_feed_post_dto(SseDeserializer deserializer);
+
+@protected FeedQueryOptions sse_decode_feed_query_options(SseDeserializer deserializer);
 
 @protected HttpResponseDto sse_decode_http_response_dto(SseDeserializer deserializer);
 
@@ -173,6 +221,10 @@ CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_ZeroizingStringPtr
 @protected ImpellerFrameBufferInfo sse_decode_impeller_frame_buffer_info(SseDeserializer deserializer);
 
 @protected List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+@protected List<DirectMessageDto> sse_decode_list_direct_message_dto(SseDeserializer deserializer);
+
+@protected List<FeedPostDto> sse_decode_list_feed_post_dto(SseDeserializer deserializer);
 
 @protected List<Uint8List> sse_decode_list_list_prim_u_8_strict(SseDeserializer deserializer);
 
@@ -192,7 +244,11 @@ CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_ZeroizingStringPtr
 
 @protected String? sse_decode_opt_String(SseDeserializer deserializer);
 
+@protected PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
+
 @protected LocationFixDto? sse_decode_opt_box_autoadd_location_fix_dto(SseDeserializer deserializer);
+
+@protected PostMediaDto? sse_decode_opt_box_autoadd_post_media_dto(SseDeserializer deserializer);
 
 @protected int? sse_decode_opt_box_autoadd_u_16(SseDeserializer deserializer);
 
@@ -205,6 +261,8 @@ CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_ZeroizingStringPtr
 @protected P2pPowerDto sse_decode_p_2_p_power_dto(SseDeserializer deserializer);
 
 @protected P2pSwarmStatusDto sse_decode_p_2_p_swarm_status_dto(SseDeserializer deserializer);
+
+@protected PostMediaDto sse_decode_post_media_dto(SseDeserializer deserializer);
 
 @protected PowerStateDto sse_decode_power_state_dto(SseDeserializer deserializer);
 
@@ -229,6 +287,18 @@ return cst_encode_String(raw.setupAndSerialize(codec: DcoCodec(
             decodeErrorData: dco_decode_AnyhowException,
         ))); }
 
+@protected ffi.Pointer<wire_cst_list_prim_u_8_strict> cst_encode_StreamSink_list_String_Dco(RustStreamSink<List<String>> raw){ // Codec=Cst (C-struct based), see doc to use other codecs
+return cst_encode_String(raw.setupAndSerialize(codec: DcoCodec(
+            decodeSuccessData: dco_decode_list_String,
+            decodeErrorData: dco_decode_AnyhowException,
+        ))); }
+
+@protected ffi.Pointer<wire_cst_list_prim_u_8_strict> cst_encode_StreamSink_list_direct_message_dto_Dco(RustStreamSink<List<DirectMessageDto>> raw){ // Codec=Cst (C-struct based), see doc to use other codecs
+return cst_encode_String(raw.setupAndSerialize(codec: DcoCodec(
+            decodeSuccessData: dco_decode_list_direct_message_dto,
+            decodeErrorData: dco_decode_AnyhowException,
+        ))); }
+
 @protected ffi.Pointer<wire_cst_list_prim_u_8_strict> cst_encode_String(String raw){ // Codec=Cst (C-struct based), see doc to use other codecs
 return cst_encode_list_prim_u_8_strict(utf8.encoder.convert(raw)); }
 
@@ -236,6 +306,14 @@ return cst_encode_list_prim_u_8_strict(utf8.encoder.convert(raw)); }
 final ans = wire.cst_new_list_String(raw.length);
                 for (var i = 0; i < raw.length; ++i) {
                     ans.ref.ptr[i] = cst_encode_String(raw[i]);
+                }
+                return ans;
+                 }
+
+@protected ffi.Pointer<wire_cst_list_direct_message_dto> cst_encode_list_direct_message_dto(List<DirectMessageDto> raw){ // Codec=Cst (C-struct based), see doc to use other codecs
+final ans = wire.cst_new_list_direct_message_dto(raw.length);
+                for (var i = 0; i < raw.length; ++i) {
+                    cst_api_fill_to_wire_direct_message_dto(raw[i], ans.ref.ptr[i]);
                 }
                 return ans;
                  }
@@ -250,6 +328,15 @@ return raw.toSigned(64).toInt(); }
 
 @protected int cst_encode_usize(BigInt raw){ // Codec=Cst (C-struct based), see doc to use other codecs
 return raw.toSigned(64).toInt(); }
+
+@protected void cst_api_fill_to_wire_direct_message_dto(DirectMessageDto apiObj, wire_cst_direct_message_dto wireObj){ wireObj.id = cst_encode_String(apiObj.id);
+wireObj.sender = cst_encode_String(apiObj.sender);
+wireObj.recipient = cst_encode_String(apiObj.recipient);
+wireObj.content = cst_encode_String(apiObj.content);
+wireObj.created_at = cst_encode_u_64(apiObj.createdAt);
+wireObj.decrypted = cst_encode_bool(apiObj.decrypted);
+wireObj.is_own = cst_encode_bool(apiObj.isOwn);
+wireObj.tags = cst_encode_String(apiObj.tags); }
 
 @protected void cst_api_fill_to_wire_p_2_p_swarm_status_dto(P2pSwarmStatusDto apiObj, wire_cst_p_2_p_swarm_status_dto wireObj){ wireObj.state = cst_encode_String(apiObj.state);
 wireObj.verified_chunks = cst_encode_usize(apiObj.verifiedChunks);
@@ -271,6 +358,8 @@ wireObj.failed_hashes = cst_encode_list_String(apiObj.failedHashes); }
 
 @protected bool cst_encode_bool(bool raw);
 
+@protected int cst_encode_i_32(int raw);
+
 @protected int cst_encode_u_8(int raw);
 
 @protected void cst_encode_unit(void raw);
@@ -291,11 +380,23 @@ wireObj.failed_hashes = cst_encode_list_String(apiObj.failedHashes); }
 
 @protected void sse_encode_StreamSink_String_Dco(RustStreamSink<String> self, SseSerializer serializer);
 
+@protected void sse_encode_StreamSink_list_String_Dco(RustStreamSink<List<String>> self, SseSerializer serializer);
+
+@protected void sse_encode_StreamSink_list_direct_message_dto_Dco(RustStreamSink<List<DirectMessageDto>> self, SseSerializer serializer);
+
+@protected void sse_encode_StreamSink_list_feed_post_dto_Dco(RustStreamSink<List<FeedPostDto>> self, SseSerializer serializer);
+
 @protected void sse_encode_String(String self, SseSerializer serializer);
 
 @protected void sse_encode_bool(bool self, SseSerializer serializer);
 
+@protected void sse_encode_box_autoadd_feed_query_options(FeedQueryOptions self, SseSerializer serializer);
+
+@protected void sse_encode_box_autoadd_i_64(PlatformInt64 self, SseSerializer serializer);
+
 @protected void sse_encode_box_autoadd_location_fix_dto(LocationFixDto self, SseSerializer serializer);
+
+@protected void sse_encode_box_autoadd_post_media_dto(PostMediaDto self, SseSerializer serializer);
 
 @protected void sse_encode_box_autoadd_u_16(int self, SseSerializer serializer);
 
@@ -303,9 +404,15 @@ wireObj.failed_hashes = cst_encode_list_String(apiObj.failedHashes); }
 
 @protected void sse_encode_decoded_image_rgba_dto(DecodedImageRgbaDto self, SseSerializer serializer);
 
+@protected void sse_encode_direct_message_dto(DirectMessageDto self, SseSerializer serializer);
+
 @protected void sse_encode_f_32(double self, SseSerializer serializer);
 
 @protected void sse_encode_f_64(double self, SseSerializer serializer);
+
+@protected void sse_encode_feed_post_dto(FeedPostDto self, SseSerializer serializer);
+
+@protected void sse_encode_feed_query_options(FeedQueryOptions self, SseSerializer serializer);
 
 @protected void sse_encode_http_response_dto(HttpResponseDto self, SseSerializer serializer);
 
@@ -318,6 +425,10 @@ wireObj.failed_hashes = cst_encode_list_String(apiObj.failedHashes); }
 @protected void sse_encode_impeller_frame_buffer_info(ImpellerFrameBufferInfo self, SseSerializer serializer);
 
 @protected void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+@protected void sse_encode_list_direct_message_dto(List<DirectMessageDto> self, SseSerializer serializer);
+
+@protected void sse_encode_list_feed_post_dto(List<FeedPostDto> self, SseSerializer serializer);
 
 @protected void sse_encode_list_list_prim_u_8_strict(List<Uint8List> self, SseSerializer serializer);
 
@@ -337,7 +448,11 @@ wireObj.failed_hashes = cst_encode_list_String(apiObj.failedHashes); }
 
 @protected void sse_encode_opt_String(String? self, SseSerializer serializer);
 
+@protected void sse_encode_opt_box_autoadd_i_64(PlatformInt64? self, SseSerializer serializer);
+
 @protected void sse_encode_opt_box_autoadd_location_fix_dto(LocationFixDto? self, SseSerializer serializer);
+
+@protected void sse_encode_opt_box_autoadd_post_media_dto(PostMediaDto? self, SseSerializer serializer);
 
 @protected void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer);
 
@@ -350,6 +465,8 @@ wireObj.failed_hashes = cst_encode_list_String(apiObj.failedHashes); }
 @protected void sse_encode_p_2_p_power_dto(P2pPowerDto self, SseSerializer serializer);
 
 @protected void sse_encode_p_2_p_swarm_status_dto(P2pSwarmStatusDto self, SseSerializer serializer);
+
+@protected void sse_encode_post_media_dto(PostMediaDto self, SseSerializer serializer);
 
 @protected void sse_encode_power_state_dto(PowerStateDto self, SseSerializer serializer);
 
@@ -1040,6 +1157,24 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_cst_new_list_String');
   late final _cst_new_list_String = _cst_new_list_StringPtr
       .asFunction<ffi.Pointer<wire_cst_list_String> Function(int)>();
+
+  ffi.Pointer<wire_cst_list_direct_message_dto> cst_new_list_direct_message_dto(
+    int len,
+  ) {
+    return _cst_new_list_direct_message_dto(len);
+  }
+
+  late final _cst_new_list_direct_message_dtoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<wire_cst_list_direct_message_dto> Function(ffi.Int32)
+        >
+      >('frbgen_soshal_flutter_cst_new_list_direct_message_dto');
+  late final _cst_new_list_direct_message_dto =
+      _cst_new_list_direct_message_dtoPtr
+          .asFunction<
+            ffi.Pointer<wire_cst_list_direct_message_dto> Function(int)
+          >();
 
   ffi.Pointer<wire_cst_list_prim_u_8_strict> cst_new_list_prim_u_8_strict(
     int len,
@@ -3451,6 +3586,37 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
+  void wire__crate__ffi__dating__dating_watch_profiles(
+    int port_,
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__dating__dating_watch_profiles(
+      port_,
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__dating__dating_watch_profilesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__dating__dating_watch_profiles',
+      );
+  late final _wire__crate__ffi__dating__dating_watch_profiles =
+      _wire__crate__ffi__dating__dating_watch_profilesPtr
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
+
   WireSyncRust2DartSse wire__crate__ffi__db__db_backup(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -4094,6 +4260,35 @@ class RustLibWire implements BaseWire {
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
+
+  void wire__crate__ffi__db__db_watch_setting(
+    int port_,
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__db__db_watch_setting(
+      port_,
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__db__db_watch_settingPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__db__db_watch_setting');
+  late final _wire__crate__ffi__db__db_watch_setting =
+      _wire__crate__ffi__db__db_watch_settingPtr
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
   WireSyncRust2DartSse wire__crate__ffi__ebpf__ebpf_block_ip(
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -4876,6 +5071,37 @@ class RustLibWire implements BaseWire {
       _wire__crate__ffi__feed__feed_fetch_eventsPtr
           .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
+  void wire__crate__ffi__feed__feed_fetch_events_typed(
+    int port_,
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__feed__feed_fetch_events_typed(
+      port_,
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__feed__feed_fetch_events_typedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__feed__feed_fetch_events_typed',
+      );
+  late final _wire__crate__ffi__feed__feed_fetch_events_typed =
+      _wire__crate__ffi__feed__feed_fetch_events_typedPtr
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
+
   void wire__crate__ffi__feed__feed_fetch_thread(
     int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -5049,6 +5275,97 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
+  void wire__crate__ffi__feed__feed_watch_events(
+    int port_,
+    ffi.Pointer<wire_cst_list_prim_u_8_strict> sink,
+    ffi.Pointer<wire_cst_list_prim_u_8_strict> options_json,
+  ) {
+    return _wire__crate__ffi__feed__feed_watch_events(
+      port_,
+      sink,
+      options_json,
+    );
+  }
+
+  late final _wire__crate__ffi__feed__feed_watch_eventsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+            ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__feed__feed_watch_events');
+  late final _wire__crate__ffi__feed__feed_watch_events =
+      _wire__crate__ffi__feed__feed_watch_eventsPtr
+          .asFunction<
+            void Function(
+              int,
+              ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+              ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+            )
+          >();
+
+  void wire__crate__ffi__feed__feed_watch_events_typed(
+    int port_,
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__feed__feed_watch_events_typed(
+      port_,
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__feed__feed_watch_events_typedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__feed__feed_watch_events_typed',
+      );
+  late final _wire__crate__ffi__feed__feed_watch_events_typed =
+      _wire__crate__ffi__feed__feed_watch_events_typedPtr
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
+
+  void wire__crate__ffi__feed__feed_watch_thread(
+    int port_,
+    ffi.Pointer<wire_cst_list_prim_u_8_strict> sink,
+    ffi.Pointer<wire_cst_list_prim_u_8_strict> event_id,
+  ) {
+    return _wire__crate__ffi__feed__feed_watch_thread(port_, sink, event_id);
+  }
+
+  late final _wire__crate__ffi__feed__feed_watch_threadPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+            ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__feed__feed_watch_thread');
+  late final _wire__crate__ffi__feed__feed_watch_thread =
+      _wire__crate__ffi__feed__feed_watch_threadPtr
+          .asFunction<
+            void Function(
+              int,
+              ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+              ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+            )
+          >();
+
   void wire__crate__ffi__geoloc__geoloc_ip_lookup(
     int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -5160,6 +5477,36 @@ class RustLibWire implements BaseWire {
       );
   late final _wire__crate__ffi__groups__groups_fetch_messages =
       _wire__crate__ffi__groups__groups_fetch_messagesPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__groups__groups_get_detail_bundle(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_get_detail_bundle(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_get_detail_bundlePtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__groups__groups_get_detail_bundle',
+      );
+  late final _wire__crate__ffi__groups__groups_get_detail_bundle =
+      _wire__crate__ffi__groups__groups_get_detail_bundlePtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -6114,6 +6461,35 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
+  void wire__crate__ffi__groups__groups_watch_groups(
+    int port_,
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__groups__groups_watch_groups(
+      port_,
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__groups__groups_watch_groupsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__groups__groups_watch_groups');
+  late final _wire__crate__ffi__groups__groups_watch_groups =
+      _wire__crate__ffi__groups__groups_watch_groupsPtr
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
+
   void wire__crate__ffi__guestbook__guestbook_add(
     int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -6544,6 +6920,36 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
+  WireSyncRust2DartSse wire__crate__ffi__identity__identity_fetch_follows_union(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__identity__identity_fetch_follows_union(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__identity__identity_fetch_follows_unionPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__identity__identity_fetch_follows_union',
+      );
+  late final _wire__crate__ffi__identity__identity_fetch_follows_union =
+      _wire__crate__ffi__identity__identity_fetch_follows_unionPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
   WireSyncRust2DartSse wire__crate__ffi__identity__identity_follow_user(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -6630,6 +7036,36 @@ class RustLibWire implements BaseWire {
       );
   late final _wire__crate__ffi__identity__identity_get_profile =
       _wire__crate__ffi__identity__identity_get_profilePtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__identity__identity_get_profiles_batch(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__identity__identity_get_profiles_batch(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__identity__identity_get_profiles_batchPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__identity__identity_get_profiles_batch',
+      );
+  late final _wire__crate__ffi__identity__identity_get_profiles_batch =
+      _wire__crate__ffi__identity__identity_get_profiles_batchPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -6965,6 +7401,40 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__identity__identity_verify_nip05 =
       _wire__crate__ffi__identity__identity_verify_nip05Ptr
           .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
+
+  void wire__crate__ffi__identity__identity_watch_profile(
+    int port_,
+    ffi.Pointer<wire_cst_list_prim_u_8_strict> sink,
+    ffi.Pointer<wire_cst_list_prim_u_8_strict> pubkey,
+  ) {
+    return _wire__crate__ffi__identity__identity_watch_profile(
+      port_,
+      sink,
+      pubkey,
+    );
+  }
+
+  late final _wire__crate__ffi__identity__identity_watch_profilePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+            ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__identity__identity_watch_profile',
+      );
+  late final _wire__crate__ffi__identity__identity_watch_profile =
+      _wire__crate__ffi__identity__identity_watch_profilePtr
+          .asFunction<
+            void Function(
+              int,
+              ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+              ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+            )
+          >();
 
   WireSyncRust2DartSse wire__crate__ffi__marketplace__marketplace_create_escrow(
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -7884,6 +8354,37 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
+  void wire__crate__ffi__marketplace__marketplace_watch_listings(
+    int port_,
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__marketplace__marketplace_watch_listings(
+      port_,
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__marketplace__marketplace_watch_listingsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__marketplace__marketplace_watch_listings',
+      );
+  late final _wire__crate__ffi__marketplace__marketplace_watch_listings =
+      _wire__crate__ffi__marketplace__marketplace_watch_listingsPtr
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
+
   WireSyncRust2DartSse wire__crate__ffi__media__media_chunking_for_mime(
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
@@ -8358,6 +8859,36 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
+  WireSyncRust2DartSse wire__crate__ffi__messaging__messaging_fetch_dms_typed(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__messaging__messaging_fetch_dms_typed(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__messaging__messaging_fetch_dms_typedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__messaging__messaging_fetch_dms_typed',
+      );
+  late final _wire__crate__ffi__messaging__messaging_fetch_dms_typed =
+      _wire__crate__ffi__messaging__messaging_fetch_dms_typedPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
   void wire__crate__ffi__messaging__messaging_send_dm(
     int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -8475,6 +9006,116 @@ class RustLibWire implements BaseWire {
       _wire__crate__ffi__messaging__messaging_store_dmsPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  void wire__crate__ffi__messaging__messaging_watch_conversations(
+    int port_,
+    ffi.Pointer<wire_cst_list_prim_u_8_strict> sink,
+    ffi.Pointer<wire_cst_list_prim_u_8_strict> pubkey,
+  ) {
+    return _wire__crate__ffi__messaging__messaging_watch_conversations(
+      port_,
+      sink,
+      pubkey,
+    );
+  }
+
+  late final _wire__crate__ffi__messaging__messaging_watch_conversationsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+            ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__messaging__messaging_watch_conversations',
+      );
+  late final _wire__crate__ffi__messaging__messaging_watch_conversations =
+      _wire__crate__ffi__messaging__messaging_watch_conversationsPtr
+          .asFunction<
+            void Function(
+              int,
+              ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+              ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+            )
+          >();
+
+  void wire__crate__ffi__messaging__messaging_watch_dms(
+    int port_,
+    ffi.Pointer<wire_cst_list_prim_u_8_strict> sink,
+    ffi.Pointer<wire_cst_list_prim_u_8_strict> with_pubkey,
+    int limit,
+  ) {
+    return _wire__crate__ffi__messaging__messaging_watch_dms(
+      port_,
+      sink,
+      with_pubkey,
+      limit,
+    );
+  }
+
+  late final _wire__crate__ffi__messaging__messaging_watch_dmsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+            ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__messaging__messaging_watch_dms',
+      );
+  late final _wire__crate__ffi__messaging__messaging_watch_dms =
+      _wire__crate__ffi__messaging__messaging_watch_dmsPtr
+          .asFunction<
+            void Function(
+              int,
+              ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+              ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+              int,
+            )
+          >();
+
+  void wire__crate__ffi__messaging__messaging_watch_dms_typed(
+    int port_,
+    ffi.Pointer<wire_cst_list_prim_u_8_strict> sink,
+    ffi.Pointer<wire_cst_list_prim_u_8_strict> with_pubkey,
+    int limit,
+  ) {
+    return _wire__crate__ffi__messaging__messaging_watch_dms_typed(
+      port_,
+      sink,
+      with_pubkey,
+      limit,
+    );
+  }
+
+  late final _wire__crate__ffi__messaging__messaging_watch_dms_typedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+            ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__messaging__messaging_watch_dms_typed',
+      );
+  late final _wire__crate__ffi__messaging__messaging_watch_dms_typed =
+      _wire__crate__ffi__messaging__messaging_watch_dms_typedPtr
+          .asFunction<
+            void Function(
+              int,
+              ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+              ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+              int,
+            )
           >();
 
   WireSyncRust2DartSse wire__crate__ffi__minis__minis_fetch(
@@ -8671,6 +9312,35 @@ class RustLibWire implements BaseWire {
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
+
+  void wire__crate__ffi__minis__minis_watch(
+    int port_,
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__minis__minis_watch(
+      port_,
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__minis__minis_watchPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('frbgen_soshal_flutter_wire__crate__ffi__minis__minis_watch');
+  late final _wire__crate__ffi__minis__minis_watch =
+      _wire__crate__ffi__minis__minis_watchPtr
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
   WireSyncRust2DartSse
   wire__crate__ffi__moderation__moderation_ai_classify_media(
@@ -11546,6 +12216,37 @@ class RustLibWire implements BaseWire {
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
+
+  void wire__crate__ffi__notifications__notifications_watch(
+    int port_,
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__notifications__notifications_watch(
+      port_,
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__notifications__notifications_watchPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_watch',
+      );
+  late final _wire__crate__ffi__notifications__notifications_watch =
+      _wire__crate__ffi__notifications__notifications_watchPtr
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
   WireSyncRust2DartSse wire__crate__ffi__p2p__p2p_decode_fountain_payload(
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -16155,6 +16856,11 @@ const int MAX_DECODE_OUTPUT_PIXELS = 8388608;
 
 
 
+/* frb 2.12.0 codegen splice: stray allocator fragment outside a class body.
+   Removed by hand; see AGENTS.md "KNOWN codegen bug". */
+
+
+
 typedef __ssize_t = ffi.Long;
 typedef Dart__ssize_t = int;
 typedef aaudio_result_t = ffi.Int32;
@@ -16162,6 +16868,47 @@ typedef Dartaaudio_result_t = int;
 typedef mediastatus_t = ffi.Int32;
 typedef Dartmediastatus_t = int;
 typedef ssize_t = __ssize_t;
+
+final class wire_cst_direct_message_dto extends ffi.Struct {
+  external ffi.Pointer<wire_cst_list_prim_u_8_strict> id;
+
+  external ffi.Pointer<wire_cst_list_prim_u_8_strict> sender;
+
+  external ffi.Pointer<wire_cst_list_prim_u_8_strict> recipient;
+
+  external ffi.Pointer<wire_cst_list_prim_u_8_strict> content;
+
+  @ffi.Uint64()
+  external int created_at;
+
+  @ffi.Bool()
+  external bool decrypted;
+
+  @ffi.Bool()
+  external bool is_own;
+
+  external ffi.Pointer<wire_cst_list_prim_u_8_strict> tags;
+
+  static ffi.Pointer<wire_cst_direct_message_dto> $allocate(
+    ffi.Allocator $allocator, {
+    required ffi.Pointer<wire_cst_list_prim_u_8_strict> id,
+    required ffi.Pointer<wire_cst_list_prim_u_8_strict> sender,
+    required ffi.Pointer<wire_cst_list_prim_u_8_strict> recipient,
+    required ffi.Pointer<wire_cst_list_prim_u_8_strict> content,
+    required int created_at,
+    required bool decrypted,
+    required bool is_own,
+    required ffi.Pointer<wire_cst_list_prim_u_8_strict> tags,
+  }) => $allocator<wire_cst_direct_message_dto>()
+    ..ref.id = id
+    ..ref.sender = sender
+    ..ref.recipient = recipient
+    ..ref.content = content
+    ..ref.created_at = created_at
+    ..ref.decrypted = decrypted
+    ..ref.is_own = is_own
+    ..ref.tags = tags;
+}
 
 final class wire_cst_list_String extends ffi.Struct {
   external ffi.Pointer<ffi.Pointer<wire_cst_list_prim_u_8_strict>> ptr;
@@ -16174,6 +16921,21 @@ final class wire_cst_list_String extends ffi.Struct {
     required ffi.Pointer<ffi.Pointer<wire_cst_list_prim_u_8_strict>> ptr,
     required int len,
   }) => $allocator<wire_cst_list_String>()
+    ..ref.ptr = ptr
+    ..ref.len = len;
+}
+
+final class wire_cst_list_direct_message_dto extends ffi.Struct {
+  external ffi.Pointer<wire_cst_direct_message_dto> ptr;
+
+  @ffi.Int32()
+  external int len;
+
+  static ffi.Pointer<wire_cst_list_direct_message_dto> $allocate(
+    ffi.Allocator $allocator, {
+    required ffi.Pointer<wire_cst_direct_message_dto> ptr,
+    required int len,
+  }) => $allocator<wire_cst_list_direct_message_dto>()
     ..ref.ptr = ptr
     ..ref.len = len;
 }

@@ -89,20 +89,20 @@ class SessionService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   TursoService? _turso;
   ShellService? _shell;
 
-  /// Attach the account-scoped services (wired from main.dart) so an account
+  /// Attach the account-scoped services (wired from main.dart or tests) so an account
   /// switch can clear their caches before the new account's data arrives.
   void attachAccountScopedServices({
-    required FeedService feed,
-    required MessagingService messaging,
-    required NotificationService notifications,
-    required SearchService search,
-    required DatingService dating,
-    required MarketplaceService marketplace,
-    required EventsService events,
-    required GroupsService groups,
-    required BookmarksService bookmarks,
-    required ModerationService moderation,
-    required CallsService calls,
+    FeedService? feed,
+    MessagingService? messaging,
+    NotificationService? notifications,
+    SearchService? search,
+    DatingService? dating,
+    MarketplaceService? marketplace,
+    EventsService? events,
+    GroupsService? groups,
+    BookmarksService? bookmarks,
+    ModerationService? moderation,
+    CallsService? calls,
     FriendsService? friends,
     MinisService? minis,
     MusicService? music,

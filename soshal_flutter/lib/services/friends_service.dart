@@ -87,6 +87,20 @@ class FriendsService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
         );
       });
 
+  /// The deduped union of the follow lists of many accounts, as a `List<String>`.
+  ///
+  /// `fetchFollows` is a `#[frb(sync)]` call, so walking a list of accounts with
+  /// `await` in a loop does 25 blocking FFI round-trips on the UI isolate —
+  /// `Future.wait` cannot help, because the calls already ran by the time the
+  /// list literal was built. This collapses the whole traversal into one bridge
+  /// call and one `WHERE pubkey IN (...)` query on the Rust side.
+  Future<List<String>> fetchFollowsUnion(List<String> pubkeys) => guard(() {
+        final raw = RustLib.instance.api
+            .crateFfiIdentityIdentityFetchFollowsUnion(pubkeys: pubkeys);
+        final decoded = jsonDecode(raw);
+        return decoded is List ? decoded.whereType<String>().toList() : <String>[];
+      });
+
   /// Add a profile to the in-memory contact list.
   void addContact(ProfileInfo profile) {
     if (_contacts.any((c) => c.pubkey == profile.pubkey)) return;
@@ -131,16 +145,14 @@ class FriendsService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
           fof.addAll(sugg);
         } catch (_) {}
 
-        // Traverse first-degree follows to expand friends of friends
-        for (final f in follows.take(25)) {
-          try {
-            final raw = await fetchFollows(f);
-            final decoded = jsonDecode(raw);
-            if (decoded is List) {
-              fof.addAll(decoded.whereType<String>());
-            }
-          } catch (_) {}
-        }
+        // Traverse first-degree follows to expand friends of friends. One
+        // batched call instead of 25 sequential `fetchFollows` round-trips:
+        // `fetchFollows` is a sync FFI fn, so each `await` in that loop cost a
+        // full UI-isolate block. The batch merges the lists in the same
+        // first-occurrence order, so `fof` ends up identical either way.
+        try {
+          fof.addAll(await fetchFollowsUnion(follows.take(25).toList()));
+        } catch (_) {}
         fof.remove(myPubkey);
         _fofPubkeys = fof;
         _loadedForPubkey = myPubkey;

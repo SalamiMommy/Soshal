@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -85,6 +86,100 @@ void main() {
       expect(groups.current?.id, 'g-1', reason: 'current getter updated');
       final inv = api.callsOf('crateFfiGroupsGroupsGetGroupInfo').single;
       expect(api.namedArg(inv, 'groupId'), 'g-1');
+    });
+
+    test('loadDetailBundle populates every small facet in one call', () async {
+      final groups = GroupsService();
+      api.stubString(
+        'crateFfiGroupsGroupsGetDetailBundle',
+        jsonEncode({
+          'group': {
+            'id': 'g-1',
+            'name': 'Nostr Devs',
+            'description': 'builders',
+            'picture': '',
+            'owner': 'pk-owner',
+            'members': 2,
+            'is_member': true,
+            'role': 'admin',
+            'created_at': 1700000000,
+          },
+          'members': ['pk-a', 'pk-b'],
+          'memberRoles': [
+            {'pubkey': 'pk-a', 'role': 'mod'},
+          ],
+          'roles': [
+            {
+              'id': 'role-1',
+              'group_id': 'g-1',
+              'name': 'Mod',
+              'color': '#0f0',
+              'position': 1,
+              'permissions': 'read',
+              'created_at': 0,
+            },
+          ],
+          'rooms': [
+            {
+              'id': 'room-1',
+              'group_id': 'g-1',
+              'name': 'general',
+              'topic': '',
+              'emoji': ':speech_balloon:',
+              'color': '',
+              'position': 0,
+              'created_by': 'pk-owner',
+              'created_at': 0,
+            },
+          ],
+          'voiceChannels': [
+            {
+              'id': 'vc-1',
+              'group_id': 'g-1',
+              'name': 'stage',
+              'position': 0,
+              'created_by': 'pk-owner',
+              'created_at': 0,
+            },
+          ],
+        }),
+      );
+
+      await groups.loadDetailBundle('g-1');
+
+      final inv = api.callsOf('crateFfiGroupsGroupsGetDetailBundle').single;
+      expect(api.namedArg(inv, 'groupId'), 'g-1');
+      // The individual facet calls must not be made any more.
+      expect(api.callCount('crateFfiGroupsGroupsGetGroupInfo'), 0);
+      expect(api.callCount('crateFfiGroupsGroupsGetMembers'), 0);
+      expect(api.callCount('crateFfiGroupsGroupsMembersWithRoles'), 0);
+      expect(api.callCount('crateFfiGroupsGroupsRolesList'), 0);
+      expect(api.callCount('crateFfiGroupsGroupsRoomsList'), 0);
+      expect(api.callCount('crateFfiGroupsGroupsVoiceChannelsList'), 0);
+
+      expect(groups.current?.id, 'g-1');
+      expect(groups.current?.isMember, isTrue);
+      expect(groups.members, ['pk-a', 'pk-b']);
+      expect(groups.memberRoles.single.pubkey, 'pk-a');
+      expect(groups.memberRoles.single.role, 'mod');
+      expect(groups.roles.single.name, 'Mod');
+      expect(groups.rooms.single.name, 'general');
+      expect(groups.voiceChannels.single.name, 'stage');
+      expect(groups.lastError, isNull);
+    });
+
+    test('loadDetailBundle surfaces a bridge failure', () async {
+      final groups = GroupsService();
+      api.stub('crateFfiGroupsGroupsGetDetailBundle',
+          (_) => throw Exception('db: NotFound'));
+
+      await expectLater(
+        groups.loadDetailBundle('missing'),
+        throwsA(anything),
+      );
+
+      expect(groups.current, isNull);
+      expect(groups.lastError.toString(), contains('NotFound'));
     });
 
     test('create returns group id and passes all named args', () async {
@@ -295,5 +390,38 @@ void main() {
       expect(api.namedArg(inv, 'emoji'), '🎉');
       expect(api.namedArg(inv, 'pubkey'), 'pk-me');
     });
+
+    test('watchGroups and subscribeToGroups stream updates live from bridge', () async {
+      final groups = GroupsService();
+      final controller = StreamController<String>.broadcast();
+      addTearDown(controller.close);
+
+      api.stub('crateFfiGroupsGroupsWatchGroups', (_) => controller.stream);
+
+      final emissions = <List<SoshalGroup>>[];
+      final sub = groups.watchGroups('pk-me').listen(emissions.add);
+      addTearDown(sub.cancel);
+
+      groups.subscribeToGroups('pk-me');
+      expect(groups.groupsLoading, isTrue);
+
+      const groupPayload =
+          '[{"id":"g-live","name":"Live Group","description":"desc","picture":"","owner":"pk-owner","members":5,"is_member":true,"role":"member","created_at":1700000000}]';
+
+      controller.add(groupPayload);
+      await pumpEventQueue();
+
+      expect(emissions.length, 1);
+      expect(emissions[0].first.id, 'g-live');
+      expect(groups.groups.length, 1);
+      expect(groups.groups.first.name, 'Live Group');
+      expect(groups.groupsLoading, isFalse);
+
+      groups.resetForAccountSwitch();
+      controller.add('[]');
+      await pumpEventQueue();
+      expect(groups.groups.isEmpty, isTrue);
+    });
   });
 }
+

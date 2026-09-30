@@ -20,6 +20,7 @@ pub enum Table {
     Bookmarks,
     Settings,
     Relays,
+    Groups,
 }
 
 /// An event describing a committed mutation on a database table.

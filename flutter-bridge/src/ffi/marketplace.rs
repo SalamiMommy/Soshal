@@ -6,9 +6,11 @@
 //! flow: content built via marketplace-core, signed by the unlocked signer,
 //! and the signed event returned for relay publish.
 
+use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
 use soshal_common_core::consts::{KIND_LISTING, KIND_ORDER};
+use soshal_db_core::error::DbError;
 use soshal_db_core::repos::escrow::EscrowRepo;
 
 /// Marketplace listing info
@@ -256,6 +258,49 @@ pub fn marketplace_fetch_listings(
         }
         None => super::util::json_ok(db_listings(sql)?),
     }
+}
+
+/// Observe live marketplace listings from the local DB. Streams updated listings JSON
+/// whenever the `posts` table undergoes mutation, with automatic debouncing.
+#[frb(serialize)]
+pub fn marketplace_watch_listings(
+    sink: StreamSink<String>,
+    limit: i32,
+    audience: String,
+) -> Result<(), String> {
+    let db = super::db::db_handle()?;
+    let aud = audience.clone();
+
+    let query_listings =
+        move || -> Result<String, String> { marketplace_fetch_listings(limit, 0, aud.clone()) };
+
+    let initial = query_listings()?;
+    if sink.add(initial).is_err() {
+        return Ok(());
+    }
+
+    let handle = db
+        .observe(
+            &[soshal_db_core::change_bus::Table::Posts],
+            soshal_db_core::observable::ObservableOptions::default()
+                .with_debounce(std::time::Duration::from_millis(50)),
+            move |_db| query_listings().map_err(|e| DbError::Migration(e)),
+        )
+        .map_err(|e| format!("observe failed: {e}"))?;
+
+    let mut rx = handle.subscribe();
+
+    tokio::spawn(async move {
+        let _keep_handle = handle;
+        while rx.changed().await.is_ok() {
+            let val = rx.borrow().clone();
+            if sink.add(val).is_err() {
+                break;
+            }
+        }
+    });
+
+    Ok(())
 }
 
 /// Full-text search on listing content (title/description).

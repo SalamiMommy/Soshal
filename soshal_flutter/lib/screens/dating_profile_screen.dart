@@ -192,9 +192,9 @@ class _DatingProfileScreenState extends State<DatingProfileScreen> {
       if (!location.ok) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: SelectableText(
-                  'IP location unavailable: ${location.error}'
-                  '\n\nTip: enter lat,lon or a geohash manually below.')));
+              content:
+                  SelectableText('IP location unavailable: ${location.error}'
+                      '\n\nTip: enter lat,lon or a geohash manually below.')));
         }
         return;
       }

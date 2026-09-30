@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -8,6 +9,35 @@ import 'crypto_service.dart';
 /// Settings key/value persistence plus storage statistics and destructive
 /// post purges. Thin wrapper over the db FFI — screens own their UI state.
 class SettingsService extends ChangeNotifier {
+  final Map<String, StreamSubscription<String>> _settingSubscriptions = {};
+  final Map<String, String> _settingCache = {};
+
+  @override
+  void dispose() {
+    for (final sub in _settingSubscriptions.values) {
+      sub.cancel();
+    }
+    _settingSubscriptions.clear();
+    super.dispose();
+  }
+
+  /// Observe changes to a setting key as a real-time stream directly from Rust SQLite.
+  Stream<String> watchSetting(String key) {
+    return RustLib.instance.api.crateFfiDbDbWatchSetting(key: key);
+  }
+
+  /// Read cached setting or load from bridge.
+  String getCachedSetting(String key) => _settingCache[key] ?? getSetting(key);
+
+  /// Observe a setting key, keeping [_settingCache] up to date and notifying listeners on changes.
+  void subscribeToSetting(String key) {
+    if (_settingSubscriptions.containsKey(key)) return;
+    _settingSubscriptions[key] = watchSetting(key).listen((val) {
+      _settingCache[key] = val;
+      notifyListeners();
+    });
+  }
+
   /// Read a persisted setting; empty string when unset.
   String getSetting(String key) =>
       RustLib.instance.api.crateFfiDbDbGetSetting(key: key) ?? '';

@@ -1,7 +1,9 @@
 //! Minis FFI module
 //! Minis, Musicloud, custom profiles
 
+use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
+use soshal_db_core::error::DbError;
 use soshal_db_core::repos::saved::{SavedContentRepo, SavedContentRow};
 use soshal_media_core::cas::ChunkStore;
 use soshal_minis_core::events as minis_events;
@@ -152,7 +154,49 @@ pub fn minis_fetch(audience: String) -> Result<String, String> {
     super::util::json_ok(out)
 }
 
+/// Observe live minis from the local DB. Streams updated minis JSON
+/// whenever the `posts` or `reactions` table undergoes mutation, with automatic debouncing.
+#[frb(serialize)]
+pub fn minis_watch(sink: StreamSink<String>, audience: String) -> Result<(), String> {
+    let db = super::db::db_handle()?;
+    let aud = audience.clone();
+
+    let query_minis = move || -> Result<String, String> { minis_fetch(aud.clone()) };
+
+    let initial = query_minis()?;
+    if sink.add(initial).is_err() {
+        return Ok(());
+    }
+
+    let handle = db
+        .observe(
+            &[
+                soshal_db_core::change_bus::Table::Posts,
+                soshal_db_core::change_bus::Table::Reactions,
+            ],
+            soshal_db_core::observable::ObservableOptions::default()
+                .with_debounce(std::time::Duration::from_millis(50)),
+            move |_db| query_minis().map_err(|e| DbError::Migration(e)),
+        )
+        .map_err(|e| format!("observe failed: {e}"))?;
+
+    let mut rx = handle.subscribe();
+
+    tokio::spawn(async move {
+        let _keep_handle = handle;
+        while rx.changed().await.is_ok() {
+            let val = rx.borrow().clone();
+            if sink.add(val).is_err() {
+                break;
+            }
+        }
+    });
+
+    Ok(())
+}
+
 /// Publish a mini video (kind 31020). `media_source` is a local video file
+
 /// path or an https media URL; the bytes are uploaded to the local chunk
 /// store (CAS) and the event carries the feed `["media", ...]` blob tag so
 /// other devices fetch it from the publisher's or any peer's cache. When

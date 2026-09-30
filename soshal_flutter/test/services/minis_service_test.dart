@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/minis_service.dart';
 
@@ -139,6 +140,90 @@ void main() {
       );
       expect(minis.wasmRuntimeUnavailable, isFalse);
       expect(minis.lastError, isNull);
+    });
+
+    test('watchMinis and subscribeToMinis stream updates live from bridge', () async {
+      final minis = MinisService();
+      final controller = StreamController<String>.broadcast();
+      addTearDown(controller.close);
+
+      api.stub('crateFfiMinisMinisWatch', (_) => controller.stream);
+
+      final emissions = <List<MiniItem>>[];
+      final sub = minis.watchMinis().listen(emissions.add);
+      addTearDown(sub.cancel);
+
+      minis.subscribeToMinis();
+      expect(minis.minisLoading, isTrue);
+
+      const miniPayload =
+          '[{"id":"m-live","pubkey":"pk-1","videoUrl":"blob://live",'
+          '"blobHash":"livehash","mediaSize":1024,"textOverlay":"live mini",'
+          '"thumbnail":"","audience":"public","createdAt":1700000000}]';
+
+      controller.add(miniPayload);
+      await pumpEventQueue();
+
+      expect(emissions.length, 1);
+      expect(emissions[0].first.id, 'm-live');
+      expect(minis.minis.length, 1);
+      expect(minis.minis.first.textOverlay, 'live mini');
+      expect(minis.minisLoading, isFalse);
+
+      minis.resetForAccountSwitch();
+      controller.add('[]');
+      await pumpEventQueue();
+      expect(minis.minis.isEmpty, isTrue);
+    });
+
+    test('watchMinis forwards source and parse errors to subscribers', () async {
+      final minis = MinisService();
+      final controller = StreamController<String>.broadcast();
+      addTearDown(controller.close);
+      api.stub('crateFfiMinisMinisWatch', (_) => controller.stream);
+
+      final errors = <Object>[];
+      final sub = minis.watchMinis().listen(
+        (_) {},
+        onError: errors.add,
+      );
+      addTearDown(sub.cancel);
+
+      // Source-side error.
+      controller.addError(Exception('bridge down'));
+      await pumpEventQueue();
+      expect(errors, hasLength(1));
+
+      // Mapper-side error: the parse runs behind `asyncMap`, so a malformed
+      // payload must surface rather than being swallowed.
+      controller.add('not json');
+      await pumpEventQueue();
+      expect(errors.length, 2);
+    });
+
+    test('fetchSavedMinis decodes the saved list into state', () async {
+      final minis = MinisService();
+      api.stubString(
+        'crateFfiMinisMinisSaved',
+        '[{"id":"m-saved","pubkey":"pk-1","videoUrl":"blob://saved",'
+            '"blobHash":"h","mediaSize":7,"textOverlay":"kept",'
+            '"thumbnail":"","audience":"public","createdAt":1700000000}]',
+      );
+
+      final out = await minis.fetchSavedMinis();
+
+      expect(out.single.id, 'm-saved');
+      expect(out.single.textOverlay, 'kept');
+      expect(minis.savedMinis.single.id, 'm-saved');
+      expect(minis.lastError, isNull);
+    });
+
+    test('fetchSavedMinis failure records the error', () async {
+      final minis = MinisService();
+      api.stub('crateFfiMinisMinisSaved', (_) => throw Exception('saved down'));
+
+      await expectLater(minis.fetchSavedMinis(), throwsException);
+      expect(minis.lastError.toString(), contains('saved down'));
     });
   });
 }

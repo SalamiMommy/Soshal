@@ -1,4 +1,6 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/friends_service.dart';
 import 'package:soshal_flutter/services/messaging_service.dart';
@@ -133,6 +135,36 @@ void main() {
       expect(friends.lastError, isNull);
     });
 
+    test('fetchFollowsUnion returns the decoded deduped array', () async {
+      final friends = FriendsService();
+      api.stub('crateFfiIdentityIdentityFetchFollowsUnion', (inv) {
+        final pks = api.namedArg(inv, 'pubkeys') as List<dynamic>;
+        return jsonEncode(['u-${pks.length}']);
+      });
+
+      final out = await friends.fetchFollowsUnion(['a', 'b', 'c']);
+
+      expect(out, ['u-3']);
+      final inv = api.callsOf('crateFfiIdentityIdentityFetchFollowsUnion').single;
+      expect(api.namedArg(inv, 'pubkeys'), ['a', 'b', 'c']);
+    });
+
+    test('fetchFollowsUnion tolerates a non-array payload and empty input',
+        () async {
+      final friends = FriendsService();
+      api.stub('crateFfiIdentityIdentityFetchFollowsUnion', (_) => 'null');
+      expect(await friends.fetchFollowsUnion(['a']), isEmpty);
+      expect(await friends.fetchFollowsUnion(const []), isEmpty);
+    });
+
+    test('fetchFollowsUnion surfaces a bridge failure', () async {
+      final friends = FriendsService();
+      api.stub('crateFfiIdentityIdentityFetchFollowsUnion',
+          (_) => throw Exception('db down'));
+      await expectLater(friends.fetchFollowsUnion(['a']), throwsException);
+      expect(friends.lastError.toString(), contains('db down'));
+    });
+
     test('AudienceFilter metadata properties', () {
       expect(AudienceFilter.all.label, 'All');
       expect(AudienceFilter.all.shortLabel, 'All');
@@ -190,9 +222,20 @@ void main() {
         }
         return '[]';
       });
+      api.stub('crateFfiIdentityIdentityFetchFollowsUnion', (inv) {
+        final pks = api.namedArg(inv, 'pubkeys') as List<dynamic>;
+        return pks.contains('pk-friend-1') ? '["pk-fof-1"]' : '[]';
+      });
       api.stubListString('crateFfiSocialSocialFriendSuggestions', const []);
 
       await friends.loadAudienceGraph('my-pk', force: true);
+
+      // The friends-of-friends traversal is one batched call carrying every
+      // first-degree follow, not one `fetchFollows` per follow.
+      expect(api.callCount('crateFfiIdentityIdentityFetchFollowsUnion'), 1);
+      final unionInv = api.callsOf('crateFfiIdentityIdentityFetchFollowsUnion').single;
+      expect(api.namedArg(unionInv, 'pubkeys'), ['pk-friend-1']);
+      expect(api.callCount('crateFfiIdentityIdentityFetchFollows'), 1);
 
       final items = [
         {'id': 1, 'pk': 'my-pk'},

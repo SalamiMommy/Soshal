@@ -41,7 +41,12 @@ impl<'a> BookmarkRepo<'a> {
             self.upsert_in(&tx, row).await?;
             tx.commit().await?;
             Ok(())
-        })
+        })?;
+        self.db.notify_change(
+            crate::change_bus::Table::Bookmarks,
+            Some(row.pubkey.trim().to_ascii_lowercase()),
+        );
+        Ok(())
     }
 
     pub async fn upsert_in(
@@ -90,6 +95,8 @@ impl<'a> BookmarkRepo<'a> {
             "DELETE FROM bookmarks WHERE LOWER(id) = LOWER(?1)",
             params![id.trim()],
         )?;
+        self.db
+            .notify_change(crate::change_bus::Table::Bookmarks, None);
         Ok(())
     }
 

@@ -50,6 +50,7 @@ reqwest = { workspace = true }
 keyring = { workspace = true }
 rustls = { workspace = true }
 url = { workspace = true }
+rayon = { workspace = true }
 
 # FFI-specific dependencies
 flutter_rust_bridge = "=2.12.0"

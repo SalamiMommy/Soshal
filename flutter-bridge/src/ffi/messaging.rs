@@ -5,6 +5,7 @@
 //! kind-1059 path at the event level only; full group key rotation stays
 //! server-side.
 
+use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use nostr::event::EventBuilder;
 use nostr::event::Kind;
@@ -22,6 +23,19 @@ pub struct DirectMessage {
     pub decrypted: bool,
     pub is_own: bool,
     #[serde(default)]
+    pub tags: String,
+}
+
+/// Strongly typed direct message DTO for reactive FFI streams.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DirectMessageDto {
+    pub id: String,
+    pub sender: String,
+    pub recipient: String,
+    pub content: String,
+    pub created_at: u64,
+    pub decrypted: bool,
+    pub is_own: bool,
     pub tags: String,
 }
 
@@ -134,6 +148,134 @@ fn unseal_dm_content_with_key(stored: String, key: &[u8; 32]) -> Result<String, 
     Ok(current)
 }
 
+/// Helper to query and decrypt DMs for a conversation.
+pub(crate) fn fetch_dms_for_conversation_typed(
+    db: &soshal_db_core::Database,
+    my_pk: &str,
+    with_pubkey: &str,
+    limit: i64,
+    key: &[u8; 32],
+) -> Result<Vec<DirectMessageDto>, soshal_db_core::error::DbError> {
+    let cid = conv_id(my_pk, with_pubkey);
+    let repo = MessageRepo::new(db);
+    let rows = repo.get_conversation(&cid, limit, None)?;
+    rows.into_iter()
+        .map(|row| {
+            let is_own = row.pubkey == my_pk;
+            let (content, decrypted) = match unseal_dm_content_with_key(row.content, key) {
+                Ok(text) => (text, true),
+                Err(_) => ("[message could not be decrypted]".to_string(), false),
+            };
+            let recipient = if is_own {
+                with_pubkey.to_string()
+            } else {
+                my_pk.to_string()
+            };
+            Ok(DirectMessageDto {
+                id: row.id,
+                sender: row.pubkey,
+                recipient,
+                content,
+                created_at: row.created_at.max(0) as u64,
+                decrypted,
+                is_own,
+                tags: row.tags_json,
+            })
+        })
+        .collect()
+}
+
+/// Helper to query and decrypt DMs for a conversation (legacy untyped struct).
+pub(crate) fn fetch_dms_for_conversation(
+    db: &soshal_db_core::Database,
+    my_pk: &str,
+    with_pubkey: &str,
+    limit: i64,
+    key: &[u8; 32],
+) -> Result<Vec<DirectMessage>, soshal_db_core::error::DbError> {
+    let dtos = fetch_dms_for_conversation_typed(db, my_pk, with_pubkey, limit, key)?;
+    Ok(dtos
+        .into_iter()
+        .map(|d| DirectMessage {
+            id: d.id,
+            sender: d.sender,
+            recipient: d.recipient,
+            content: d.content,
+            created_at: d.created_at,
+            decrypted: d.decrypted,
+            is_own: d.is_own,
+            tags: d.tags,
+        })
+        .collect())
+}
+
+/// Helper to query conversation partners for an account.
+pub(crate) fn fetch_conversations_for_account(
+    db: &soshal_db_core::Database,
+    norm_pk: &str,
+) -> Result<Vec<String>, soshal_db_core::error::DbError> {
+    let conn = db.conn()?;
+    let pattern_prefix = format!("conv:{norm_pk}:%");
+    let pattern_suffix = format!("conv:%:{norm_pk}");
+    let cids: Vec<String> = soshal_db_core::query::query(
+        &conn,
+        "SELECT conversation_id FROM conversations \
+         WHERE (conversation_id LIKE ?1 OR conversation_id LIKE ?2) \
+         ORDER BY last_message_at DESC LIMIT 100",
+        libsql::params![pattern_prefix.as_str(), pattern_suffix.as_str()],
+        |r| r.get(0),
+    )?;
+    let mut peers = extract_peers_from_cids(&cids, norm_pk);
+    let blocked = soshal_db_core::repos::block::BlockRepo::new(db).list(norm_pk)?;
+    let blocked_set: std::collections::HashSet<String> = blocked
+        .into_iter()
+        .map(|s| s.to_ascii_lowercase())
+        .collect();
+    peers.retain(|p| !blocked_set.contains(&p.to_ascii_lowercase()));
+    Ok(peers)
+}
+
+/// Fetch the most recent DMs with a peer directly as strongly typed DTOs (zero JSON string parsing).
+#[frb(sync, serialize)]
+pub fn messaging_fetch_dms_typed(
+    with_pubkey: String,
+    limit: i32,
+) -> Result<Vec<DirectMessageDto>, String> {
+    let limit = limit.clamp(1, 500) as i64;
+    let my_pk = match super::signer::signer_pubkey() {
+        Ok(pk) => pk,
+        Err(_) => return Err("signer locked".to_string()),
+    };
+    let key = super::signer::signer_at_rest_key()?;
+    super::db::with_db_result(|db| {
+        fetch_dms_for_conversation_typed(db, &my_pk, &with_pubkey, limit, &key)
+    })
+}
+
+/// Observe live direct messages with a peer directly as strongly typed DTO streams via FRB SSE binary framing.
+pub fn messaging_watch_dms_typed(
+    sink: StreamSink<Vec<DirectMessageDto>>,
+    with_pubkey: String,
+    limit: i32,
+) -> Result<(), String> {
+    let limit = limit.clamp(1, 500) as i64;
+    let my_pk = match super::signer::signer_pubkey() {
+        Ok(pk) => pk,
+        Err(_) => return Err("signer locked".to_string()),
+    };
+    let key = super::signer::signer_at_rest_key()?;
+    let my_pk_clone = my_pk.clone();
+    let peer_pk = with_pubkey.clone();
+
+    crate::spawn_db_stream!(
+        sink,
+        &[soshal_db_core::change_bus::Table::Messages],
+        soshal_db_core::observable::ObservableOptions::default()
+            .with_debounce(std::time::Duration::from_millis(30)),
+        move |db| { fetch_dms_for_conversation_typed(db, &my_pk_clone, &peer_pk, limit, &key) }
+    )
+}
+
 /// Fetch the most recent DMs with a peer from the local DB (both directions,
 /// newest first).
 #[frb(sync, serialize)]
@@ -143,41 +285,39 @@ pub fn messaging_fetch_dms(with_pubkey: String, limit: i32) -> Result<String, St
         Ok(pk) => pk,
         Err(_) => return Err("signer locked".to_string()).into(),
     };
-    let cid = conv_id(&my_pk, &with_pubkey);
     let key = super::signer::signer_at_rest_key()?;
     super::db::with_db_result(|db| {
-        let repo = MessageRepo::new(db);
-        let rows = repo.get_conversation(&cid, limit, None)?;
-        let dms: Vec<DirectMessage> = rows
-            .into_iter()
-            .map(|row| {
-                let is_own = row.pubkey == my_pk;
-                // Individual decryption failures produce a sentinel instead of
-                // aborting the whole batch: the UI can show an inline warning.
-                let (content, decrypted) = match unseal_dm_content_with_key(row.content, &key) {
-                    Ok(text) => (text, true),
-                    Err(_) => ("[message could not be decrypted]".to_string(), false),
-                };
-                let recipient = if is_own {
-                    with_pubkey.clone()
-                } else {
-                    my_pk.clone()
-                };
-                Ok::<DirectMessage, soshal_db_core::error::DbError>(DirectMessage {
-                    id: row.id,
-                    sender: row.pubkey,
-                    recipient,
-                    content,
-                    created_at: row.created_at.max(0) as u64,
-                    decrypted,
-                    is_own,
-                    tags: row.tags_json,
-                })
-            })
-            .collect::<Result<Vec<DirectMessage>, soshal_db_core::error::DbError>>()?;
-        Ok(dms)
+        fetch_dms_for_conversation(db, &my_pk, &with_pubkey, limit, &key)
     })
     .map(super::util::json_ok)?
+}
+
+/// Observe live direct messages with a peer. Streams the updated message list (JSON)
+/// whenever new messages arrive or are deleted, with automatic debouncing.
+pub fn messaging_watch_dms(
+    sink: StreamSink<String>,
+    with_pubkey: String,
+    limit: i32,
+) -> Result<(), String> {
+    let limit = limit.clamp(1, 500) as i64;
+    let my_pk = match super::signer::signer_pubkey() {
+        Ok(pk) => pk,
+        Err(_) => return Err("signer locked".to_string()),
+    };
+    let key = super::signer::signer_at_rest_key()?;
+    let my_pk_clone = my_pk.clone();
+    let peer_pk = with_pubkey.clone();
+
+    crate::spawn_db_stream!(
+        sink,
+        &[soshal_db_core::change_bus::Table::Messages],
+        soshal_db_core::observable::ObservableOptions::default()
+            .with_debounce(std::time::Duration::from_millis(30)),
+        move |db| {
+            let dms = fetch_dms_for_conversation(db, &my_pk_clone, &peer_pk, limit, &key)?;
+            Ok(serde_json::to_string(&dms).unwrap_or_else(|_| "[]".to_string()))
+        }
+    )
 }
 
 /// Fetch all conversation partner pubkeys for the active account, most
@@ -187,27 +327,30 @@ pub fn messaging_fetch_dms(with_pubkey: String, limit: i32) -> Result<String, St
 pub fn messaging_fetch_conversations(pubkey: String) -> Result<Vec<String>, String> {
     super::signer::require_identity(&pubkey)?;
     let norm_pk = pubkey.trim().to_ascii_lowercase();
-    super::db::with_db_result(|db| {
-        let conn = db.conn()?;
-        let pattern_prefix = format!("conv:{norm_pk}:%");
-        let pattern_suffix = format!("conv:%:{norm_pk}");
-        let cids: Vec<String> = soshal_db_core::query::query(
-            &conn,
-            "SELECT conversation_id FROM conversations \
-             WHERE (conversation_id LIKE ?1 OR conversation_id LIKE ?2) \
-             ORDER BY last_message_at DESC LIMIT 100",
-            libsql::params![pattern_prefix.as_str(), pattern_suffix.as_str()],
-            |r| r.get(0),
-        )?;
-        let mut peers = extract_peers_from_cids(&cids, &norm_pk);
-        let blocked = soshal_db_core::repos::block::BlockRepo::new(db).list(&norm_pk)?;
-        let blocked_set: std::collections::HashSet<String> = blocked
-            .into_iter()
-            .map(|s| s.to_ascii_lowercase())
-            .collect();
-        peers.retain(|p| !blocked_set.contains(&p.to_ascii_lowercase()));
-        Ok(peers)
-    })
+    super::db::with_db_result(|db| fetch_conversations_for_account(db, &norm_pk))
+}
+
+/// Observe live conversation partner pubkeys for the active account.
+/// Emits the updated list of peer pubkeys whenever messages change or blocks are updated.
+pub fn messaging_watch_conversations(
+    sink: StreamSink<Vec<String>>,
+    pubkey: String,
+) -> Result<(), String> {
+    super::signer::require_identity(&pubkey)?;
+    let norm_pk = pubkey.trim().to_ascii_lowercase();
+    let norm_pk_clone = norm_pk.clone();
+
+    crate::spawn_db_stream!(
+        sink,
+        &[
+            soshal_db_core::change_bus::Table::Messages,
+            soshal_db_core::change_bus::Table::Blocks,
+        ],
+        soshal_db_core::observable::ObservableOptions::default()
+            .with_debounce(std::time::Duration::from_millis(50))
+            .with_account(&norm_pk),
+        move |db| fetch_conversations_for_account(db, &norm_pk_clone)
+    )
 }
 
 /// Given a list of `conv:<pkA>:<pkB>` conversation ids and a pubkey,

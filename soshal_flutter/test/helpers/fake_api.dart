@@ -1,6 +1,8 @@
-// ignore_for_file: invalid_use_of_internal_member
+import 'dart:convert';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import 'package:soshal_flutter/ffi/feed.dart';
+import 'package:soshal_flutter/ffi/messaging.dart';
 import 'package:soshal_flutter/ffi/media.dart' show DecodedImageRgbaDto;
 import 'package:soshal_flutter/ffi/network.dart' show HttpResponseDto;
 import 'package:soshal_flutter/ffi/p2p.dart' show P2pSwarmStatusDto;
@@ -24,12 +26,31 @@ class FakeApi extends RustLibApi {
   static final Map<Symbol, ApiHandler> _defaultHandlers = {
     #crateFfiSessionSessionSave: (_) => true,
     #crateFfiMessagingMessagingStoreDms: (_) => true,
+    #crateFfiMessagingMessagingWatchDms: (_) => const Stream<String>.empty(),
+    #crateFfiMessagingMessagingWatchConversations: (_) =>
+        const Stream<List<String>>.empty(),
+    #crateFfiFeedFeedWatchEvents: (_) => const Stream<String>.empty(),
+    #crateFfiFeedFeedWatchEventsTyped: (_) =>
+        const Stream<List<FeedPostDto>>.empty(),
+    #crateFfiFeedFeedFetchEventsTyped: (_) =>
+        Future<List<FeedPostDto>>.value([]),
+    #crateFfiFeedFeedWatchThread: (_) => const Stream<String>.empty(),
+    #crateFfiIdentityIdentityWatchProfile: (_) => const Stream<String>.empty(),
+    #crateFfiNotificationsNotificationsWatch: (_) =>
+        const Stream<String>.empty(),
+    #crateFfiDbDbWatchSetting: (_) => const Stream<String>.empty(),
+    #crateFfiGroupsGroupsWatchGroups: (_) => const Stream<String>.empty(),
+    #crateFfiMarketplaceMarketplaceWatchListings: (_) =>
+        const Stream<String>.empty(),
+    #crateFfiDatingDatingWatchProfiles: (_) => const Stream<String>.empty(),
+    #crateFfiMinisMinisWatch: (_) => const Stream<String>.empty(),
     #crateFfiMusicMusicSaved: (_) => '[]',
     #crateFfiMusicMusicPlaylistList: (_) => '[]',
     #crateFfiMinisMinisSaved: (_) => '[]',
     #crateFfiGroupsGroupsRoomsReactions: (_) => '[]',
     #crateFfiGroupsGroupsRoomsReact: (_) => true,
   };
+
 
   void stub(String method, ApiHandler handler) {
     handlers[Symbol(method)] = handler;
@@ -53,6 +74,18 @@ class FakeApi extends RustLibApi {
 
   void stubListString(String method, List<String> result) {
     stub(method, (_) => result);
+  }
+
+  void stubStream<T>(String method, Stream<T> stream) {
+    stub(method, (_) => stream);
+  }
+
+  void stubValue<T>(String method, T value) {
+    stub(method, (_) => value);
+  }
+
+  void stubFuture<T>(String method, T value) {
+    stub(method, (_) => Future<T>.value(value));
   }
 
   int callCount(String method) =>
@@ -138,6 +171,70 @@ class FakeApi extends RustLibApi {
       _asyncCall<String>('crateFfiFeedFeedFetchEvents', [], {#optionsJson: optionsJson});
 
   @override
+  Future<List<FeedPostDto>> crateFfiFeedFeedFetchEventsTyped({required FeedQueryOptions options}) {
+    final invocation = Invocation.method(#crateFfiFeedFeedFetchEventsTyped, [], {#options: options});
+    calls.add(invocation);
+    if (handlers.containsKey(#crateFfiFeedFeedFetchEventsTyped)) {
+      final res = handlers[#crateFfiFeedFeedFetchEventsTyped]!(invocation);
+      if (res is Future) return res.then((val) => val as List<FeedPostDto>);
+      return Future<List<FeedPostDto>>.value(res as List<FeedPostDto>);
+    }
+    if (handlers.containsKey(#crateFfiFeedFeedFetchEvents)) {
+      final legacyOptionsJson = jsonEncode({
+        'limit': options.limit,
+        'offset': options.offset,
+        'filter_type': options.filterType,
+        if (options.cursorCreatedAt != null)
+          'cursor_created_at': options.cursorCreatedAt!.toInt(),
+        if (options.cursorId != null) 'cursor_id': options.cursorId,
+        'audience': options.audience,
+      });
+      final legacyInv = Invocation.method(
+        #crateFfiFeedFeedFetchEvents,
+        [],
+        {#optionsJson: legacyOptionsJson},
+      );
+      calls.add(legacyInv);
+      final dynamic legacyResult = handlers[#crateFfiFeedFeedFetchEvents]!(legacyInv);
+      if (legacyResult is Future) {
+        return legacyResult.then((val) => _decodeLegacyFeedJsonToDtos(val as String));
+      }
+      return Future<List<FeedPostDto>>.value(
+        _decodeLegacyFeedJsonToDtos(legacyResult as String),
+      );
+    }
+    return Future<List<FeedPostDto>>.value(const []);
+  }
+
+  @override
+  Stream<List<FeedPostDto>> crateFfiFeedFeedWatchEventsTyped({required FeedQueryOptions options}) {
+    final invocation = Invocation.method(#crateFfiFeedFeedWatchEventsTyped, [], {#options: options});
+    calls.add(invocation);
+    if (handlers.containsKey(#crateFfiFeedFeedWatchEventsTyped)) {
+      final res = handlers[#crateFfiFeedFeedWatchEventsTyped]!(invocation);
+      return res as Stream<List<FeedPostDto>>;
+    }
+    if (handlers.containsKey(#crateFfiFeedFeedWatchEvents)) {
+      final legacyOptionsJson = jsonEncode({
+        'limit': options.limit,
+        'offset': options.offset,
+        'filter_type': options.filterType,
+        'audience': options.audience,
+      });
+      final legacyInv = Invocation.method(
+        #crateFfiFeedFeedWatchEvents,
+        [],
+        {#optionsJson: legacyOptionsJson},
+      );
+      calls.add(legacyInv);
+      final stream = handlers[#crateFfiFeedFeedWatchEvents]!(legacyInv)
+          as Stream<String>;
+      return stream.map(_decodeLegacyFeedJsonToDtos);
+    }
+    return const Stream<List<FeedPostDto>>.empty();
+  }
+
+  @override
   Future<String> crateFfiFeedFeedFetchThread({required String eventId}) =>
       _asyncCall<String>('crateFfiFeedFeedFetchThread', [], {#eventId: eventId});
 
@@ -212,6 +309,51 @@ class FakeApi extends RustLibApi {
   @override
   Future<String> crateFfiMessagingMessagingSendDm({required String content, required String recipientPubkey}) =>
       _asyncCall<String>('crateFfiMessagingMessagingSendDm', [], {#content: content, #recipientPubkey: recipientPubkey});
+
+  @override
+  List<DirectMessageDto> crateFfiMessagingMessagingFetchDmsTyped({required String withPubkey, required int limit}) {
+    final invocation = Invocation.method(#crateFfiMessagingMessagingFetchDmsTyped, [], {#withPubkey: withPubkey, #limit: limit});
+    calls.add(invocation);
+    if (handlers.containsKey(#crateFfiMessagingMessagingFetchDmsTyped)) {
+      final res = handlers[#crateFfiMessagingMessagingFetchDmsTyped]!(invocation);
+      return res as List<DirectMessageDto>;
+    }
+    if (handlers.containsKey(#crateFfiMessagingMessagingFetchDms)) {
+      final legacyInv = Invocation.method(
+        #crateFfiMessagingMessagingFetchDms,
+        [],
+        {#withPubkey: withPubkey, #limit: limit},
+      );
+      calls.add(legacyInv);
+      final dynamic legacyResult = handlers[#crateFfiMessagingMessagingFetchDms]!(legacyInv);
+      if (legacyResult is String) {
+        return _decodeLegacyDmJsonToDtos(legacyResult);
+      }
+    }
+    return const [];
+  }
+
+  @override
+  Stream<List<DirectMessageDto>> crateFfiMessagingMessagingWatchDmsTyped({required String withPubkey, required int limit}) {
+    final invocation = Invocation.method(#crateFfiMessagingMessagingWatchDmsTyped, [], {#withPubkey: withPubkey, #limit: limit});
+    calls.add(invocation);
+    if (handlers.containsKey(#crateFfiMessagingMessagingWatchDmsTyped)) {
+      final res = handlers[#crateFfiMessagingMessagingWatchDmsTyped]!(invocation);
+      return res as Stream<List<DirectMessageDto>>;
+    }
+    if (handlers.containsKey(#crateFfiMessagingMessagingWatchDms)) {
+      final legacyInv = Invocation.method(
+        #crateFfiMessagingMessagingWatchDms,
+        [],
+        {#withPubkey: withPubkey, #limit: limit},
+      );
+      calls.add(legacyInv);
+      final stream = handlers[#crateFfiMessagingMessagingWatchDms]!(legacyInv)
+          as Stream<String>;
+      return stream.map(_decodeLegacyDmJsonToDtos);
+    }
+    return const Stream<List<DirectMessageDto>>.empty();
+  }
 
   @override
   Future<String> crateFfiMusicMusicComment({required int trackKind, required String trackPubkey, required String trackD, required String content}) =>
@@ -466,12 +608,84 @@ class FakeApi extends RustLibApi {
     return Future<T>.value(result as T);
   }
 
+  static List<FeedPostDto> _decodeLegacyFeedJsonToDtos(String jsonStr) {
+    if (jsonStr.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(jsonStr);
+      if (decoded is! List) return const [];
+      final list = <FeedPostDto>[];
+      for (final item in decoded) {
+        if (item is! Map) continue;
+        final map = item.cast<String, dynamic>();
+        PostMediaDto? media;
+        if (map['media'] is Map) {
+          final m = (map['media'] as Map).cast<String, dynamic>();
+          media = PostMediaDto(
+            url: m['url'] as String? ?? '',
+            mediaType: (m['type'] ?? m['mediaType'] ?? 'image') as String,
+            blobHash: (m['blob_hash'] ?? m['blobHash'] ?? '') as String,
+            size: PlatformInt64Util.from((m['size'] as num? ?? 0).toInt()),
+          );
+        }
+        list.add(FeedPostDto(
+          eventId: (map['event_id'] ?? map['id'] ?? '') as String,
+          pubkey: map['pubkey'] as String? ?? '',
+          content: map['content'] as String? ?? '',
+          createdAt: BigInt.from((map['created_at'] as num? ?? 0).toInt()),
+          reactions: (map['reactions'] as num? ?? 0).toInt(),
+          replies: (map['replies'] as num? ?? 0).toInt(),
+          reposts: (map['reposts'] as num? ?? 0).toInt(),
+          liked: map['liked'] as bool? ?? false,
+          profileName: map['profile_name'] as String?,
+          profilePicture: map['profile_picture'] as String?,
+          media: media,
+        ));
+      }
+      return list;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static List<DirectMessageDto> _decodeLegacyDmJsonToDtos(String jsonStr) {
+    if (jsonStr.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(jsonStr);
+      if (decoded is! List) return const [];
+      final list = <DirectMessageDto>[];
+      for (final item in decoded) {
+        if (item is! Map) continue;
+        final map = item.cast<String, dynamic>();
+        list.add(DirectMessageDto(
+          id: (map['id'] ?? '') as String,
+          sender: (map['sender'] ?? '') as String,
+          recipient: (map['recipient'] ?? '') as String,
+          content: (map['content'] ?? '') as String,
+          createdAt: BigInt.from((map['created_at'] as num? ?? 0).toInt()),
+          decrypted: map['decrypted'] as bool? ?? true,
+          isOwn: map['is_own'] as bool? ?? false,
+          tags: (map['tags'] ?? map['tagsJson'] ?? '') as String,
+        ));
+      }
+      return list;
+    } catch (_) {
+      return const [];
+    }
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) {
     calls.add(invocation);
     final handler =
         handlers[invocation.memberName] ?? _defaultHandlers[invocation.memberName];
-    if (handler != null) return handler(invocation);
+    if (handler != null) {
+      final res = handler(invocation);
+      final defaultVal = _defaultHandlers[invocation.memberName]?.call(invocation);
+      if (defaultVal is Future && res is! Future) {
+        return Future.value(res);
+      }
+      return res;
+    }
     throw UnimplementedError(
       'no FakeApi stub registered for ${invocation.memberName}',
     );

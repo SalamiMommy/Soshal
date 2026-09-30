@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -38,6 +39,11 @@ class _InboxScreenState extends State<InboxScreen> {
   bool _isTyping = false;
   final bool _peerTyping = false;
   bool _showMessageRequests = false;
+
+  /// Single live stream backing the conversation snippet list. See
+  /// [_watchConversationList].
+  StreamSubscription<List<String>>? _conversationsSub;
+  bool _rehydrateInFlight = false;
   final Map<String, String> _messageReactions = {};
 
   @override
@@ -56,7 +62,15 @@ class _InboxScreenState extends State<InboxScreen> {
     super.didUpdateWidget(oldWidget);
     if (widget.otherPubkey != null &&
         widget.otherPubkey != oldWidget.otherPubkey) {
+      // This State is being reused for a conversation view. Drop the list
+      // stream — it would otherwise keep re-hydrating 25 snippets behind a
+      // screen that is no longer showing them.
+      _conversationsSub?.cancel();
+      _conversationsSub = null;
       _loadMessages();
+    } else if (widget.otherPubkey == null && oldWidget.otherPubkey != null) {
+      _loadConversations();
+      _loadEphemeral();
     }
   }
 
@@ -69,26 +83,87 @@ class _InboxScreenState extends State<InboxScreen> {
       if (activePubkey == null) return;
 
       final partners = await messagingService.fetchConversations(activePubkey);
-      // Hydrate snippets in small batches for the most recent conversation partners
-      // to avoid flooding the DB connection pool and causing frame drops.
-      const batchSize = 5;
-      final eagerLimit = partners.length < 25 ? partners.length : 25;
-      for (var i = 0; i < eagerLimit; i += batchSize) {
-        if (!mounted) break;
-        final end = (i + batchSize < eagerLimit) ? i + batchSize : eagerLimit;
-        final chunk = partners.sublist(i, end);
-        await Future.wait(
-          chunk.map((partner) => messagingService.fetchDMs(partner, limit: 1)),
-        );
-      }
+      await _hydrateSnippets(messagingService, partners);
+      _watchConversationList(activePubkey);
     } catch (e) {
       debugPrint('load conversations: $e');
     }
     if (mounted) setState(() => _conversationsLoading = false);
   }
 
+  /// Hydrate the snippet (last message) for the most recent conversation
+  /// partners.
+  ///
+  /// Deliberately issues no per-conversation subscription. Each one is a
+  /// dedicated Rust tokio task plus a `Messages`-table change-bus observer, and
+  /// every message write wakes *all* of them to re-run a DB query and a NIP-44
+  /// decrypt — 25 hydrated conversations turned one incoming message into 25
+  /// redundant decryptions. [force] is set on the re-hydrate triggered by
+  /// [_watchConversationList] so the snippet that caused the update is actually
+  /// re-read instead of being served from cache.
+  Future<void> _hydrateSnippets(
+    MessagingService messagingService,
+    List<String> partners, {
+    bool force = false,
+  }) async {
+    // Small batches to avoid flooding the DB connection pool and causing frame
+    // drops.
+    const batchSize = 5;
+    final eagerLimit = partners.length < 25 ? partners.length : 25;
+    for (var i = 0; i < eagerLimit; i += batchSize) {
+      if (!mounted) break;
+      final end = (i + batchSize < eagerLimit) ? i + batchSize : eagerLimit;
+      final chunk = partners.sublist(i, end);
+      await Future.wait(
+        chunk.map(
+          (partner) => messagingService.fetchDMs(
+            partner,
+            limit: 1,
+            subscribe: false,
+            force: force,
+          ),
+        ),
+      );
+    }
+  }
+
+  /// One live stream for the whole snippet list, replacing the 25
+  /// per-conversation observers. The Rust side watches `Messages` and `Blocks`,
+  /// so any message write re-runs the partner query and re-emits.
+  ///
+  /// Re-entrancy guarded: the change bus debounces at 50 ms but a burst of
+  /// writes can still emit again while a hydrate is in flight, which would
+  /// stack duplicate hydrates against the same connection pool.
+  void _watchConversationList(String activePubkey) {
+    _conversationsSub?.cancel();
+    _conversationsSub = context
+        .read<MessagingService>()
+        .watchConversations(activePubkey)
+        .listen((partners) {
+      if (!mounted || _rehydrateInFlight) return;
+      _rehydrateInFlight = true;
+      () async {
+        try {
+          await _hydrateSnippets(
+            context.read<MessagingService>(),
+            partners,
+            force: true,
+          );
+        } catch (e) {
+          debugPrint('inbox rehydrate: $e');
+        } finally {
+          _rehydrateInFlight = false;
+        }
+      }();
+    }, onError: (Object e) {
+      debugPrint('watch conversations: $e');
+    });
+  }
+
   @override
   void dispose() {
+    _conversationsSub?.cancel();
+    _conversationsSub = null;
     _messageController.dispose();
     _chunkHashController.dispose();
     _mediaTextController.dispose();

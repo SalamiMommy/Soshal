@@ -933,9 +933,7 @@ class _FeedPostCardState extends State<FeedPostCard> {
       {String? label, String? tooltip, bool animatePop = false}) {
     Widget iconWidget = Icon(icon);
     if (animatePop) {
-      iconWidget = iconWidget
-          .animate(key: ValueKey('$icon-$color'))
-          .scale(
+      iconWidget = iconWidget.animate(key: ValueKey('$icon-$color')).scale(
             duration: 250.ms,
             curve: Curves.easeOutBack,
             begin: const Offset(0.7, 0.7),

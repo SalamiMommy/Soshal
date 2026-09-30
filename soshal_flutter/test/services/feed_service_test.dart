@@ -1,7 +1,10 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:soshal_flutter/ffi/feed.dart';
 import 'package:soshal_flutter/services/feed_service.dart';
 
 import '../helpers/test_env.dart';
@@ -422,6 +425,160 @@ void main() {
       // Unknown post: safe no-op.
       feed.applyLiveReaction('nope', 'alice', '+', 'r9', signerPubkey: 'me');
       expect(feed.posts.first.reactions, 6);
+    });
+
+    test('watchFeed parses incoming json stream into list of FeedPost', () async {
+      final feed = FeedService();
+      final controller = StreamController<String>();
+      addTearDown(controller.close);
+
+      api.stub('crateFfiFeedFeedWatchEvents', (_) => controller.stream);
+
+      final stream = feed.watchFeed();
+      final emissions = <List<FeedPost>>[];
+      final sub = stream.listen(emissions.add);
+      addTearDown(sub.cancel);
+
+      const payload1 =
+          '[{"id":"feed_1","pubkey":"pk1","content":"reactive post 1","created_at":2000,"reactions":5,"replies":1,"reposts":0,"liked":true}]';
+      controller.add(payload1);
+      await pumpEventQueue();
+
+      expect(emissions.length, 1);
+      expect(emissions[0].length, 1);
+      expect(emissions[0][0].eventId, 'feed_1');
+      expect(emissions[0][0].content, 'reactive post 1');
+      expect(emissions[0][0].reactions, 5);
+      expect(emissions[0][0].liked, true);
+    });
+
+    test('subscribeToFeed updates posts list and notifies listeners on stream updates', () async {
+      final feed = FeedService();
+      final controller = StreamController<String>();
+      addTearDown(controller.close);
+
+      api.stub('crateFfiFeedFeedWatchEvents', (_) => controller.stream);
+
+      var notified = 0;
+      feed.addListener(() => notified++);
+
+      feed.subscribeToFeed();
+
+      const payload =
+          '[{"id":"feed_live","pubkey":"pk1","content":"live post","created_at":3000,"reactions":10,"replies":2,"reposts":1,"liked":false}]';
+      controller.add(payload);
+      await pumpEventQueue();
+
+      expect(feed.posts.length, 1);
+      expect(feed.posts.first.eventId, 'feed_live');
+      expect(feed.posts.first.content, 'live post');
+      expect(feed.posts.first.reactions, 10);
+      expect(notified, greaterThanOrEqualTo(1));
+
+      feed.resetForAccountSwitch();
+      // Should cancel active subscriptions
+      controller.add('[]');
+      await pumpEventQueue();
+      expect(feed.posts.isEmpty, true);
+    });
+
+    test('watchThread parses replies into list of FeedPost', () async {
+      final feed = FeedService();
+      final controller = StreamController<String>();
+      addTearDown(controller.close);
+
+      api.stub('crateFfiFeedFeedWatchThread', (_) => controller.stream);
+
+      final stream = feed.watchThread('root_1');
+      final emissions = <List<FeedPost>>[];
+      final sub = stream.listen(emissions.add);
+      addTearDown(sub.cancel);
+
+      const payload =
+          '[{"id":"reply_1","pubkey":"pk2","content":"reply content","created_at":2050,"reactions":2,"replies":0,"reposts":0,"liked":false}]';
+      controller.add(payload);
+      await pumpEventQueue();
+
+      expect(emissions.length, 1);
+      expect(emissions[0].length, 1);
+      expect(emissions[0][0].eventId, 'reply_1');
+      expect(emissions[0][0].content, 'reply content');
+    });
+
+    test('watchFeed handles native FeedPostDto typed streams directly', () async {
+      final feed = FeedService();
+      final controller = StreamController<List<FeedPostDto>>();
+      addTearDown(controller.close);
+
+      api.stubStream('crateFfiFeedFeedWatchEventsTyped', controller.stream);
+
+      final stream = feed.watchFeed();
+      final emissions = <List<FeedPost>>[];
+      final sub = stream.listen(emissions.add);
+      addTearDown(sub.cancel);
+
+      controller.add([
+        FeedPostDto(
+          eventId: 'typed_1',
+          pubkey: 'pk_typed',
+          content: 'pure binary sse typed post',
+          createdAt: BigInt.from(12345),
+          reactions: 42,
+          replies: 7,
+          reposts: 3,
+          liked: true,
+          profileName: 'Alice',
+          profilePicture: 'https://example.com/avatar.png',
+          media: PostMediaDto(
+            url: 'https://example.com/img.png',
+            mediaType: 'image',
+            blobHash: 'hash123',
+            size: PlatformInt64Util.from(1024),
+          ),
+        ),
+      ]);
+      await pumpEventQueue();
+
+      expect(emissions.length, 1);
+      final post = emissions[0].single;
+      expect(post.eventId, 'typed_1');
+      expect(post.pubkey, 'pk_typed');
+      expect(post.content, 'pure binary sse typed post');
+      expect(post.createdAt, 12345);
+      expect(post.reactions, 42);
+      expect(post.replies, 7);
+      expect(post.reposts, 3);
+      expect(post.liked, true);
+      expect(post.profileName, 'Alice');
+      expect(post.media?.url, 'https://example.com/img.png');
+      expect(post.media?.type, 'image');
+      expect(post.media?.blobHash, 'hash123');
+      expect(post.media?.size, 1024);
+    });
+
+    test('fetchFeed handles native FeedPostDto typed results directly', () async {
+      final feed = FeedService();
+      api.stubValue('crateFfiFeedFeedFetchEventsTyped', [
+        FeedPostDto(
+          eventId: 'fetch_typed_1',
+          pubkey: 'pk1',
+          content: 'fetched typed post',
+          createdAt: BigInt.from(5555),
+          reactions: 10,
+          replies: 2,
+          reposts: 1,
+          liked: false,
+          profileName: 'Bob',
+          profilePicture: null,
+          media: null,
+        ),
+      ]);
+
+      final posts = await feed.fetchFeed();
+      expect(posts.length, 1);
+      expect(posts.first.eventId, 'fetch_typed_1');
+      expect(posts.first.content, 'fetched typed post');
+      expect(posts.first.createdAt, 5555);
     });
   });
 }

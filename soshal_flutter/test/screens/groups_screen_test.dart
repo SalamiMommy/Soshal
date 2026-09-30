@@ -190,13 +190,14 @@ void main() {
     api.stubString('crateFfiSessionSessionLoad', sessionJson);
     await session.loadSession();
     api.stubString('crateFfiDbDbGetSetting', '300');
-    api.stubString('crateFfiGroupsGroupsGetGroupInfo', memberJson);
-    api.stubListString('crateFfiGroupsGroupsGetMembers', ['pkA']);
-    api.stubString('crateFfiGroupsGroupsMembersWithRoles', '[]');
-    api.stubString('crateFfiGroupsGroupsRolesList', '[]');
-    api.stubString('crateFfiGroupsGroupsRoomsList', '[]');
+    // Group info, members, member roles, custom roles, rooms and voice
+    // channels all arrive in one call now; threads and messages stay separate.
+    api.stubString(
+      'crateFfiGroupsGroupsGetDetailBundle',
+      '{"group":$memberJson,"members":["pkA"],"memberRoles":[],'
+          '"roles":[],"rooms":[],"voiceChannels":[]}',
+    );
     api.stubString('crateFfiGroupsGroupsThreadsList', '[]');
-    api.stubString('crateFfiGroupsGroupsVoiceChannelsList', '[]');
     api.stubString('crateFfiGroupsGroupsFetchMessages', msgJson);
     api.stubString('crateFfiGroupsGroupsPostMessage', '{"id":"m2"}');
 
@@ -253,13 +254,14 @@ void main() {
     api.stubString('crateFfiSessionSessionLoad', sessionJson);
     await session.loadSession();
     api.stubString('crateFfiDbDbGetSetting', '300');
-    api.stubString('crateFfiGroupsGroupsGetGroupInfo', memberJson);
-    api.stubListString('crateFfiGroupsGroupsGetMembers', ['pkA']);
-    api.stubString('crateFfiGroupsGroupsMembersWithRoles', '[]');
-    api.stubString('crateFfiGroupsGroupsRolesList', '[]');
-    api.stubString('crateFfiGroupsGroupsRoomsList', '[]');
+    // Group info, members, member roles, custom roles, rooms and voice
+    // channels all arrive in one call now; threads and messages stay separate.
+    api.stubString(
+      'crateFfiGroupsGroupsGetDetailBundle',
+      '{"group":$memberJson,"members":["pkA"],"memberRoles":[],'
+          '"roles":[],"rooms":[],"voiceChannels":[]}',
+    );
     api.stubString('crateFfiGroupsGroupsThreadsList', '[]');
-    api.stubString('crateFfiGroupsGroupsVoiceChannelsList', '[]');
     api.stubString('crateFfiGroupsGroupsFetchMessages', msgJson);
     api.stubString('crateFfiGroupsGroupsRoomsReactions', reactionJson);
     api.stubBool('crateFfiGroupsGroupsRoomsReact', true);

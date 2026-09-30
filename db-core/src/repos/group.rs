@@ -48,6 +48,8 @@ impl<'a> GroupRepo<'a> {
                 group.password_hash.as_deref(),
             ],
         )?;
+        self.db
+            .notify_change(crate::change_bus::Table::Groups, Some(pk_clean));
         Ok(())
     }
 
@@ -70,16 +72,22 @@ impl<'a> GroupRepo<'a> {
             "INSERT OR REPLACE INTO group_members (group_id, pubkey, role, joined_at) VALUES (?1,?2,?3,?4)",
             params![group_id, trimmed_pk, role, joined_at],
         )?;
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
+        self.db
+            .notify_change(crate::change_bus::Table::Groups, Some(norm_pk));
         Ok(())
     }
 
     pub fn remove_member(&self, group_id: &str, pubkey: &str) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "DELETE FROM group_members WHERE group_id = ?1 AND LOWER(pubkey) = LOWER(?2)",
-            params![group_id, pubkey.trim().to_ascii_lowercase()],
+            params![group_id, norm_pk.as_str()],
         )?;
+        self.db
+            .notify_change(crate::change_bus::Table::Groups, Some(norm_pk));
         Ok(())
     }
 

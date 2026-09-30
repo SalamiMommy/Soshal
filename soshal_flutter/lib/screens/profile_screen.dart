@@ -81,6 +81,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadWot(String pubkey, String viewer) async {
     try {
       final identity = context.read<IdentityService>();
+      // Both of these resolve through `#[frb(sync, serialize)]` bridge fns
+      // (identity_get_wot_status / identity_get_trust_score), so the FFI has
+      // already run by the time each `Future` is handed back — the two calls
+      // are serial no matter how they are awaited. `Future.wait` here would be
+      // a no-op; batching them into one bridge call is the only real win.
       final statusFuture = identity.getWotStatus(pubkey, viewer);
       final scoreFuture =
           _trustScoreFuture ?? identity.getTrustScore(viewer, pubkey);

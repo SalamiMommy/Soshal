@@ -9,10 +9,10 @@ removed — Flutter is the only client.
 ```
 Soshal/
 ├── soshal_flutter/            # Flutter UI (the only client)
-│   ├── lib/main.dart          # app root, provider registration (41 ChangeNotifier providers)
+│   ├── lib/main.dart          # app root, global provider registration (22 global providers; 19 account-scoped in AccountScope)
 │   ├── lib/routes/app_router.dart  # go_router routes (56)
 │   ├── lib/frb_generated.dart # auto-generated FFI bindings (flutter_rust_bridge)
-│   ├── lib/services/          # ~49 service files, 41 ChangeNotifier providers backing every screen
+│   ├── lib/services/          # ~49 service files, ChangeNotifier providers backing every screen
 │   │                          #   (auth, feed, session, messaging+identity, notifications,
 │   │                          #    search, dating, events, groups, marketplace, zap,
 │   │                          #    streaming, moderation, network, signer, ffi_bridge)
@@ -28,7 +28,7 @@ Soshal/
 │   │                          #    notification-settings, edit-profile)
 │   └── android/app/src/main/jniLibs/{arm64-v8a,x86_64,armeabi-v7a}/libsoshal_flutter_bridge.so
 ├── flutter-bridge/            # FFI adapter crate (soshal-flutter-bridge)
-│   ├── frb.toml               # flutter_rust_bridge codegen config
+│   ├── flutter_rust_bridge.yaml # flutter_rust_bridge codegen config
 │   └── src/ffi/               # 55 thin modules (auth, feed, messaging, session, …)
 │       │                      #   each #[frb(sync|serialize)] fn delegates to *-core
 │       ├── db.rs              #   SQLite access via db-core (with_db / with_db_result)
@@ -206,6 +206,26 @@ guard-lib-platform: `PermissionsService.isLinux` gate, no `Platform.is*` in
 lib/. `mk.` prefix NOT used for `VideoController` (lives in media_kit_video,
 not media_kit); prefix only `Player`/`Media` (`as mk`).
 
+**Mesh relay ingest thread — do NOT block it (2026-09-29)**: `FreenetBackend::broadcast`
+(`relay-core/src/backends/freenet.rs`) enqueues to a bounded `SyncSender`
+(`OUTBOX_CAPACITY = 256`) and returns; a dedicated worker thread does the blocking
+`put_contract`. It used to put **inline**, i.e. up to 5 s per event, on the caller —
+`RelayNode::re_broadcast` on the mesh ingest thread — stalling `recv()` for *every*
+backend. The client slot is `Arc<Mutex<Option<Client>>>` so the worker and `recv()`'s
+`reconnect()` see the same client; a fresh client per reconnect would leave the worker
+holding a dead socket forever. `stop()` drains the worker BEFORE disconnecting; `Drop`
+closes the channel without joining. Overflow/put failures are counted in `dropped` /
+`put_failures` and surfaced via the defaulted `MeshBackend::health() -> Value` (merged
+into `RelayNode::status()`) — the "count, never silently drop" rule.
+
+**Freenet socket mutex is protocol-required (2026-09-29)**: `freenet_websocket.rs`
+`send_request` holds `self.socket.lock()` across send + the whole drain. Do not
+"narrow" it to a reader task: `freenet_stdlib::client_api::ClientRequest` has **no
+correlation id** on any variant (the only `stream_id` is server-assigned for streaming),
+so a response cannot be matched to its request. A shared response queue would let two
+concurrent `get_contract` calls return each other's contract. Needs an upstream protocol
+change first.
+
 **frb codegen** (only when FFI signatures change): edit `flutter-bridge/src/ffi/*.rs`,
 then run the post-regen ritual: `flutter_rust_bridge_codegen generate`
 (v2.12.0) in `flutter-bridge`, reapply hand edits to generated glue if any,
@@ -257,7 +277,36 @@ corruptions to repair:
    / `typedef Dartmediastatus_t = int;` / `typedef ssize_t = ffi.IntPtr;` /
    `typedef Dartssize_t = int;` (from codecs/ndk.rs type aliases). Hand-restore
    them next to `typedef DartDartPort = int;`. Errors naming these three types
-   = they're missing.
+   = they're missing. **Check per regen — do not assume.** 2026-09-29's regen
+   dropped NONE of these (only the unreferenced `Dartssize_t`, which needed no
+   restore).
+4. **Stripped `@ffi.Bool()` struct annotations** (2026-09-29, new): the same
+   splice that displaces the wire types also strips field annotations —
+   `wire_cst_direct_message_dto.decrypted` / `.is_own` were emitted as bare
+   `external bool`. This is only *visible* because corruption 1 was shadowing
+   `dart:core bool`; once you delete the bogus `typedef bool`, the missing
+   annotations surface as `missing_annotation_on_struct_field`. Expect this
+   whenever corruption 1 appears.
+
+**Codegen config file** is `flutter-bridge/flutter_rust_bridge.yaml` — there is
+no `frb.toml`. Its `dart_output: ../soshal_flutter/lib` means codegen writes
+straight into the Flutter lib; there is no copy step. Codegen also needs
+`export PATH="$HOME/fvm/default/bin:$PATH"` (it shells out to flutter).
+
+**`Future.wait` over FFI is a no-op unless the fn is async** (2026-09-29): a
+`#[frb(sync, serialize)]` fn runs the whole blocking call during *argument
+evaluation* — in `[a(), b()]` both have already finished before `Future.wait` is
+entered, so there is nothing to overlap. Verified dead at every remaining site:
+`composer_screen.dart:155` (`search_mentions`), `inbox_screen.dart:117`
+(`messaging_fetch_dms`), `splash_screen.dart:47` (`session_load`,
+`db_get_setting`, `signer_pubkey`), and `profile_screen.dart:87-88`
+(`identity_get_wot_status` / `identity_get_trust_score` — both futures are created
+up front then awaited *sequentially*, which looks ripe for `Future.wait`; it is not).
+The only genuinely async member found is `feed_fetch_window`
+(`#[frb(serialize)] pub async fn`) in `profile_screen.dart:68`, which is already
+inside a `Future.wait`. Fixing a sync fan-out means **batching it in Rust** (one
+bridge call, one SQL statement), not isolate fan-out — `runOffThreadCompute` is
+decode-only and its closure cannot capture a `ChangeNotifier`.
 
 **DB migrations** (db-core): `SCHEMA_VERSION` + a `v0NN_*.rs` migration file;
 each migration SQL records its own version

@@ -544,7 +544,8 @@ class _GroupRoomsTabState extends State<GroupRoomsTab>
                                     data: m.content,
                                     onTapLink: (text, href, title) {
                                       if (href != null) {
-                                        UrlLauncherUtil.launchSafeUrl(context, href);
+                                        UrlLauncherUtil.launchSafeUrl(
+                                            context, href);
                                       }
                                     },
                                   ),

@@ -1,8 +1,11 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../ffi/feed.dart';
 import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
@@ -24,6 +27,7 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
   // between mutations, otherwise `context.select((s) => s.pinnedPosts)` sees
   // a fresh identity every call and rebuilds on every FeedService notify.
   List<String> _pinnedView = const [];
+  StreamSubscription<List<FeedPost>>? _feedSubscription;
 
   /// Best-effort hook invoked after a full feed refresh (offset 0). Set by
   /// [SyncService.attach] to trigger peer reconciliation; failures are silent.
@@ -54,8 +58,17 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     _pinnedLoaded = false;
     _rebuildPinnedView();
     _seenReactions.clear();
+    _feedSubscription?.cancel();
+    _feedSubscription = null;
     clearLastError();
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _feedSubscription?.cancel();
+    _feedSubscription = null;
+    super.dispose();
   }
 
   /// Fetch feed events with pagination (supports cursor or offset)
@@ -67,22 +80,26 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     try {
       _isLoading = true;
 
-      final options = jsonEncode({
-        'limit': limit,
-        'offset': offset,
-        'filter_type': 'all',
-        if (cursorCreatedAt != null) 'cursor_created_at': cursorCreatedAt,
-        if (cursorId != null) 'cursor_id': cursorId,
-      });
-      final json = await RustLib.instance.api
-          .crateFfiFeedFeedFetchEvents(optionsJson: options);
-      final newPosts = await _decodePosts(json);
+      final options = FeedQueryOptions(
+        limit: limit,
+        offset: offset,
+        filterType: 'all',
+        cursorCreatedAt: cursorCreatedAt != null
+            ? PlatformInt64Util.from(cursorCreatedAt)
+            : null,
+        cursorId: cursorId,
+        audience: '',
+      );
+      final dtos = await RustLib.instance.api
+          .crateFfiFeedFeedFetchEventsTyped(options: options);
+      final newPosts = dtos.map(FeedPost.fromDto).toList();
       if (offset == 0 && cursorCreatedAt == null && cursorId == null) {
         _posts = newPosts;
         _ranked = false;
         _rankedPosts = [];
         _hasMore = true;
         _reconcileAfterRefresh();
+        subscribeToFeed(limit: limit);
       } else {
         // Deduplicate pagination overlap: overlapping pages (from events
         // inserted between fetches) previously appended duplicates to the list.
@@ -105,6 +122,47 @@ class FeedService extends ChangeNotifier with LastErrorMixin, DeferredNotify {
     }
 
     return _posts;
+  }
+
+  /// Observe live feed posts from the reactive Rust engine.
+  /// Yields updated [FeedPost] lists whenever posts or reactions change.
+  Stream<List<FeedPost>> watchFeed({
+    int limit = 20,
+    String audience = 'all',
+  }) {
+    final options = FeedQueryOptions(
+      limit: limit,
+      offset: 0,
+      filterType: 'all',
+      audience: audience,
+    );
+    return RustLib.instance.api
+        .crateFfiFeedFeedWatchEventsTyped(options: options)
+        .map((dtos) => dtos.map(FeedPost.fromDto).toList());
+  }
+
+  /// Observe live replies and updates for a thread root.
+  Stream<List<FeedPost>> watchThread(String eventId) {
+    return RustLib.instance.api
+        .crateFfiFeedFeedWatchThread(eventId: eventId)
+        .asyncMap(_decodePosts);
+  }
+
+  /// Subscribe to live feed updates and automatically synchronize the in-memory view.
+  void subscribeToFeed({int limit = 20, String audience = 'all'}) {
+    _feedSubscription?.cancel();
+    _feedSubscription =
+        watchFeed(limit: limit, audience: audience).listen((newPosts) {
+      _posts = newPosts;
+      if (!_ranked) {
+        _rankedPosts = [];
+      }
+      clearLastError();
+      notifyDeferred();
+    }, onError: (Object e, StackTrace st) {
+      setLastError(e, st);
+      notifyDeferred();
+    });
   }
 
   /// Fetch a windowed slice of feed items directly from Rust
@@ -666,6 +724,22 @@ class FeedPost {
     this.media,
   });
 
+  factory FeedPost.fromDto(FeedPostDto dto) {
+    return FeedPost(
+      eventId: dto.eventId,
+      pubkey: dto.pubkey,
+      content: dto.content,
+      createdAt: dto.createdAt.toInt(),
+      reactions: dto.reactions,
+      replies: dto.replies,
+      reposts: dto.reposts,
+      liked: dto.liked,
+      profileName: dto.profileName,
+      profilePicture: dto.profilePicture,
+      media: dto.media != null ? PostMedia.fromDto(dto.media!) : null,
+    );
+  }
+
   factory FeedPost.fromJson(Map<String, dynamic> json) {
     return FeedPost(
       eventId: (json['event_id'] ?? json['id']) as String? ?? '',
@@ -711,6 +785,15 @@ class PostMedia {
     required this.blobHash,
     required this.size,
   });
+
+  factory PostMedia.fromDto(PostMediaDto dto) {
+    return PostMedia(
+      url: dto.url,
+      type: dto.mediaType,
+      blobHash: dto.blobHash,
+      size: dto.size.toInt(),
+    );
+  }
 
   factory PostMedia.fromJson(Map<String, dynamic> json) {
     return PostMedia(

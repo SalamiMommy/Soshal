@@ -34,7 +34,10 @@ impl<'a> RelayRepo<'a> {
             self.upsert_in(&tx, row).await?;
             tx.commit().await?;
             Ok(())
-        })
+        })?;
+        self.db
+            .notify_change(crate::change_bus::Table::Relays, None);
+        Ok(())
     }
 
     pub async fn upsert_in(
@@ -84,12 +87,17 @@ impl<'a> RelayRepo<'a> {
             }
             tx.commit().await?;
             Ok(())
-        })
+        })?;
+        self.db
+            .notify_change(crate::change_bus::Table::Relays, None);
+        Ok(())
     }
 
     pub fn delete(&self, url: &str) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
         crate::query::execute(&conn, "DELETE FROM relays WHERE url = ?1", params![url])?;
+        self.db
+            .notify_change(crate::change_bus::Table::Relays, None);
         Ok(())
     }
 

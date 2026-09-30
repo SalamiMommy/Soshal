@@ -71,6 +71,40 @@ impl<'a> UserRepo<'a> {
         )
     }
 
+    /// Fetch full rows for many pubkeys in one query, keyed by lowercase
+    /// pubkey. Missing pubkeys are simply absent from the map.
+    ///
+    /// Backs the batched profile/contact FFI surfaces: the Dart side used to
+    /// call `get_by_pubkey` once per pubkey, and `query_profile_internal` issues
+    /// a *second* lookup for the viewer's own row on every single one of those,
+    /// so rendering an N-entry grid cost 2N indexed queries plus N JSON
+    /// round-trips across FFI.
+    pub fn rows_for_pubkeys(
+        &self,
+        pubkeys: &[String],
+    ) -> Result<std::collections::HashMap<String, UserRow>, crate::error::DbError> {
+        if pubkeys.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let conn = self.db.conn()?;
+        let norm_pubkeys: Vec<String> = pubkeys
+            .iter()
+            .map(|p| p.trim().to_ascii_lowercase())
+            .collect();
+        let json = serde_json::to_string(&norm_pubkeys).unwrap_or_else(|_| "[]".to_string());
+        crate::query::query_fold(
+            &conn,
+            "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE LOWER(pubkey) IN (SELECT value FROM json_each(?1))",
+            params![json.as_str()],
+            std::collections::HashMap::with_capacity(pubkeys.len()),
+            |mut map, row| {
+                let mapped = Self::map_row(row)?;
+                map.insert(mapped.pubkey.to_ascii_lowercase(), mapped);
+                Ok(map)
+            },
+        )
+    }
+
     pub async fn get_by_pubkey_in(
         &self,
         tx: &libsql::Transaction,
@@ -93,7 +127,12 @@ impl<'a> UserRepo<'a> {
             self.upsert_in(&tx, user).await?;
             tx.commit().await?;
             Ok(())
-        })
+        })?;
+        self.db.notify_change(
+            crate::change_bus::Table::Profiles,
+            Some(user.pubkey.trim().to_ascii_lowercase()),
+        );
+        Ok(())
     }
 
     pub async fn upsert_in(
@@ -157,7 +196,10 @@ impl<'a> UserRepo<'a> {
             }
             tx.commit().await?;
             Ok(())
-        })
+        })?;
+        self.db
+            .notify_change(crate::change_bus::Table::Profiles, None);
+        Ok(())
     }
 
     pub fn ensure_exists(&self, pubkey: &str) -> Result<(), crate::error::DbError> {
@@ -201,7 +243,12 @@ impl<'a> UserRepo<'a> {
             self.bump_follower_count_in(&tx, pubkey, delta).await?;
             tx.commit().await?;
             Ok(())
-        })
+        })?;
+        self.db.notify_change(
+            crate::change_bus::Table::Profiles,
+            Some(pubkey.trim().to_ascii_lowercase()),
+        );
+        Ok(())
     }
 
     /// Re-materialize follower counts for every stored contact list in one

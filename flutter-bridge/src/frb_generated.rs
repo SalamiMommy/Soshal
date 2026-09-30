@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1908233765;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -74607218;
 
 // Section: executor
 
@@ -2800,6 +2800,50 @@ fn wire__crate__ffi__dating__dating_update_profile_impl(
         },
     )
 }
+fn wire__crate__ffi__dating__dating_watch_profiles_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "dating_watch_profiles",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sink =
+                <StreamSink<String, flutter_rust_bridge::for_generated::DcoCodec>>::sse_decode(
+                    &mut deserializer,
+                );
+            let api_user_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_limit = <i32>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::ffi::dating::dating_watch_profiles(
+                        api_sink,
+                        api_user_pubkey,
+                        api_limit,
+                        api_audience,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__ffi__db__db_backup_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -3579,6 +3623,43 @@ fn wire__crate__ffi__turso__db_turso_sync_impl(
                 let output_ok = crate::ffi::turso::db_turso_sync()?;
                 Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__ffi__db__db_watch_setting_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "db_watch_setting",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sink =
+                <StreamSink<String, flutter_rust_bridge::for_generated::DcoCodec>>::sse_decode(
+                    &mut deserializer,
+                );
+            let api_key = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::ffi::db::db_watch_setting(api_sink, api_key)?;
+                    Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -4507,6 +4588,43 @@ fn wire__crate__ffi__feed__feed_fetch_events_impl(
         },
     )
 }
+fn wire__crate__ffi__feed__feed_fetch_events_typed_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "feed_fetch_events_typed",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_options = <crate::ffi::feed::FeedQueryOptions>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::ffi::feed::feed_fetch_events_typed(api_options).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__ffi__feed__feed_fetch_thread_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -4731,6 +4849,91 @@ fn wire__crate__ffi__feed__feed_validate_note_impl(
                 let output_ok = crate::ffi::feed::feed_validate_note(api_content)?;
                 Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__ffi__feed__feed_watch_events_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    sink: impl CstDecode<StreamSink<String, flutter_rust_bridge::for_generated::DcoCodec>>,
+    options_json: impl CstDecode<String>,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::DcoCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "feed_watch_events",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let api_sink = sink.cst_decode();
+            let api_options_json = options_json.cst_decode();
+            move |context| {
+                transform_result_dco::<_, _, String>((move || {
+                    let output_ok =
+                        crate::ffi::feed::feed_watch_events(api_sink, api_options_json)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__feed__feed_watch_events_typed_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "feed_watch_events_typed",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sink = <StreamSink<
+                Vec<crate::ffi::feed::FeedPostDto>,
+                flutter_rust_bridge::for_generated::DcoCodec,
+            >>::sse_decode(&mut deserializer);
+            let api_options = <crate::ffi::feed::FeedQueryOptions>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::ffi::feed::feed_watch_events_typed(api_sink, api_options)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__feed__feed_watch_thread_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    sink: impl CstDecode<StreamSink<String, flutter_rust_bridge::for_generated::DcoCodec>>,
+    event_id: impl CstDecode<String>,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::DcoCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "feed_watch_thread",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let api_sink = sink.cst_decode();
+            let api_event_id = event_id.cst_decode();
+            move |context| {
+                transform_result_dco::<_, _, String>((move || {
+                    let output_ok = crate::ffi::feed::feed_watch_thread(api_sink, api_event_id)?;
+                    Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -5051,6 +5254,36 @@ fn wire__crate__ffi__groups__groups_fetch_messages_impl(
                     api_limit,
                     api_offset,
                 )?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__groups__groups_get_detail_bundle_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "groups_get_detail_bundle",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_group_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::groups::groups_get_detail_bundle(api_group_id)?;
                 Ok(output_ok)
             })())
         },
@@ -6175,6 +6408,48 @@ fn wire__crate__ffi__groups__groups_voice_presence_impl(
         },
     )
 }
+fn wire__crate__ffi__groups__groups_watch_groups_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "groups_watch_groups",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sink =
+                <StreamSink<String, flutter_rust_bridge::for_generated::DcoCodec>>::sse_decode(
+                    &mut deserializer,
+                );
+            let api_user_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::ffi::groups::groups_watch_groups(
+                        api_sink,
+                        api_user_pubkey,
+                        api_audience,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__ffi__guestbook__guestbook_add_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -6856,6 +7131,36 @@ fn wire__crate__ffi__identity__identity_fetch_follows_impl(
         },
     )
 }
+fn wire__crate__ffi__identity__identity_fetch_follows_union_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "identity_fetch_follows_union",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_pubkeys = <Vec<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::identity::identity_fetch_follows_union(api_pubkeys)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__ffi__identity__identity_follow_user_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -6941,6 +7246,36 @@ fn wire__crate__ffi__identity__identity_get_profile_impl(
             deserializer.end();
             transform_result_sse::<_, String>((move || {
                 let output_ok = crate::ffi::identity::identity_get_profile(api_pubkey)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__ffi__identity__identity_get_profiles_batch_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "identity_get_profiles_batch",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_pubkeys = <Vec<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::ffi::identity::identity_get_profiles_batch(api_pubkeys)?;
                 Ok(output_ok)
             })())
         },
@@ -7310,6 +7645,30 @@ fn wire__crate__ffi__identity__identity_verify_nip05_impl(
                     })()
                     .await,
                 )
+            }
+        },
+    )
+}
+fn wire__crate__ffi__identity__identity_watch_profile_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    sink: impl CstDecode<StreamSink<String, flutter_rust_bridge::for_generated::DcoCodec>>,
+    pubkey: impl CstDecode<String>,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::DcoCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "identity_watch_profile",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let api_sink = sink.cst_decode();
+            let api_pubkey = pubkey.cst_decode();
+            move |context| {
+                transform_result_dco::<_, _, String>((move || {
+                    let output_ok =
+                        crate::ffi::identity::identity_watch_profile(api_sink, api_pubkey)?;
+                    Ok(output_ok)
+                })())
             }
         },
     )
@@ -8360,6 +8719,48 @@ fn wire__crate__ffi__marketplace__marketplace_update_listing_impl(
         },
     )
 }
+fn wire__crate__ffi__marketplace__marketplace_watch_listings_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "marketplace_watch_listings",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sink =
+                <StreamSink<String, flutter_rust_bridge::for_generated::DcoCodec>>::sse_decode(
+                    &mut deserializer,
+                );
+            let api_limit = <i32>::sse_decode(&mut deserializer);
+            let api_audience = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::ffi::marketplace::marketplace_watch_listings(
+                        api_sink,
+                        api_limit,
+                        api_audience,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__ffi__media__media_chunking_for_mime_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -8909,6 +9310,38 @@ fn wire__crate__ffi__messaging__messaging_fetch_dms_impl(
         },
     )
 }
+fn wire__crate__ffi__messaging__messaging_fetch_dms_typed_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "messaging_fetch_dms_typed",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_with_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_limit = <i32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok =
+                    crate::ffi::messaging::messaging_fetch_dms_typed(api_with_pubkey, api_limit)?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__ffi__messaging__messaging_send_dm_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -9055,6 +9488,93 @@ fn wire__crate__ffi__messaging__messaging_store_dms_impl(
                 let output_ok = crate::ffi::messaging::messaging_store_dms(api_dms_json)?;
                 Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__ffi__messaging__messaging_watch_conversations_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    sink: impl CstDecode<StreamSink<Vec<String>, flutter_rust_bridge::for_generated::DcoCodec>>,
+    pubkey: impl CstDecode<String>,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::DcoCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "messaging_watch_conversations",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let api_sink = sink.cst_decode();
+            let api_pubkey = pubkey.cst_decode();
+            move |context| {
+                transform_result_dco::<_, _, String>((move || {
+                    let output_ok =
+                        crate::ffi::messaging::messaging_watch_conversations(api_sink, api_pubkey)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__messaging__messaging_watch_dms_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    sink: impl CstDecode<StreamSink<String, flutter_rust_bridge::for_generated::DcoCodec>>,
+    with_pubkey: impl CstDecode<String>,
+    limit: impl CstDecode<i32>,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::DcoCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "messaging_watch_dms",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let api_sink = sink.cst_decode();
+            let api_with_pubkey = with_pubkey.cst_decode();
+            let api_limit = limit.cst_decode();
+            move |context| {
+                transform_result_dco::<_, _, String>((move || {
+                    let output_ok = crate::ffi::messaging::messaging_watch_dms(
+                        api_sink,
+                        api_with_pubkey,
+                        api_limit,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__messaging__messaging_watch_dms_typed_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    sink: impl CstDecode<
+        StreamSink<
+            Vec<crate::ffi::messaging::DirectMessageDto>,
+            flutter_rust_bridge::for_generated::DcoCodec,
+        >,
+    >,
+    with_pubkey: impl CstDecode<String>,
+    limit: impl CstDecode<i32>,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::DcoCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "messaging_watch_dms_typed",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let api_sink = sink.cst_decode();
+            let api_with_pubkey = with_pubkey.cst_decode();
+            let api_limit = limit.cst_decode();
+            move |context| {
+                transform_result_dco::<_, _, String>((move || {
+                    let output_ok = crate::ffi::messaging::messaging_watch_dms_typed(
+                        api_sink,
+                        api_with_pubkey,
+                        api_limit,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -9291,6 +9811,43 @@ fn wire__crate__ffi__minis__minis_wasm_rank_feed_impl(
                 )?;
                 Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__ffi__minis__minis_watch_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "minis_watch",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sink =
+                <StreamSink<String, flutter_rust_bridge::for_generated::DcoCodec>>::sse_decode(
+                    &mut deserializer,
+                );
+            let api_audience = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::ffi::minis::minis_watch(api_sink, api_audience)?;
+                    Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -11870,6 +12427,48 @@ fn wire__crate__ffi__notifications__notifications_unregister_push_impl(
                     crate::ffi::notifications::notifications_unregister_push(api_user_pubkey)?;
                 Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__ffi__notifications__notifications_watch_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "notifications_watch",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sink =
+                <StreamSink<String, flutter_rust_bridge::for_generated::DcoCodec>>::sse_decode(
+                    &mut deserializer,
+                );
+            let api_user_pubkey = <String>::sse_decode(&mut deserializer);
+            let api_limit = <i32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::ffi::notifications::notifications_watch(
+                        api_sink,
+                        api_user_pubkey,
+                        api_limit,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -17101,6 +17700,12 @@ impl CstDecode<bool> for bool {
         self
     }
 }
+impl CstDecode<i32> for i32 {
+    // Codec=Cst (C-struct based), see doc to use other codecs
+    fn cst_decode(self) -> i32 {
+        self
+    }
+}
 impl CstDecode<u64> for u64 {
     // Codec=Cst (C-struct based), see doc to use other codecs
     fn cst_decode(self) -> u64 {
@@ -17175,6 +17780,37 @@ impl SseDecode for StreamSink<String, flutter_rust_bridge::for_generated::DcoCod
     }
 }
 
+impl SseDecode for StreamSink<Vec<String>, flutter_rust_bridge::for_generated::DcoCodec> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <String>::sse_decode(deserializer);
+        return StreamSink::deserialize(inner);
+    }
+}
+
+impl SseDecode
+    for StreamSink<
+        Vec<crate::ffi::messaging::DirectMessageDto>,
+        flutter_rust_bridge::for_generated::DcoCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <String>::sse_decode(deserializer);
+        return StreamSink::deserialize(inner);
+    }
+}
+
+impl SseDecode
+    for StreamSink<Vec<crate::ffi::feed::FeedPostDto>, flutter_rust_bridge::for_generated::DcoCodec>
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <String>::sse_decode(deserializer);
+        return StreamSink::deserialize(inner);
+    }
+}
+
 impl SseDecode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -17204,6 +17840,30 @@ impl SseDecode for crate::ffi::media::DecodedImageRgbaDto {
     }
 }
 
+impl SseDecode for crate::ffi::messaging::DirectMessageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_sender = <String>::sse_decode(deserializer);
+        let mut var_recipient = <String>::sse_decode(deserializer);
+        let mut var_content = <String>::sse_decode(deserializer);
+        let mut var_createdAt = <u64>::sse_decode(deserializer);
+        let mut var_decrypted = <bool>::sse_decode(deserializer);
+        let mut var_isOwn = <bool>::sse_decode(deserializer);
+        let mut var_tags = <String>::sse_decode(deserializer);
+        return crate::ffi::messaging::DirectMessageDto {
+            id: var_id,
+            sender: var_sender,
+            recipient: var_recipient,
+            content: var_content,
+            created_at: var_createdAt,
+            decrypted: var_decrypted,
+            is_own: var_isOwn,
+            tags: var_tags,
+        };
+    }
+}
+
 impl SseDecode for f32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -17215,6 +17875,56 @@ impl SseDecode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_f64::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for crate::ffi::feed::FeedPostDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_eventId = <String>::sse_decode(deserializer);
+        let mut var_pubkey = <String>::sse_decode(deserializer);
+        let mut var_content = <String>::sse_decode(deserializer);
+        let mut var_createdAt = <u64>::sse_decode(deserializer);
+        let mut var_reactions = <i32>::sse_decode(deserializer);
+        let mut var_replies = <i32>::sse_decode(deserializer);
+        let mut var_reposts = <i32>::sse_decode(deserializer);
+        let mut var_liked = <bool>::sse_decode(deserializer);
+        let mut var_profileName = <Option<String>>::sse_decode(deserializer);
+        let mut var_profilePicture = <Option<String>>::sse_decode(deserializer);
+        let mut var_media = <Option<crate::ffi::feed::PostMediaDto>>::sse_decode(deserializer);
+        return crate::ffi::feed::FeedPostDto {
+            event_id: var_eventId,
+            pubkey: var_pubkey,
+            content: var_content,
+            created_at: var_createdAt,
+            reactions: var_reactions,
+            replies: var_replies,
+            reposts: var_reposts,
+            liked: var_liked,
+            profile_name: var_profileName,
+            profile_picture: var_profilePicture,
+            media: var_media,
+        };
+    }
+}
+
+impl SseDecode for crate::ffi::feed::FeedQueryOptions {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_limit = <u32>::sse_decode(deserializer);
+        let mut var_offset = <u32>::sse_decode(deserializer);
+        let mut var_filterType = <String>::sse_decode(deserializer);
+        let mut var_cursorCreatedAt = <Option<i64>>::sse_decode(deserializer);
+        let mut var_cursorId = <Option<String>>::sse_decode(deserializer);
+        let mut var_audience = <String>::sse_decode(deserializer);
+        return crate::ffi::feed::FeedQueryOptions {
+            limit: var_limit,
+            offset: var_offset,
+            filter_type: var_filterType,
+            cursor_created_at: var_cursorCreatedAt,
+            cursor_id: var_cursorId,
+            audience: var_audience,
+        };
     }
 }
 
@@ -17276,6 +17986,32 @@ impl SseDecode for Vec<String> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<String>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::ffi::messaging::DirectMessageDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::ffi::messaging::DirectMessageDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::ffi::feed::FeedPostDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::ffi::feed::FeedPostDto>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -17364,6 +18100,17 @@ impl SseDecode for Option<String> {
     }
 }
 
+impl SseDecode for Option<i64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<i64>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::ffi::permissions::LocationFixDto> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -17371,6 +18118,17 @@ impl SseDecode for Option<crate::ffi::permissions::LocationFixDto> {
             return Some(<crate::ffi::permissions::LocationFixDto>::sse_decode(
                 deserializer,
             ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::ffi::feed::PostMediaDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::ffi::feed::PostMediaDto>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -17456,6 +18214,22 @@ impl SseDecode for crate::ffi::p2p::P2pSwarmStatusDto {
             bytes_downloaded: var_bytesDownloaded,
             failures: var_failures,
             failed_hashes: var_failedHashes,
+        };
+    }
+}
+
+impl SseDecode for crate::ffi::feed::PostMediaDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_url = <String>::sse_decode(deserializer);
+        let mut var_mediaType = <String>::sse_decode(deserializer);
+        let mut var_blobHash = <String>::sse_decode(deserializer);
+        let mut var_size = <i64>::sse_decode(deserializer);
+        return crate::ffi::feed::PostMediaDto {
+            url: var_url,
+            media_type: var_mediaType,
+            blob_hash: var_blobHash,
+            size: var_size,
         };
     }
 }
@@ -17596,6 +18370,85 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ffi::media::DecodedImageRgbaDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ffi::messaging::DirectMessageDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.sender.into_into_dart().into_dart(),
+            self.recipient.into_into_dart().into_dart(),
+            self.content.into_into_dart().into_dart(),
+            self.created_at.into_into_dart().into_dart(),
+            self.decrypted.into_into_dart().into_dart(),
+            self.is_own.into_into_dart().into_dart(),
+            self.tags.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ffi::messaging::DirectMessageDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ffi::messaging::DirectMessageDto>
+    for crate::ffi::messaging::DirectMessageDto
+{
+    fn into_into_dart(self) -> crate::ffi::messaging::DirectMessageDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ffi::feed::FeedPostDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.event_id.into_into_dart().into_dart(),
+            self.pubkey.into_into_dart().into_dart(),
+            self.content.into_into_dart().into_dart(),
+            self.created_at.into_into_dart().into_dart(),
+            self.reactions.into_into_dart().into_dart(),
+            self.replies.into_into_dart().into_dart(),
+            self.reposts.into_into_dart().into_dart(),
+            self.liked.into_into_dart().into_dart(),
+            self.profile_name.into_into_dart().into_dart(),
+            self.profile_picture.into_into_dart().into_dart(),
+            self.media.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::ffi::feed::FeedPostDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::ffi::feed::FeedPostDto>
+    for crate::ffi::feed::FeedPostDto
+{
+    fn into_into_dart(self) -> crate::ffi::feed::FeedPostDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ffi::feed::FeedQueryOptions {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.limit.into_into_dart().into_dart(),
+            self.offset.into_into_dart().into_dart(),
+            self.filter_type.into_into_dart().into_dart(),
+            self.cursor_created_at.into_into_dart().into_dart(),
+            self.cursor_id.into_into_dart().into_dart(),
+            self.audience.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ffi::feed::FeedQueryOptions
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ffi::feed::FeedQueryOptions>
+    for crate::ffi::feed::FeedQueryOptions
+{
+    fn into_into_dart(self) -> crate::ffi::feed::FeedQueryOptions {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::ffi::network::HttpResponseDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -17728,6 +18581,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ffi::p2p::P2pSwarmStatusDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ffi::feed::PostMediaDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.url.into_into_dart().into_dart(),
+            self.media_type.into_into_dart().into_dart(),
+            self.blob_hash.into_into_dart().into_dart(),
+            self.size.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ffi::feed::PostMediaDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ffi::feed::PostMediaDto>
+    for crate::ffi::feed::PostMediaDto
+{
+    fn into_into_dart(self) -> crate::ffi::feed::PostMediaDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::ffi::power::PowerStateDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -17801,6 +18677,34 @@ impl SseEncode for StreamSink<String, flutter_rust_bridge::for_generated::DcoCod
     }
 }
 
+impl SseEncode for StreamSink<Vec<String>, flutter_rust_bridge::for_generated::DcoCodec> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        unimplemented!("")
+    }
+}
+
+impl SseEncode
+    for StreamSink<
+        Vec<crate::ffi::messaging::DirectMessageDto>,
+        flutter_rust_bridge::for_generated::DcoCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        unimplemented!("")
+    }
+}
+
+impl SseEncode
+    for StreamSink<Vec<crate::ffi::feed::FeedPostDto>, flutter_rust_bridge::for_generated::DcoCodec>
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        unimplemented!("")
+    }
+}
+
 impl SseEncode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -17824,6 +18728,20 @@ impl SseEncode for crate::ffi::media::DecodedImageRgbaDto {
     }
 }
 
+impl SseEncode for crate::ffi::messaging::DirectMessageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.sender, serializer);
+        <String>::sse_encode(self.recipient, serializer);
+        <String>::sse_encode(self.content, serializer);
+        <u64>::sse_encode(self.created_at, serializer);
+        <bool>::sse_encode(self.decrypted, serializer);
+        <bool>::sse_encode(self.is_own, serializer);
+        <String>::sse_encode(self.tags, serializer);
+    }
+}
+
 impl SseEncode for f32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -17835,6 +18753,35 @@ impl SseEncode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_f64::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for crate::ffi::feed::FeedPostDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.event_id, serializer);
+        <String>::sse_encode(self.pubkey, serializer);
+        <String>::sse_encode(self.content, serializer);
+        <u64>::sse_encode(self.created_at, serializer);
+        <i32>::sse_encode(self.reactions, serializer);
+        <i32>::sse_encode(self.replies, serializer);
+        <i32>::sse_encode(self.reposts, serializer);
+        <bool>::sse_encode(self.liked, serializer);
+        <Option<String>>::sse_encode(self.profile_name, serializer);
+        <Option<String>>::sse_encode(self.profile_picture, serializer);
+        <Option<crate::ffi::feed::PostMediaDto>>::sse_encode(self.media, serializer);
+    }
+}
+
+impl SseEncode for crate::ffi::feed::FeedQueryOptions {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.limit, serializer);
+        <u32>::sse_encode(self.offset, serializer);
+        <String>::sse_encode(self.filter_type, serializer);
+        <Option<i64>>::sse_encode(self.cursor_created_at, serializer);
+        <Option<String>>::sse_encode(self.cursor_id, serializer);
+        <String>::sse_encode(self.audience, serializer);
     }
 }
 
@@ -17884,6 +18831,26 @@ impl SseEncode for Vec<String> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <String>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::ffi::messaging::DirectMessageDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::ffi::messaging::DirectMessageDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::ffi::feed::FeedPostDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::ffi::feed::FeedPostDto>::sse_encode(item, serializer);
         }
     }
 }
@@ -17956,12 +18923,32 @@ impl SseEncode for Option<String> {
     }
 }
 
+impl SseEncode for Option<i64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <i64>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::ffi::permissions::LocationFixDto> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::ffi::permissions::LocationFixDto>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::ffi::feed::PostMediaDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::ffi::feed::PostMediaDto>::sse_encode(value, serializer);
         }
     }
 }
@@ -18024,6 +19011,16 @@ impl SseEncode for crate::ffi::p2p::P2pSwarmStatusDto {
         <u64>::sse_encode(self.bytes_downloaded, serializer);
         <usize>::sse_encode(self.failures, serializer);
         <Vec<String>>::sse_encode(self.failed_hashes, serializer);
+    }
+}
+
+impl SseEncode for crate::ffi::feed::PostMediaDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.url, serializer);
+        <String>::sse_encode(self.media_type, serializer);
+        <String>::sse_encode(self.blob_hash, serializer);
+        <i64>::sse_encode(self.size, serializer);
     }
 }
 
@@ -18171,6 +19168,36 @@ mod io {
             StreamSink::deserialize(raw)
         }
     }
+    impl CstDecode<StreamSink<Vec<String>, flutter_rust_bridge::for_generated::DcoCodec>>
+        for *mut wire_cst_list_prim_u_8_strict
+    {
+        // Codec=Cst (C-struct based), see doc to use other codecs
+        fn cst_decode(
+            self,
+        ) -> StreamSink<Vec<String>, flutter_rust_bridge::for_generated::DcoCodec> {
+            let raw: String = self.cst_decode();
+            StreamSink::deserialize(raw)
+        }
+    }
+    impl
+        CstDecode<
+            StreamSink<
+                Vec<crate::ffi::messaging::DirectMessageDto>,
+                flutter_rust_bridge::for_generated::DcoCodec,
+            >,
+        > for *mut wire_cst_list_prim_u_8_strict
+    {
+        // Codec=Cst (C-struct based), see doc to use other codecs
+        fn cst_decode(
+            self,
+        ) -> StreamSink<
+            Vec<crate::ffi::messaging::DirectMessageDto>,
+            flutter_rust_bridge::for_generated::DcoCodec,
+        > {
+            let raw: String = self.cst_decode();
+            StreamSink::deserialize(raw)
+        }
+    }
     impl CstDecode<String> for *mut wire_cst_list_prim_u_8_strict {
         // Codec=Cst (C-struct based), see doc to use other codecs
         fn cst_decode(self) -> String {
@@ -18178,9 +19205,36 @@ mod io {
             String::from_utf8(vec).unwrap()
         }
     }
+    impl CstDecode<crate::ffi::messaging::DirectMessageDto> for wire_cst_direct_message_dto {
+        // Codec=Cst (C-struct based), see doc to use other codecs
+        fn cst_decode(self) -> crate::ffi::messaging::DirectMessageDto {
+            crate::ffi::messaging::DirectMessageDto {
+                id: self.id.cst_decode(),
+                sender: self.sender.cst_decode(),
+                recipient: self.recipient.cst_decode(),
+                content: self.content.cst_decode(),
+                created_at: self.created_at.cst_decode(),
+                decrypted: self.decrypted.cst_decode(),
+                is_own: self.is_own.cst_decode(),
+                tags: self.tags.cst_decode(),
+            }
+        }
+    }
     impl CstDecode<Vec<String>> for *mut wire_cst_list_String {
         // Codec=Cst (C-struct based), see doc to use other codecs
         fn cst_decode(self) -> Vec<String> {
+            let vec = unsafe {
+                let wrap = flutter_rust_bridge::for_generated::box_from_leak_ptr(self);
+                flutter_rust_bridge::for_generated::vec_from_leak_ptr(wrap.ptr, wrap.len)
+            };
+            vec.into_iter().map(CstDecode::cst_decode).collect()
+        }
+    }
+    impl CstDecode<Vec<crate::ffi::messaging::DirectMessageDto>>
+        for *mut wire_cst_list_direct_message_dto
+    {
+        // Codec=Cst (C-struct based), see doc to use other codecs
+        fn cst_decode(self) -> Vec<crate::ffi::messaging::DirectMessageDto> {
             let vec = unsafe {
                 let wrap = flutter_rust_bridge::for_generated::box_from_leak_ptr(self);
                 flutter_rust_bridge::for_generated::vec_from_leak_ptr(wrap.ptr, wrap.len)
@@ -18207,6 +19261,25 @@ mod io {
                 failures: self.failures.cst_decode(),
                 failed_hashes: self.failed_hashes.cst_decode(),
             }
+        }
+    }
+    impl NewWithNullPtr for wire_cst_direct_message_dto {
+        fn new_with_null_ptr() -> Self {
+            Self {
+                id: core::ptr::null_mut(),
+                sender: core::ptr::null_mut(),
+                recipient: core::ptr::null_mut(),
+                content: core::ptr::null_mut(),
+                created_at: Default::default(),
+                decrypted: Default::default(),
+                is_own: Default::default(),
+                tags: core::ptr::null_mut(),
+            }
+        }
+    }
+    impl Default for wire_cst_direct_message_dto {
+        fn default() -> Self {
+            Self::new_with_null_ptr()
         }
     }
     impl NewWithNullPtr for wire_cst_p_2_p_swarm_status_dto {
@@ -19030,6 +20103,16 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__dating__dating_watch_profiles(
+        port_: i64,
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__dating__dating_watch_profiles_impl(port_, ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__db__db_backup(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -19269,6 +20352,16 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__turso__db_turso_sync_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__db__db_watch_setting(
+        port_: i64,
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__db__db_watch_setting_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -19525,6 +20618,16 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__feed__feed_fetch_events_typed(
+        port_: i64,
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__feed__feed_fetch_events_typed_impl(port_, ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__feed__feed_fetch_thread(
         port_: i64,
         ptr_: *mut u8,
@@ -19581,6 +20684,34 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__feed__feed_validate_note_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__feed__feed_watch_events(
+        port_: i64,
+        sink: *mut wire_cst_list_prim_u_8_strict,
+        options_json: *mut wire_cst_list_prim_u_8_strict,
+    ) {
+        wire__crate__ffi__feed__feed_watch_events_impl(port_, sink, options_json)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__feed__feed_watch_events_typed(
+        port_: i64,
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__feed__feed_watch_events_typed_impl(port_, ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__feed__feed_watch_thread(
+        port_: i64,
+        sink: *mut wire_cst_list_prim_u_8_strict,
+        event_id: *mut wire_cst_list_prim_u_8_strict,
+    ) {
+        wire__crate__ffi__feed__feed_watch_thread_impl(port_, sink, event_id)
     }
 
     #[unsafe(no_mangle)]
@@ -19658,6 +20789,15 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__groups__groups_fetch_messages_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__groups__groups_get_detail_bundle(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__groups__groups_get_detail_bundle_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -19958,6 +21098,16 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__groups__groups_watch_groups(
+        port_: i64,
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__groups__groups_watch_groups_impl(port_, ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__guestbook__guestbook_add(
         port_: i64,
         ptr_: *mut u8,
@@ -20155,6 +21305,19 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__identity__identity_fetch_follows_union(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__identity__identity_fetch_follows_union_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__identity__identity_follow_user(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -20179,6 +21342,15 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__identity__identity_get_profile_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__identity__identity_get_profiles_batch(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__identity__identity_get_profiles_batch_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -20288,6 +21460,15 @@ mod io {
             rust_vec_len_,
             data_len_,
         )
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__identity__identity_watch_profile(
+        port_: i64,
+        sink: *mut wire_cst_list_prim_u_8_strict,
+        pubkey: *mut wire_cst_list_prim_u_8_strict,
+    ) {
+        wire__crate__ffi__identity__identity_watch_profile_impl(port_, sink, pubkey)
     }
 
     #[unsafe(no_mangle)]
@@ -20644,6 +21825,21 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__marketplace__marketplace_watch_listings(
+        port_: i64,
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__marketplace__marketplace_watch_listings_impl(
+            port_,
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__media__media_chunking_for_mime(
         ptr_: *mut u8,
         rust_vec_len_: i32,
@@ -20801,6 +21997,15 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__messaging__messaging_fetch_dms_typed(
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__messaging__messaging_fetch_dms_typed_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__messaging__messaging_send_dm(
         port_: i64,
         ptr_: *mut u8,
@@ -20835,6 +22040,35 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__messaging__messaging_store_dms_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__messaging__messaging_watch_conversations(
+        port_: i64,
+        sink: *mut wire_cst_list_prim_u_8_strict,
+        pubkey: *mut wire_cst_list_prim_u_8_strict,
+    ) {
+        wire__crate__ffi__messaging__messaging_watch_conversations_impl(port_, sink, pubkey)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__messaging__messaging_watch_dms(
+        port_: i64,
+        sink: *mut wire_cst_list_prim_u_8_strict,
+        with_pubkey: *mut wire_cst_list_prim_u_8_strict,
+        limit: i32,
+    ) {
+        wire__crate__ffi__messaging__messaging_watch_dms_impl(port_, sink, with_pubkey, limit)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__messaging__messaging_watch_dms_typed(
+        port_: i64,
+        sink: *mut wire_cst_list_prim_u_8_strict,
+        with_pubkey: *mut wire_cst_list_prim_u_8_strict,
+        limit: i32,
+    ) {
+        wire__crate__ffi__messaging__messaging_watch_dms_typed_impl(port_, sink, with_pubkey, limit)
     }
 
     #[unsafe(no_mangle)]
@@ -20899,6 +22133,16 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__minis__minis_wasm_rank_feed_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__minis__minis_watch(
+        port_: i64,
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__minis__minis_watch_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[unsafe(no_mangle)]
@@ -21739,6 +22983,21 @@ mod io {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__notifications__notifications_unregister_push_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_wire__crate__ffi__notifications__notifications_watch(
+        port_: i64,
+        ptr_: *mut u8,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__notifications__notifications_watch_impl(
+            port_,
             ptr_,
             rust_vec_len_,
             data_len_,
@@ -23424,6 +24683,20 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_soshal_flutter_cst_new_list_direct_message_dto(
+        len: i32,
+    ) -> *mut wire_cst_list_direct_message_dto {
+        let wrap = wire_cst_list_direct_message_dto {
+            ptr: flutter_rust_bridge::for_generated::new_leak_vec_ptr(
+                <wire_cst_direct_message_dto>::new_with_null_ptr(),
+                len,
+            ),
+            len,
+        };
+        flutter_rust_bridge::for_generated::new_leak_box_ptr(wrap)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_soshal_flutter_cst_new_list_prim_u_8_strict(
         len: i32,
     ) -> *mut wire_cst_list_prim_u_8_strict {
@@ -23436,8 +24709,26 @@ mod io {
 
     #[repr(C)]
     #[derive(Clone, Copy)]
+    pub struct wire_cst_direct_message_dto {
+        id: *mut wire_cst_list_prim_u_8_strict,
+        sender: *mut wire_cst_list_prim_u_8_strict,
+        recipient: *mut wire_cst_list_prim_u_8_strict,
+        content: *mut wire_cst_list_prim_u_8_strict,
+        created_at: u64,
+        decrypted: bool,
+        is_own: bool,
+        tags: *mut wire_cst_list_prim_u_8_strict,
+    }
+    #[repr(C)]
+    #[derive(Clone, Copy)]
     pub struct wire_cst_list_String {
         ptr: *mut *mut wire_cst_list_prim_u_8_strict,
+        len: i32,
+    }
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct wire_cst_list_direct_message_dto {
+        ptr: *mut wire_cst_direct_message_dto,
         len: i32,
     }
     #[repr(C)]
@@ -23496,15 +24787,79 @@ mod web {
             StreamSink::deserialize(self)
         }
     }
+    impl CstDecode<StreamSink<Vec<String>, flutter_rust_bridge::for_generated::DcoCodec>> for String {
+        // Codec=Cst (C-struct based), see doc to use other codecs
+        fn cst_decode(
+            self,
+        ) -> StreamSink<Vec<String>, flutter_rust_bridge::for_generated::DcoCodec> {
+            StreamSink::deserialize(self)
+        }
+    }
+    impl
+        CstDecode<
+            StreamSink<
+                Vec<crate::ffi::messaging::DirectMessageDto>,
+                flutter_rust_bridge::for_generated::DcoCodec,
+            >,
+        > for String
+    {
+        // Codec=Cst (C-struct based), see doc to use other codecs
+        fn cst_decode(
+            self,
+        ) -> StreamSink<
+            Vec<crate::ffi::messaging::DirectMessageDto>,
+            flutter_rust_bridge::for_generated::DcoCodec,
+        > {
+            StreamSink::deserialize(self)
+        }
+    }
     impl CstDecode<String> for String {
         // Codec=Cst (C-struct based), see doc to use other codecs
         fn cst_decode(self) -> String {
             self
         }
     }
+    impl CstDecode<crate::ffi::messaging::DirectMessageDto>
+        for flutter_rust_bridge::for_generated::wasm_bindgen::JsValue
+    {
+        // Codec=Cst (C-struct based), see doc to use other codecs
+        fn cst_decode(self) -> crate::ffi::messaging::DirectMessageDto {
+            let self_ = self
+                .dyn_into::<flutter_rust_bridge::for_generated::js_sys::Array>()
+                .unwrap();
+            assert_eq!(
+                self_.length(),
+                8,
+                "Expected 8 elements, got {}",
+                self_.length()
+            );
+            crate::ffi::messaging::DirectMessageDto {
+                id: self_.get(0).cst_decode(),
+                sender: self_.get(1).cst_decode(),
+                recipient: self_.get(2).cst_decode(),
+                content: self_.get(3).cst_decode(),
+                created_at: self_.get(4).cst_decode(),
+                decrypted: self_.get(5).cst_decode(),
+                is_own: self_.get(6).cst_decode(),
+                tags: self_.get(7).cst_decode(),
+            }
+        }
+    }
     impl CstDecode<Vec<String>> for flutter_rust_bridge::for_generated::wasm_bindgen::JsValue {
         // Codec=Cst (C-struct based), see doc to use other codecs
         fn cst_decode(self) -> Vec<String> {
+            self.dyn_into::<flutter_rust_bridge::for_generated::js_sys::Array>()
+                .unwrap()
+                .iter()
+                .map(CstDecode::cst_decode)
+                .collect()
+        }
+    }
+    impl CstDecode<Vec<crate::ffi::messaging::DirectMessageDto>>
+        for flutter_rust_bridge::for_generated::wasm_bindgen::JsValue
+    {
+        // Codec=Cst (C-struct based), see doc to use other codecs
+        fn cst_decode(self) -> Vec<crate::ffi::messaging::DirectMessageDto> {
             self.dyn_into::<flutter_rust_bridge::for_generated::js_sys::Array>()
                 .unwrap()
                 .iter()
@@ -23617,6 +24972,34 @@ mod web {
             StreamSink::deserialize(self.as_string().expect("should be a string"))
         }
     }
+    impl CstDecode<StreamSink<Vec<String>, flutter_rust_bridge::for_generated::DcoCodec>>
+        for flutter_rust_bridge::for_generated::wasm_bindgen::JsValue
+    {
+        // Codec=Cst (C-struct based), see doc to use other codecs
+        fn cst_decode(
+            self,
+        ) -> StreamSink<Vec<String>, flutter_rust_bridge::for_generated::DcoCodec> {
+            StreamSink::deserialize(self.as_string().expect("should be a string"))
+        }
+    }
+    impl
+        CstDecode<
+            StreamSink<
+                Vec<crate::ffi::messaging::DirectMessageDto>,
+                flutter_rust_bridge::for_generated::DcoCodec,
+            >,
+        > for flutter_rust_bridge::for_generated::wasm_bindgen::JsValue
+    {
+        // Codec=Cst (C-struct based), see doc to use other codecs
+        fn cst_decode(
+            self,
+        ) -> StreamSink<
+            Vec<crate::ffi::messaging::DirectMessageDto>,
+            flutter_rust_bridge::for_generated::DcoCodec,
+        > {
+            StreamSink::deserialize(self.as_string().expect("should be a string"))
+        }
+    }
     impl CstDecode<String> for flutter_rust_bridge::for_generated::wasm_bindgen::JsValue {
         // Codec=Cst (C-struct based), see doc to use other codecs
         fn cst_decode(self) -> String {
@@ -23627,6 +25010,12 @@ mod web {
         // Codec=Cst (C-struct based), see doc to use other codecs
         fn cst_decode(self) -> bool {
             self.is_truthy()
+        }
+    }
+    impl CstDecode<i32> for flutter_rust_bridge::for_generated::wasm_bindgen::JsValue {
+        // Codec=Cst (C-struct based), see doc to use other codecs
+        fn cst_decode(self) -> i32 {
+            self.unchecked_into_f64() as _
         }
     }
     impl CstDecode<Vec<u8>> for flutter_rust_bridge::for_generated::wasm_bindgen::JsValue {
@@ -24460,6 +25849,16 @@ mod web {
     }
 
     #[wasm_bindgen]
+    pub fn wire__crate__ffi__dating__dating_watch_profiles(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__dating__dating_watch_profiles_impl(port_, ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
     pub fn wire__crate__ffi__db__db_backup(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -24699,6 +26098,16 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__turso__db_turso_sync_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__db__db_watch_setting(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__db__db_watch_setting_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
@@ -24955,6 +26364,16 @@ mod web {
     }
 
     #[wasm_bindgen]
+    pub fn wire__crate__ffi__feed__feed_fetch_events_typed(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__feed__feed_fetch_events_typed_impl(port_, ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
     pub fn wire__crate__ffi__feed__feed_fetch_thread(
         port_: flutter_rust_bridge::for_generated::MessagePort,
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -25011,6 +26430,34 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__feed__feed_validate_note_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__feed__feed_watch_events(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        sink: String,
+        options_json: String,
+    ) {
+        wire__crate__ffi__feed__feed_watch_events_impl(port_, sink, options_json)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__feed__feed_watch_events_typed(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__feed__feed_watch_events_typed_impl(port_, ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__feed__feed_watch_thread(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        sink: String,
+        event_id: String,
+    ) {
+        wire__crate__ffi__feed__feed_watch_thread_impl(port_, sink, event_id)
     }
 
     #[wasm_bindgen]
@@ -25088,6 +26535,15 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__groups__groups_fetch_messages_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__groups__groups_get_detail_bundle(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__groups__groups_get_detail_bundle_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
@@ -25388,6 +26844,16 @@ mod web {
     }
 
     #[wasm_bindgen]
+    pub fn wire__crate__ffi__groups__groups_watch_groups(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__groups__groups_watch_groups_impl(port_, ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
     pub fn wire__crate__ffi__guestbook__guestbook_add(
         port_: flutter_rust_bridge::for_generated::MessagePort,
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -25585,6 +27051,19 @@ mod web {
     }
 
     #[wasm_bindgen]
+    pub fn wire__crate__ffi__identity__identity_fetch_follows_union(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__identity__identity_fetch_follows_union_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[wasm_bindgen]
     pub fn wire__crate__ffi__identity__identity_follow_user(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -25609,6 +27088,15 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__identity__identity_get_profile_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__identity__identity_get_profiles_batch(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__identity__identity_get_profiles_batch_impl(ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
@@ -25718,6 +27206,15 @@ mod web {
             rust_vec_len_,
             data_len_,
         )
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__identity__identity_watch_profile(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        sink: String,
+        pubkey: String,
+    ) {
+        wire__crate__ffi__identity__identity_watch_profile_impl(port_, sink, pubkey)
     }
 
     #[wasm_bindgen]
@@ -26074,6 +27571,21 @@ mod web {
     }
 
     #[wasm_bindgen]
+    pub fn wire__crate__ffi__marketplace__marketplace_watch_listings(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__marketplace__marketplace_watch_listings_impl(
+            port_,
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[wasm_bindgen]
     pub fn wire__crate__ffi__media__media_chunking_for_mime(
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
         rust_vec_len_: i32,
@@ -26231,6 +27743,15 @@ mod web {
     }
 
     #[wasm_bindgen]
+    pub fn wire__crate__ffi__messaging__messaging_fetch_dms_typed(
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+        wire__crate__ffi__messaging__messaging_fetch_dms_typed_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
     pub fn wire__crate__ffi__messaging__messaging_send_dm(
         port_: flutter_rust_bridge::for_generated::MessagePort,
         ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -26265,6 +27786,35 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__messaging__messaging_store_dms_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__messaging__messaging_watch_conversations(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        sink: String,
+        pubkey: String,
+    ) {
+        wire__crate__ffi__messaging__messaging_watch_conversations_impl(port_, sink, pubkey)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__messaging__messaging_watch_dms(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        sink: String,
+        with_pubkey: String,
+        limit: i32,
+    ) {
+        wire__crate__ffi__messaging__messaging_watch_dms_impl(port_, sink, with_pubkey, limit)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__messaging__messaging_watch_dms_typed(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        sink: String,
+        with_pubkey: String,
+        limit: i32,
+    ) {
+        wire__crate__ffi__messaging__messaging_watch_dms_typed_impl(port_, sink, with_pubkey, limit)
     }
 
     #[wasm_bindgen]
@@ -26329,6 +27879,16 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__minis__minis_wasm_rank_feed_impl(ptr_, rust_vec_len_, data_len_)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__minis__minis_watch(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__minis__minis_watch_impl(port_, ptr_, rust_vec_len_, data_len_)
     }
 
     #[wasm_bindgen]
@@ -27169,6 +28729,21 @@ mod web {
         data_len_: i32,
     ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
         wire__crate__ffi__notifications__notifications_unregister_push_impl(
+            ptr_,
+            rust_vec_len_,
+            data_len_,
+        )
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__ffi__notifications__notifications_watch(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+        rust_vec_len_: i32,
+        data_len_: i32,
+    ) {
+        wire__crate__ffi__notifications__notifications_watch_impl(
+            port_,
             ptr_,
             rust_vec_len_,
             data_len_,

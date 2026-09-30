@@ -42,6 +42,19 @@ impl<'a> MessageRepo<'a> {
         }
     }
 
+    pub fn delete(&self, id: &str) -> Result<(), crate::error::DbError> {
+        let conn = self.db.conn()?;
+        let norm_id = id.trim().to_ascii_lowercase();
+        crate::query::execute(
+            &conn,
+            "UPDATE messages SET is_deleted = 1 WHERE LOWER(id) = ?1",
+            params![norm_id.as_str()],
+        )?;
+        self.db
+            .notify_change(crate::change_bus::Table::Messages, None);
+        Ok(())
+    }
+
     pub fn upsert(&self, msg: &MessageRow) -> Result<(), crate::error::DbError> {
         if crate::repos::limits::row_too_big(&msg.content, &msg.tags_json) {
             return Err(crate::error::DbError::Oversized(format!(

@@ -1,5 +1,6 @@
 import '../utils/json_ext.dart';
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,6 +9,7 @@ import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
 import 'media_service.dart';
 import 'p2p_service.dart';
+import '../utils/offthread.dart';
 import '../utils/service_guard.dart';
 
 /// Minis: mini video registry (kind-31020) plus WASI content-filter /
@@ -22,17 +24,62 @@ class MinisService extends ChangeNotifier
   bool get wasmRuntimeUnavailable => _wasmRuntimeUnavailable;
 
   List<MiniItem> _saved = [];
+  List<MiniItem> _minis = [];
+  bool _minisLoading = false;
+  StreamSubscription<List<MiniItem>>? _minisSub;
 
   /// Minis the user saved locally for the Saved tab.
   List<MiniItem> get savedMinis => _saved;
+  List<MiniItem> get minis => _minis;
+  bool get minisLoading => _minisLoading;
 
   bool isSaved(String id) => _saved.any((m) => m.id == id);
 
+  @override
+  void dispose() {
+    _minisSub?.cancel();
+    super.dispose();
+  }
+
   /// Clears in-memory saved minis and transient state on account switch.
   void resetForAccountSwitch() {
+    _minisSub?.cancel();
+    _minisSub = null;
     _saved = [];
+    _minis = [];
+    _minisLoading = false;
     clearLastError();
     notifyListeners();
+  }
+
+  /// Reactive stream of known minis, updating live when posts or reactions change.
+  ///
+  /// The bridge re-emits the *whole* registry on every change, so the decode
+  /// runs on each emission — off the UI isolate via [runOffThreadCompute].
+  Stream<List<MiniItem>> watchMinis({String audience = 'public'}) {
+    return RustLib.instance.api
+        .crateFfiMinisMinisWatch(audience: audience)
+        .asyncMap((json) => runOffThreadCompute(_parseMinis, json));
+  }
+
+  /// Subscribe to live minis updates.
+  void subscribeToMinis({String audience = 'public'}) {
+    _minisSub?.cancel();
+    _minisLoading = true;
+    notifyDeferred();
+    _minisSub = watchMinis(audience: audience).listen(
+      (updated) {
+        _minis = updated;
+        _minisLoading = false;
+        clearLastError();
+        notifyDeferred();
+      },
+      onError: (e, st) {
+        _minisLoading = false;
+        setLastError(e, st);
+        notifyDeferred();
+      },
+    );
   }
 
   /// Fetch known minis from the local registry, newest first.
@@ -49,12 +96,9 @@ class MinisService extends ChangeNotifier
 
   /// Saved minis from the local `saved_content` store, newest saved first.
   Future<List<MiniItem>> fetchSavedMinis() => guard(() async {
-        final json = RustLib.instance.api.crateFfiMinisMinisSaved();
-        final decoded = jsonDecode(json) as List<dynamic>;
-        final list = List<MiniItem>.generate(
-          decoded.length,
-          (i) => MiniItem.fromJson(decoded[i] as Map<String, dynamic>),
-          growable: true,
+        final list = await runOffThreadCompute(
+          _parseMinis,
+          RustLib.instance.api.crateFfiMinisMinisSaved(),
         );
         _saved = list;
         return list;
@@ -282,4 +326,16 @@ Future<bool> hostMiniBlob(
     }
   }
   return false;
+}
+
+/// JSON → [MiniItem] list, top-level so [runOffThreadCompute] can decode on a
+/// background isolate. Each mini carries caption, media URLs and tags, and the
+/// registry re-emits in full on every change, so this is not a small payload.
+List<MiniItem> _parseMinis(String json) {
+  final decoded = jsonDecode(json) as List<dynamic>;
+  return List<MiniItem>.generate(
+    decoded.length,
+    (i) => MiniItem.fromJson(decoded[i] as Map<String, dynamic>),
+    growable: true,
+  );
 }

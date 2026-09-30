@@ -13,8 +13,10 @@ import 'ffi/auth.dart';
 import 'ffi/content.dart';
 import 'ffi/daemon.dart';
 import 'ffi/db.dart';
+import 'ffi/feed.dart';
 import 'ffi/h264.dart';
 import 'ffi/media.dart';
+import 'ffi/messaging.dart';
 import 'ffi/network.dart';
 import 'ffi/p2p.dart';
 import 'ffi/permissions.dart';
@@ -78,13 +80,34 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RustStreamSink<String> dco_decode_StreamSink_String_Dco(dynamic raw);
 
   @protected
+  RustStreamSink<List<String>> dco_decode_StreamSink_list_String_Dco(
+      dynamic raw);
+
+  @protected
+  RustStreamSink<List<DirectMessageDto>>
+      dco_decode_StreamSink_list_direct_message_dto_Dco(dynamic raw);
+
+  @protected
+  RustStreamSink<List<FeedPostDto>>
+      dco_decode_StreamSink_list_feed_post_dto_Dco(dynamic raw);
+
+  @protected
   String dco_decode_String(dynamic raw);
 
   @protected
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  FeedQueryOptions dco_decode_box_autoadd_feed_query_options(dynamic raw);
+
+  @protected
+  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
+
+  @protected
   LocationFixDto dco_decode_box_autoadd_location_fix_dto(dynamic raw);
+
+  @protected
+  PostMediaDto dco_decode_box_autoadd_post_media_dto(dynamic raw);
 
   @protected
   int dco_decode_box_autoadd_u_16(dynamic raw);
@@ -96,10 +119,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DecodedImageRgbaDto dco_decode_decoded_image_rgba_dto(dynamic raw);
 
   @protected
+  DirectMessageDto dco_decode_direct_message_dto(dynamic raw);
+
+  @protected
   double dco_decode_f_32(dynamic raw);
 
   @protected
   double dco_decode_f_64(dynamic raw);
+
+  @protected
+  FeedPostDto dco_decode_feed_post_dto(dynamic raw);
+
+  @protected
+  FeedQueryOptions dco_decode_feed_query_options(dynamic raw);
 
   @protected
   HttpResponseDto dco_decode_http_response_dto(dynamic raw);
@@ -118,6 +150,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<DirectMessageDto> dco_decode_list_direct_message_dto(dynamic raw);
+
+  @protected
+  List<FeedPostDto> dco_decode_list_feed_post_dto(dynamic raw);
 
   @protected
   List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
@@ -147,7 +185,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
+  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
+
+  @protected
   LocationFixDto? dco_decode_opt_box_autoadd_location_fix_dto(dynamic raw);
+
+  @protected
+  PostMediaDto? dco_decode_opt_box_autoadd_post_media_dto(dynamic raw);
 
   @protected
   int? dco_decode_opt_box_autoadd_u_16(dynamic raw);
@@ -166,6 +210,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   P2pSwarmStatusDto dco_decode_p_2_p_swarm_status_dto(dynamic raw);
+
+  @protected
+  PostMediaDto dco_decode_post_media_dto(dynamic raw);
 
   @protected
   PowerStateDto dco_decode_power_state_dto(dynamic raw);
@@ -226,13 +273,38 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  RustStreamSink<List<String>> sse_decode_StreamSink_list_String_Dco(
+      SseDeserializer deserializer);
+
+  @protected
+  RustStreamSink<List<DirectMessageDto>>
+      sse_decode_StreamSink_list_direct_message_dto_Dco(
+          SseDeserializer deserializer);
+
+  @protected
+  RustStreamSink<List<FeedPostDto>>
+      sse_decode_StreamSink_list_feed_post_dto_Dco(
+          SseDeserializer deserializer);
+
+  @protected
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  FeedQueryOptions sse_decode_box_autoadd_feed_query_options(
+      SseDeserializer deserializer);
+
+  @protected
+  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
   LocationFixDto sse_decode_box_autoadd_location_fix_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  PostMediaDto sse_decode_box_autoadd_post_media_dto(
       SseDeserializer deserializer);
 
   @protected
@@ -246,10 +318,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       SseDeserializer deserializer);
 
   @protected
+  DirectMessageDto sse_decode_direct_message_dto(SseDeserializer deserializer);
+
+  @protected
   double sse_decode_f_32(SseDeserializer deserializer);
 
   @protected
   double sse_decode_f_64(SseDeserializer deserializer);
+
+  @protected
+  FeedPostDto sse_decode_feed_post_dto(SseDeserializer deserializer);
+
+  @protected
+  FeedQueryOptions sse_decode_feed_query_options(SseDeserializer deserializer);
 
   @protected
   HttpResponseDto sse_decode_http_response_dto(SseDeserializer deserializer);
@@ -269,6 +350,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<DirectMessageDto> sse_decode_list_direct_message_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  List<FeedPostDto> sse_decode_list_feed_post_dto(SseDeserializer deserializer);
 
   @protected
   List<Uint8List> sse_decode_list_list_prim_u_8_strict(
@@ -299,7 +387,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
+  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
   LocationFixDto? sse_decode_opt_box_autoadd_location_fix_dto(
+      SseDeserializer deserializer);
+
+  @protected
+  PostMediaDto? sse_decode_opt_box_autoadd_post_media_dto(
       SseDeserializer deserializer);
 
   @protected
@@ -320,6 +415,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   P2pSwarmStatusDto sse_decode_p_2_p_swarm_status_dto(
       SseDeserializer deserializer);
+
+  @protected
+  PostMediaDto sse_decode_post_media_dto(SseDeserializer deserializer);
 
   @protected
   PowerStateDto sse_decode_power_state_dto(SseDeserializer deserializer);
@@ -359,15 +457,58 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   }
 
   @protected
+  String cst_encode_StreamSink_list_String_Dco(
+      RustStreamSink<List<String>> raw) {
+    // Codec=Cst (C-struct based), see doc to use other codecs
+    return cst_encode_String(raw.setupAndSerialize(
+        codec: DcoCodec(
+      decodeSuccessData: dco_decode_list_String,
+      decodeErrorData: dco_decode_AnyhowException,
+    )));
+  }
+
+  @protected
+  String cst_encode_StreamSink_list_direct_message_dto_Dco(
+      RustStreamSink<List<DirectMessageDto>> raw) {
+    // Codec=Cst (C-struct based), see doc to use other codecs
+    return cst_encode_String(raw.setupAndSerialize(
+        codec: DcoCodec(
+      decodeSuccessData: dco_decode_list_direct_message_dto,
+      decodeErrorData: dco_decode_AnyhowException,
+    )));
+  }
+
+  @protected
   String cst_encode_String(String raw) {
     // Codec=Cst (C-struct based), see doc to use other codecs
     return raw;
   }
 
   @protected
+  JSAny cst_encode_direct_message_dto(DirectMessageDto raw) {
+    // Codec=Cst (C-struct based), see doc to use other codecs
+    return [
+      cst_encode_String(raw.id),
+      cst_encode_String(raw.sender),
+      cst_encode_String(raw.recipient),
+      cst_encode_String(raw.content),
+      cst_encode_u_64(raw.createdAt),
+      cst_encode_bool(raw.decrypted),
+      cst_encode_bool(raw.isOwn),
+      cst_encode_String(raw.tags)
+    ].jsify()!;
+  }
+
+  @protected
   JSAny cst_encode_list_String(List<String> raw) {
     // Codec=Cst (C-struct based), see doc to use other codecs
     return raw.map(cst_encode_String).toList().jsify()!;
+  }
+
+  @protected
+  JSAny cst_encode_list_direct_message_dto(List<DirectMessageDto> raw) {
+    // Codec=Cst (C-struct based), see doc to use other codecs
+    return raw.map(cst_encode_direct_message_dto).toList().jsify()!;
   }
 
   @protected
@@ -428,6 +569,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool cst_encode_bool(bool raw);
 
   @protected
+  int cst_encode_i_32(int raw);
+
+  @protected
   int cst_encode_u_8(int raw);
 
   @protected
@@ -472,14 +616,38 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       RustStreamSink<String> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_StreamSink_list_String_Dco(
+      RustStreamSink<List<String>> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_StreamSink_list_direct_message_dto_Dco(
+      RustStreamSink<List<DirectMessageDto>> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_StreamSink_list_feed_post_dto_Dco(
+      RustStreamSink<List<FeedPostDto>> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_feed_query_options(
+      FeedQueryOptions self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_i_64(
+      PlatformInt64 self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_location_fix_dto(
       LocationFixDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_post_media_dto(
+      PostMediaDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_u_16(int self, SseSerializer serializer);
@@ -492,10 +660,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
       DecodedImageRgbaDto self, SseSerializer serializer);
 
   @protected
+  void sse_encode_direct_message_dto(
+      DirectMessageDto self, SseSerializer serializer);
+
+  @protected
   void sse_encode_f_32(double self, SseSerializer serializer);
 
   @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_feed_post_dto(FeedPostDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_feed_query_options(
+      FeedQueryOptions self, SseSerializer serializer);
 
   @protected
   void sse_encode_http_response_dto(
@@ -516,6 +695,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_direct_message_dto(
+      List<DirectMessageDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_feed_post_dto(
+      List<FeedPostDto> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_list_prim_u_8_strict(
@@ -552,8 +739,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_i_64(
+      PlatformInt64? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_location_fix_dto(
       LocationFixDto? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_post_media_dto(
+      PostMediaDto? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_u_16(int? self, SseSerializer serializer);
@@ -574,6 +769,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_p_2_p_swarm_status_dto(
       P2pSwarmStatusDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_post_media_dto(PostMediaDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_power_state_dto(PowerStateDto self, SseSerializer serializer);
@@ -1245,6 +1443,14 @@ class RustLibWire implements BaseWire {
           wasmModule.wire__crate__ffi__dating__dating_update_profile(
               ptr_, rust_vec_len_, data_len_);
 
+  void wire__crate__ffi__dating__dating_watch_profiles(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__dating__dating_watch_profiles(
+          port_, ptr_, rust_vec_len_, data_len_);
+
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__db__db_backup(PlatformGeneralizedUint8ListPtr ptr_,
               int rust_vec_len_, int data_len_) =>
@@ -1429,6 +1635,14 @@ class RustLibWire implements BaseWire {
               int data_len_) =>
           wasmModule.wire__crate__ffi__turso__db_turso_sync(
               ptr_, rust_vec_len_, data_len_);
+
+  void wire__crate__ffi__db__db_watch_setting(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__db__db_watch_setting(
+          port_, ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__ebpf__ebpf_block_ip(
@@ -1646,6 +1860,14 @@ class RustLibWire implements BaseWire {
       wasmModule.wire__crate__ffi__feed__feed_fetch_events(
           port_, ptr_, rust_vec_len_, data_len_);
 
+  void wire__crate__ffi__feed__feed_fetch_events_typed(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__feed__feed_fetch_events_typed(
+          port_, ptr_, rust_vec_len_, data_len_);
+
   void wire__crate__ffi__feed__feed_fetch_thread(
           NativePortType port_,
           PlatformGeneralizedUint8ListPtr ptr_,
@@ -1693,6 +1915,24 @@ class RustLibWire implements BaseWire {
               int data_len_) =>
           wasmModule.wire__crate__ffi__feed__feed_validate_note(
               ptr_, rust_vec_len_, data_len_);
+
+  void wire__crate__ffi__feed__feed_watch_events(
+          NativePortType port_, String sink, String options_json) =>
+      wasmModule.wire__crate__ffi__feed__feed_watch_events(
+          port_, sink, options_json);
+
+  void wire__crate__ffi__feed__feed_watch_events_typed(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__feed__feed_watch_events_typed(
+          port_, ptr_, rust_vec_len_, data_len_);
+
+  void wire__crate__ffi__feed__feed_watch_thread(
+          NativePortType port_, String sink, String event_id) =>
+      wasmModule.wire__crate__ffi__feed__feed_watch_thread(
+          port_, sink, event_id);
 
   void wire__crate__ffi__network__freenet_connect(
           NativePortType port_,
@@ -1756,6 +1996,14 @@ class RustLibWire implements BaseWire {
               int rust_vec_len_,
               int data_len_) =>
           wasmModule.wire__crate__ffi__groups__groups_fetch_messages(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__groups__groups_get_detail_bundle(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__groups__groups_get_detail_bundle(
               ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
@@ -2022,6 +2270,14 @@ class RustLibWire implements BaseWire {
           wasmModule.wire__crate__ffi__groups__groups_voice_presence(
               ptr_, rust_vec_len_, data_len_);
 
+  void wire__crate__ffi__groups__groups_watch_groups(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__groups__groups_watch_groups(
+          port_, ptr_, rust_vec_len_, data_len_);
+
   void wire__crate__ffi__guestbook__guestbook_add(
           NativePortType port_,
           PlatformGeneralizedUint8ListPtr ptr_,
@@ -2189,6 +2445,14 @@ class RustLibWire implements BaseWire {
               ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__identity__identity_fetch_follows_union(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__identity__identity_fetch_follows_union(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__identity__identity_follow_user(
               PlatformGeneralizedUint8ListPtr ptr_,
               int rust_vec_len_,
@@ -2210,6 +2474,14 @@ class RustLibWire implements BaseWire {
               int rust_vec_len_,
               int data_len_) =>
           wasmModule.wire__crate__ffi__identity__identity_get_profile(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__identity__identity_get_profiles_batch(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__identity__identity_get_profiles_batch(
               ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
@@ -2300,6 +2572,11 @@ class RustLibWire implements BaseWire {
           int data_len_) =>
       wasmModule.wire__crate__ffi__identity__identity_verify_nip05(
           port_, ptr_, rust_vec_len_, data_len_);
+
+  void wire__crate__ffi__identity__identity_watch_profile(
+          NativePortType port_, String sink, String pubkey) =>
+      wasmModule.wire__crate__ffi__identity__identity_watch_profile(
+          port_, sink, pubkey);
 
   void wire__crate__ffi__signer__keyring_available(NativePortType port_) =>
       wasmModule.wire__crate__ffi__signer__keyring_available(port_);
@@ -2550,6 +2827,14 @@ class RustLibWire implements BaseWire {
           wasmModule.wire__crate__ffi__marketplace__marketplace_update_listing(
               ptr_, rust_vec_len_, data_len_);
 
+  void wire__crate__ffi__marketplace__marketplace_watch_listings(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__marketplace__marketplace_watch_listings(
+          port_, ptr_, rust_vec_len_, data_len_);
+
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__media__media_chunking_for_mime(
               PlatformGeneralizedUint8ListPtr ptr_,
@@ -2678,6 +2963,14 @@ class RustLibWire implements BaseWire {
           wasmModule.wire__crate__ffi__messaging__messaging_fetch_dms(
               ptr_, rust_vec_len_, data_len_);
 
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__messaging__messaging_fetch_dms_typed(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__messaging__messaging_fetch_dms_typed(
+              ptr_, rust_vec_len_, data_len_);
+
   void wire__crate__ffi__messaging__messaging_send_dm(
           NativePortType port_,
           PlatformGeneralizedUint8ListPtr ptr_,
@@ -2709,6 +3002,21 @@ class RustLibWire implements BaseWire {
               int data_len_) =>
           wasmModule.wire__crate__ffi__messaging__messaging_store_dms(
               ptr_, rust_vec_len_, data_len_);
+
+  void wire__crate__ffi__messaging__messaging_watch_conversations(
+          NativePortType port_, String sink, String pubkey) =>
+      wasmModule.wire__crate__ffi__messaging__messaging_watch_conversations(
+          port_, sink, pubkey);
+
+  void wire__crate__ffi__messaging__messaging_watch_dms(
+          NativePortType port_, String sink, String with_pubkey, int limit) =>
+      wasmModule.wire__crate__ffi__messaging__messaging_watch_dms(
+          port_, sink, with_pubkey, limit);
+
+  void wire__crate__ffi__messaging__messaging_watch_dms_typed(
+          NativePortType port_, String sink, String with_pubkey, int limit) =>
+      wasmModule.wire__crate__ffi__messaging__messaging_watch_dms_typed(
+          port_, sink, with_pubkey, limit);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__minis__minis_fetch(PlatformGeneralizedUint8ListPtr ptr_,
@@ -2759,6 +3067,14 @@ class RustLibWire implements BaseWire {
               int data_len_) =>
           wasmModule.wire__crate__ffi__minis__minis_wasm_rank_feed(
               ptr_, rust_vec_len_, data_len_);
+
+  void wire__crate__ffi__minis__minis_watch(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__minis__minis_watch(
+          port_, ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__moderation__moderation_ai_classify_media(
@@ -3376,6 +3692,14 @@ class RustLibWire implements BaseWire {
           wasmModule
               .wire__crate__ffi__notifications__notifications_unregister_push(
                   ptr_, rust_vec_len_, data_len_);
+
+  void wire__crate__ffi__notifications__notifications_watch(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__notifications__notifications_watch(
+          port_, ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__p2p__p2p_decode_fountain_payload(
@@ -5172,6 +5496,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int rust_vec_len_,
           int data_len_);
 
+  external void wire__crate__ffi__dating__dating_watch_profiles(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
+
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__db__db_backup(PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_, int data_len_);
@@ -5306,6 +5636,9 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);
+
+  external void wire__crate__ffi__db__db_watch_setting(NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__ebpf__ebpf_block_ip(
@@ -5463,6 +5796,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
   external void wire__crate__ffi__feed__feed_fetch_events(NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
+  external void wire__crate__ffi__feed__feed_fetch_events_typed(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
+
   external void wire__crate__ffi__feed__feed_fetch_thread(NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
@@ -5486,6 +5825,18 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);
+
+  external void wire__crate__ffi__feed__feed_watch_events(
+      NativePortType port_, String sink, String options_json);
+
+  external void wire__crate__ffi__feed__feed_watch_events_typed(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
+
+  external void wire__crate__ffi__feed__feed_watch_thread(
+      NativePortType port_, String sink, String event_id);
 
   external void wire__crate__ffi__network__freenet_connect(NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
@@ -5525,6 +5876,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__groups__groups_fetch_messages(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__groups__groups_get_detail_bundle(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);
@@ -5727,6 +6084,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int rust_vec_len_,
           int data_len_);
 
+  external void wire__crate__ffi__groups__groups_watch_groups(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
+
   external void wire__crate__ffi__guestbook__guestbook_add(NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
@@ -5849,6 +6212,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__identity__identity_fetch_follows_union(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__identity__identity_follow_user(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
@@ -5862,6 +6231,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__identity__identity_get_profile(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__identity__identity_get_profiles_batch(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);
@@ -5931,6 +6306,9 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
       PlatformGeneralizedUint8ListPtr ptr_,
       int rust_vec_len_,
       int data_len_);
+
+  external void wire__crate__ffi__identity__identity_watch_profile(
+      NativePortType port_, String sink, String pubkey);
 
   external void wire__crate__ffi__signer__keyring_available(
       NativePortType port_);
@@ -6115,6 +6493,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int rust_vec_len_,
           int data_len_);
 
+  external void wire__crate__ffi__marketplace__marketplace_watch_listings(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
+
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__media__media_chunking_for_mime(
           PlatformGeneralizedUint8ListPtr ptr_,
@@ -6193,6 +6577,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int rust_vec_len_,
           int data_len_);
 
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__messaging__messaging_fetch_dms_typed(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
   external void wire__crate__ffi__messaging__messaging_send_dm(
       NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_,
@@ -6216,6 +6606,15 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);
+
+  external void wire__crate__ffi__messaging__messaging_watch_conversations(
+      NativePortType port_, String sink, String pubkey);
+
+  external void wire__crate__ffi__messaging__messaging_watch_dms(
+      NativePortType port_, String sink, String with_pubkey, int limit);
+
+  external void wire__crate__ffi__messaging__messaging_watch_dms_typed(
+      NativePortType port_, String sink, String with_pubkey, int limit);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__minis__minis_fetch(PlatformGeneralizedUint8ListPtr ptr_,
@@ -6249,6 +6648,9 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);
+
+  external void wire__crate__ffi__minis__minis_watch(NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__moderation__moderation_ai_classify_media(
@@ -6689,6 +7091,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);
+
+  external void wire__crate__ffi__notifications__notifications_watch(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__p2p__p2p_decode_fountain_payload(

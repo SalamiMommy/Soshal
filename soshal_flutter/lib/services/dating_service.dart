@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -13,6 +14,7 @@ import '../utils/service_guard.dart';
 class DatingService extends ChangeNotifier
     with LastErrorMixin, DeferredNotify, ServiceGuard {
   List<DatingCard> _cards = [];
+  StreamSubscription<List<DatingCard>>? _profilesSub;
   final List<DatingCard> _matches = [];
   final List<DatingCard> _likes = [];
   DatingCard? _ownProfile;
@@ -22,15 +24,53 @@ class DatingService extends ChangeNotifier
   List<DatingCard> get likes => _likes;
   DatingCard? get ownProfile => _ownProfile;
 
+  @override
+  void dispose() {
+    _profilesSub?.cancel();
+    super.dispose();
+  }
+
   /// Clear all account-scoped state on account switch so Account B never
   /// sees Account A's cached cards, matches, likes, or own profile.
   void resetForAccountSwitch() {
+    _profilesSub?.cancel();
+    _profilesSub = null;
     _cards = [];
     _matches.clear();
     _likes.clear();
     _ownProfile = null;
     clearLastError();
     notifyListeners();
+  }
+
+  /// Reactive stream of dating discovery profile cards, updating live when cards change.
+  Stream<List<DatingCard>> watchProfiles(String userPubkey,
+      {int limit = 50, String audience = 'public'}) {
+    return RustLib.instance.api
+        .crateFfiDatingDatingWatchProfiles(
+          userPubkey: userPubkey,
+          limit: limit,
+          audience: audience,
+        )
+        .asyncMap((json) => runOffThreadCompute(_parseCards, json));
+  }
+
+  /// Subscribe to live dating discovery profile card updates.
+  void subscribeToProfiles(String userPubkey,
+      {int limit = 50, String audience = 'public'}) {
+    _profilesSub?.cancel();
+    _profilesSub =
+        watchProfiles(userPubkey, limit: limit, audience: audience).listen(
+      (updated) {
+        _cards = updated;
+        clearLastError();
+        notifyDeferred();
+      },
+      onError: (e, st) {
+        setLastError(e, st);
+        notifyDeferred();
+      },
+    );
   }
 
   Future<List<DatingCard>> fetchProfiles(String userPubkey,

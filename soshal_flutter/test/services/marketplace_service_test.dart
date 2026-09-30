@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -347,6 +348,37 @@ void main() {
         isFalse,
       );
       expect(mp.lastError, contains('review boom'));
+    });
+
+    test('watchListings and subscribeToListings stream updates live from bridge', () async {
+      final mp = MarketplaceService();
+      final controller = StreamController<String>.broadcast();
+      addTearDown(controller.close);
+
+      api.stub('crateFfiMarketplaceMarketplaceWatchListings', (_) => controller.stream);
+
+      final emissions = <List<ListingInfo>>[];
+      final sub = mp.watchListings().listen(emissions.add);
+      addTearDown(sub.cancel);
+
+      mp.subscribeToListings();
+      expect(mp.listingsLoading, isTrue);
+
+      final listingPayload = jsonEncode([listingJson('l-live', price: 9999)]);
+
+      controller.add(listingPayload);
+      await pumpEventQueue();
+
+      expect(emissions.length, 1);
+      expect(emissions[0].first.id, 'l-live');
+      expect(mp.listings.length, 1);
+      expect(mp.listings.first.price, 9999);
+      expect(mp.listingsLoading, isFalse);
+
+      mp.resetForAccountSwitch();
+      controller.add('[]');
+      await pumpEventQueue();
+      expect(mp.listings.isEmpty, isTrue);
     });
   });
 }

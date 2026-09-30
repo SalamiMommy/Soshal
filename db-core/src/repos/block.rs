@@ -22,6 +22,8 @@ impl<'a> BlockRepo<'a> {
             "INSERT INTO blocks (pubkey, blocked_pubkey, created_at) VALUES (?1,?2,?3) ON CONFLICT(pubkey,blocked_pubkey) DO NOTHING",
             params![norm_pk, norm_blocked, b.created_at],
         )?;
+        self.db
+            .notify_change(crate::change_bus::Table::Blocks, Some(norm_pk.to_string()));
         Ok(())
     }
 
@@ -47,6 +49,8 @@ impl<'a> BlockRepo<'a> {
             "DELETE FROM blocks WHERE LOWER(pubkey)=LOWER(?1) AND LOWER(blocked_pubkey)=LOWER(?2)",
             params![norm_pk.as_str(), norm_blocked.as_str()],
         )?;
+        self.db
+            .notify_change(crate::change_bus::Table::Blocks, Some(norm_pk));
         Ok(())
     }
 

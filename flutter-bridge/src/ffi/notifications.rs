@@ -5,6 +5,7 @@
 //! push-token registration all happen against local storage; no platform
 //! notification SDK code lives in Dart.
 
+use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
 use soshal_db_core::error::DbError;
@@ -139,6 +140,45 @@ pub fn notifications_fetch_unread(user_pubkey: String, limit: i32) -> Result<Str
     )?)
 }
 
+fn query_notifications_internal(
+    db: &Database,
+    user_pubkey: &str,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<NotificationItem>, DbError> {
+    let conn = db.conn()?;
+    let rows: Vec<NotificationRow> = soshal_db_core::query::query_capacity(
+        &conn,
+        "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read \
+         FROM notifications WHERE LOWER(pubkey) = ?1 \
+         AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE LOWER(i.pubkey) = ?1 AND (i.kind = notifications.type OR i.kind = 'user' OR i.kind = 'thread' OR i.kind = 'all') AND ((LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND i.event_id = '') OR (LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, '')) AND i.from_pubkey = '') OR (LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, ''))))) \
+         ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
+        libsql::params![user_pubkey, limit, offset],
+        limit as usize,
+        |r| {
+            Ok(NotificationRow {
+                id: r.get(0)?,
+                pubkey: r.get(1)?,
+                type_: r.get(2)?,
+                event_id: r.get(3)?,
+                from_pubkey: r.get(4)?,
+                content: r.get(5)?,
+                created_at: r.get(6)?,
+                is_read: r.get(7)?,
+            })
+        },
+    )?;
+    let mut from_pks_set = std::collections::HashSet::with_capacity(rows.len());
+    for r in &rows {
+        if let Some(pk) = r.from_pubkey.as_deref() {
+            from_pks_set.insert(pk);
+        }
+    }
+    let from_pks: Vec<&str> = from_pks_set.into_iter().collect();
+    let users = user_names(db, &from_pks)?;
+    Ok(rows.into_iter().map(|r| row_to_item(r, &users)).collect())
+}
+
 /// Fetch all notifications with pagination (typed query over the last
 /// `limit` rows).
 #[frb(sync, serialize)]
@@ -148,42 +188,35 @@ pub fn notifications_fetch(user_pubkey: String, limit: i32, offset: i32) -> Resu
     let limit = limit.clamp(1, 500);
     let offset = offset.max(0);
     super::db::with_db_result(|db| {
-        let conn = db.conn()?;
-        let rows: Vec<NotificationRow> = soshal_db_core::query::query_capacity(
-            &conn,
-            "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read \
-             FROM notifications WHERE LOWER(pubkey) = ?1 \
-             AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE LOWER(i.pubkey) = ?1 AND (i.kind = notifications.type OR i.kind = 'user' OR i.kind = 'thread' OR i.kind = 'all') AND ((LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND i.event_id = '') OR (LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, '')) AND i.from_pubkey = '') OR (LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, ''))))) \
-             ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
-            libsql::params![user_pubkey.as_str(), limit as i64, offset as i64],
-            limit as usize,
-            |r| {
-                Ok(NotificationRow {
-                    id: r.get(0)?,
-                    pubkey: r.get(1)?,
-                    type_: r.get(2)?,
-                    event_id: r.get(3)?,
-                    from_pubkey: r.get(4)?,
-                    content: r.get(5)?,
-                    created_at: r.get(6)?,
-                    is_read: r.get(7)?,
-                })
-            },
-        )?;
-        let mut from_pks_set = std::collections::HashSet::with_capacity(rows.len());
-        for r in &rows {
-            if let Some(pk) = r.from_pubkey.as_deref() {
-                from_pks_set.insert(pk);
-            }
-        }
-        let from_pks: Vec<&str> = from_pks_set.into_iter().collect();
-        let users = user_names(db, &from_pks)?;
-        Ok(rows
-            .into_iter()
-            .map(|r| row_to_item(r, &users))
-            .collect::<Vec<_>>())
+        query_notifications_internal(db, &user_pubkey, limit as i64, offset as i64)
     })
     .map(super::util::json_ok)?
+}
+
+/// Observe live notifications for a user. Streams the updated notification items (JSON)
+/// whenever the `notifications` table undergoes mutation, with automatic debouncing.
+#[frb(serialize)]
+pub fn notifications_watch(
+    sink: StreamSink<String>,
+    user_pubkey: String,
+    limit: i32,
+) -> Result<(), String> {
+    let user_pubkey = user_pubkey.trim().to_ascii_lowercase();
+    super::signer::require_identity(&user_pubkey)?;
+    let limit = limit.clamp(1, 500) as i64;
+    let user_pk = user_pubkey.clone();
+
+    crate::spawn_db_stream!(
+        sink,
+        &[soshal_db_core::change_bus::Table::Notifications],
+        soshal_db_core::observable::ObservableOptions::default()
+            .with_account(user_pubkey)
+            .with_debounce(std::time::Duration::from_millis(50)),
+        move |db| {
+            let items = query_notifications_internal(db, &user_pk, limit, 0)?;
+            serde_json::to_string(&items).map_err(|e| DbError::Migration(e.to_string()))
+        }
+    )
 }
 
 /// Mark notification as read.

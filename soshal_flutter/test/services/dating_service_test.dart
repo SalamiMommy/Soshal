@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -246,5 +247,36 @@ void main() {
       expect(await dating.unmatch('me', 'pk-a'), isFalse);
       expect(dating.lastError, contains('no store'));
     });
+
+    test('watchProfiles and subscribeToProfiles stream updates live from bridge', () async {
+      final dating = DatingService();
+      final controller = StreamController<String>.broadcast();
+      addTearDown(controller.close);
+
+      api.stub('crateFfiDatingDatingWatchProfiles', (_) => controller.stream);
+
+      final emissions = <List<DatingCard>>[];
+      final sub = dating.watchProfiles('me').listen(emissions.add);
+      addTearDown(sub.cancel);
+
+      dating.subscribeToProfiles('me');
+
+      final profilePayload = '[${cardJson('pk-live', 'Live User', score: 0.95)}]';
+
+      controller.add(profilePayload);
+      await pumpEventQueue();
+
+      expect(emissions.length, 1);
+      expect(emissions[0].first.pubkey, 'pk-live');
+      expect(dating.cards.length, 1);
+      expect(dating.cards.first.name, 'Live User');
+      expect(dating.cards.first.compatibilityScore, 0.95);
+
+      dating.resetForAccountSwitch();
+      controller.add('[]');
+      await pumpEventQueue();
+      expect(dating.cards.isEmpty, isTrue);
+    });
   });
 }
+

@@ -1,4 +1,5 @@
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -14,6 +15,7 @@ class MarketplaceService extends ChangeNotifier
     with LastErrorMixin, DeferredNotify, ServiceGuard {
   List<ListingInfo> _listings = [];
   bool _listingsLoading = false;
+  StreamSubscription<List<ListingInfo>>? _listingsSub;
   ListingInfo? _current;
   List<OrderInfo> _orders = [];
 
@@ -22,15 +24,54 @@ class MarketplaceService extends ChangeNotifier
   ListingInfo? get current => _current;
   List<OrderInfo> get orders => _orders;
 
+  @override
+  void dispose() {
+    _listingsSub?.cancel();
+    super.dispose();
+  }
+
   /// Clear all account-scoped state on account switch so Account B never
   /// sees Account A's cached listings, current listing, or orders.
   void resetForAccountSwitch() {
+    _listingsSub?.cancel();
+    _listingsSub = null;
     _listings = [];
     _listingsLoading = false;
     _current = null;
     _orders = [];
     clearLastError();
     notifyListeners();
+  }
+
+  /// Reactive stream of marketplace listings, updating live when listings change.
+  Stream<List<ListingInfo>> watchListings(
+      {int limit = 50, String audience = 'public'}) {
+    return RustLib.instance.api
+        .crateFfiMarketplaceMarketplaceWatchListings(
+          limit: limit,
+          audience: audience,
+        )
+        .asyncMap((json) => runOffThreadCompute(_parseListings, json));
+  }
+
+  /// Subscribe to live marketplace listing updates.
+  void subscribeToListings({int limit = 50, String audience = 'public'}) {
+    _listingsSub?.cancel();
+    _listingsLoading = true;
+    notifyDeferred();
+    _listingsSub = watchListings(limit: limit, audience: audience).listen(
+      (updated) {
+        _listings = updated.length > 100 ? updated.sublist(0, 100) : updated;
+        _listingsLoading = false;
+        clearLastError();
+        notifyDeferred();
+      },
+      onError: (e, st) {
+        _listingsLoading = false;
+        setLastError(e, st);
+        notifyDeferred();
+      },
+    );
   }
 
   Future<List<ListingInfo>> fetchListings(

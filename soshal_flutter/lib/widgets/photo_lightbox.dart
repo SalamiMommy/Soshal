@@ -26,7 +26,8 @@ class PhotoLightbox extends StatelessWidget {
       provider = FileImage(localFile);
     } else if (imageUrl.startsWith('file://')) {
       provider = FileImage(File(Uri.parse(imageUrl).toFilePath()));
-    } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+    } else if (imageUrl.startsWith('http://') ||
+        imageUrl.startsWith('https://')) {
       provider = CachedNetworkImageProvider(imageUrl);
     } else {
       provider = FileImage(File(imageUrl));
@@ -54,7 +55,8 @@ class PhotoLightbox extends StatelessWidget {
   Widget build(BuildContext context) {
     Widget photoView = PhotoView(
       imageProvider: imageProvider,
-      heroAttributes: heroTag != null ? PhotoViewHeroAttributes(tag: heroTag!) : null,
+      heroAttributes:
+          heroTag != null ? PhotoViewHeroAttributes(tag: heroTag!) : null,
       minScale: PhotoViewComputedScale.contained,
       maxScale: PhotoViewComputedScale.covered * 3.0,
       backgroundDecoration: const BoxDecoration(color: Colors.transparent),
@@ -67,7 +69,8 @@ class PhotoLightbox extends StatelessWidget {
           children: [
             Icon(Icons.broken_image, color: Colors.white70, size: 48),
             SizedBox(height: 8),
-            Text('Failed to load image', style: TextStyle(color: Colors.white70)),
+            Text('Failed to load image',
+                style: TextStyle(color: Colors.white70)),
           ],
         ),
       ),

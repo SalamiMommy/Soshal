@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
+import '../ffi/messaging.dart';
 import '../utils/json_ext.dart';
 import '../utils/offthread.dart';
 import 'error_log.dart';
@@ -52,6 +53,8 @@ class MessagingService extends ChangeNotifier
     }
   }
 
+  final Map<String, StreamSubscription<dynamic>> _dmSubscriptions = {};
+
   Map<String, List<DirectMessage>> get conversations => _conversations;
   Map<String, int> get readWatermarks => _readWatermarks;
   List<EphemeralMedia> get pendingEphemeral => _cachedPendingEphemeral;
@@ -67,6 +70,10 @@ class MessagingService extends ChangeNotifier
   void dispose() {
     _storeFlushTimer?.cancel();
     _storeFlushTimer = null;
+    for (final sub in _dmSubscriptions.values) {
+      sub.cancel();
+    }
+    _dmSubscriptions.clear();
     super.dispose();
   }
 
@@ -75,6 +82,10 @@ class MessagingService extends ChangeNotifier
   void resetForAccountSwitch() {
     _storeFlushTimer?.cancel();
     _storeFlushTimer = null;
+    for (final sub in _dmSubscriptions.values) {
+      sub.cancel();
+    }
+    _dmSubscriptions.clear();
     _pendingStores.clear();
     _conversations.clear();
     _conversationsCacheTime.clear();
@@ -86,11 +97,11 @@ class MessagingService extends ChangeNotifier
     notifyListeners();
   }
 
-  /// Insert a DM arriving from the live sync stream (already decrypted by
-  /// the bridge). Conversation is keyed by the peer pubkey. Persistence is
-  /// batched: a message burst on the stream triggers ONE batch FFI call
-  /// instead of one call per message.
-  void insertLiveDm(DirectMessage message) {
+  /// Insert a DM arriving from the live sync stream (already decrypted and
+  /// persisted in SQLite by the Rust bridge). Conversation is keyed by the peer pubkey.
+  /// Pass [persist] = true only when inserting client-side syntheses that need
+  /// asynchronous persistence via FFI.
+  void insertLiveDm(DirectMessage message, {bool persist = false}) {
     final peer = (message.isOwn && message.recipient.isNotEmpty)
         ? message.recipient
         : message.sender;
@@ -102,10 +113,12 @@ class MessagingService extends ChangeNotifier
     if (list.length > 200) {
       list.removeLast();
     }
-    _pendingStores.add(message);
-    _storeFlushTimer ??= Timer(_storeFlushInterval, _flushPendingStores);
-    if (_pendingStores.length >= _storeFlushBatchSize) {
-      unawaited(_flushPendingStores());
+    if (persist) {
+      _pendingStores.add(message);
+      _storeFlushTimer ??= Timer(_storeFlushInterval, _flushPendingStores);
+      if (_pendingStores.length >= _storeFlushBatchSize) {
+        unawaited(_flushPendingStores());
+      }
     }
     notifyDeferred();
   }
@@ -145,25 +158,96 @@ class MessagingService extends ChangeNotifier
     }
   }
 
-  /// Fetch DMs with a specific contact
+  /// Stream live DMs with a specific contact from SQLite via Rust.
+  Stream<List<DirectMessage>> watchDMs(String otherPubkey, {int limit = 100}) {
+    return RustLib.instance.api
+        .crateFfiMessagingMessagingWatchDmsTyped(
+          withPubkey: otherPubkey,
+          limit: limit,
+        )
+        .map((dtos) => dtos.map(DirectMessage.fromDto).toList())
+        .map((messages) {
+      if (messages.length > 200) {
+        _conversations[otherPubkey] = messages.sublist(messages.length - 200);
+      } else {
+        _conversations[otherPubkey] = messages;
+      }
+      _conversationsCacheTime[otherPubkey] = DateTime.now();
+      _conversationExhausted[otherPubkey] = messages.length < limit;
+      notifyDeferred();
+      return messages;
+    });
+  }
+
+  /// Ensure an active subscription to a conversation exists so `conversations[peer]`
+  /// stays dynamically updated from the Rust reactive engine.
+  void subscribeToConversation(String otherPubkey, {int limit = 100}) {
+    if (_dmSubscriptions.containsKey(otherPubkey)) return;
+    try {
+      _dmSubscriptions[otherPubkey] = RustLib.instance.api
+          .crateFfiMessagingMessagingWatchDmsTyped(
+        withPubkey: otherPubkey,
+        limit: limit,
+      )
+          .listen((dtos) {
+        final messages = dtos.map(DirectMessage.fromDto).toList();
+        if (messages.length > 200) {
+          _conversations[otherPubkey] = messages.sublist(messages.length - 200);
+        } else {
+          _conversations[otherPubkey] = messages;
+        }
+        _conversationsCacheTime[otherPubkey] = DateTime.now();
+        _conversationExhausted[otherPubkey] = messages.length < limit;
+        clearLastError();
+        notifyDeferred();
+      }, onError: (e, st) {
+        setLastError(e, st);
+        notifyDeferred();
+      });
+    } catch (_) {
+      // In unit test environments without native FFI runtime, gracefully fallback
+    }
+  }
+
+  /// Stream live conversation partner pubkeys directly from the Rust reactive engine.
+  Stream<List<String>> watchConversations(String pubkey) {
+    return RustLib.instance.api.crateFfiMessagingMessagingWatchConversations(
+      pubkey: pubkey,
+    );
+  }
+
+  /// Fetch DMs with a specific contact.
+  ///
+  /// Set [subscribe] to false for a bulk hydrate (e.g. rendering the inbox
+  /// snippet list). Each [subscribeToConversation] is a dedicated tokio task
+  /// plus a `Messages`-table change-bus observer, and *every* message write
+  /// wakes every one of them to re-run a DB query and a NIP-44 decrypt pass —
+  /// so hydrating 25 conversations used to leave 25 live observers behind and
+  /// turn a single incoming message into 25 redundant decryptions. The
+  /// conversation the user actually opens still subscribes (the default).
+  ///
+  /// [force] bypasses the cache early-returns. The inbox needs this on its
+  /// re-hydrate: without it a `limit: 1` hydrate would be served from cache
+  /// and the snippet would never show the message that just triggered it.
   Future<List<DirectMessage>> fetchDMs(String otherPubkey,
-      {int limit = 100}) async {
+      {int limit = 100, bool subscribe = true, bool force = false}) async {
+    if (subscribe) {
+      subscribeToConversation(otherPubkey, limit: limit);
+    }
+
     // Snapshot the cached conversation so a transient FFI failure below does
     // not blank a working conversation after its TTL eviction.
     final staleSnapshot = _conversations[otherPubkey];
     // End-of-history reached: repeated "load older" calls must no-op.
-    if (_conversationExhausted[otherPubkey] == true &&
+    if (!force &&
+        _conversationExhausted[otherPubkey] == true &&
         _conversations.containsKey(otherPubkey)) {
       return _conversations[otherPubkey]!;
     }
     try {
-      final cached = _conversationsCacheTime[otherPubkey];
-      if (cached != null && DateTime.now().difference(cached).inSeconds > 30) {
-        _conversations.remove(otherPubkey);
-        _conversationsCacheTime.remove(otherPubkey);
-      }
       final existing = _conversations[otherPubkey];
-      if (existing != null &&
+      if (!force &&
+          existing != null &&
           (existing.length >= limit ||
               _conversationExhausted[otherPubkey] == true ||
               !_conversationsCacheTime.containsKey(otherPubkey))) {
@@ -171,11 +255,11 @@ class MessagingService extends ChangeNotifier
       }
 
       await _flushPendingStores();
-      final json = RustLib.instance.api.crateFfiMessagingMessagingFetchDms(
+      final dtos = RustLib.instance.api.crateFfiMessagingMessagingFetchDmsTyped(
         withPubkey: otherPubkey,
         limit: limit,
       );
-      final messages = await runOffThreadCompute(_parseDmsJson, json);
+      final messages = dtos.map(DirectMessage.fromDto).toList();
 
       if (messages.length > 200) {
         _conversations[otherPubkey] = messages.sublist(messages.length - 200);
@@ -478,9 +562,49 @@ class MessagingService extends ChangeNotifier
 class IdentityService extends ChangeNotifier
     with LastErrorMixin, DeferredNotify {
   final Map<String, ProfileInfo> _profiles = {};
+  final Map<String, StreamSubscription<ProfileInfo>> _profileSubscriptions = {};
   late final ModerationService _moderation = ModerationService();
 
   Map<String, ProfileInfo> get profiles => _profiles;
+
+  @override
+  void dispose() {
+    for (final sub in _profileSubscriptions.values) {
+      sub.cancel();
+    }
+    _profileSubscriptions.clear();
+    super.dispose();
+  }
+
+  /// Real-time stream of profile updates from the Rust SQLite reactive engine.
+  Stream<ProfileInfo> watchProfile(String pubkey) {
+    return RustLib.instance.api
+        .crateFfiIdentityIdentityWatchProfile(pubkey: pubkey)
+        .map((jsonStr) {
+      final profile =
+          ProfileInfo.fromJson(jsonDecode(jsonStr) as Map<String, dynamic>);
+      return profile;
+    });
+  }
+
+  /// Subscribe to real-time profile updates, keeping in-memory [_profiles] fresh
+  /// and notifying listeners whenever the profile changes in Rust storage.
+  void subscribeToProfile(String pubkey) {
+    if (_profileSubscriptions.containsKey(pubkey)) return;
+    _profileSubscriptions[pubkey] = watchProfile(pubkey).listen((incoming) {
+      _profiles[pubkey] = _mergeProfile(incoming, _profiles[pubkey]);
+      clearLastError();
+      notifyDeferred();
+    }, onError: (e) {
+      setLastError(e);
+      notifyDeferred();
+    });
+  }
+
+  /// Cancel any active real-time subscription for [pubkey].
+  void unsubscribeFromProfile(String pubkey) {
+    _profileSubscriptions.remove(pubkey)?.cancel();
+  }
 
   /// Merge a freshly-fetched profile over the cached one, keeping cached
   /// display fields when the incoming value is empty/zero (sparse parse must
@@ -512,6 +636,10 @@ class IdentityService extends ChangeNotifier
   /// Clear the cached profile map on account switch so Account B doesn't see
   /// Account A's cached profiles.
   void resetForAccountSwitch() {
+    for (final sub in _profileSubscriptions.values) {
+      sub.cancel();
+    }
+    _profileSubscriptions.clear();
     _profiles.clear();
     clearLastError();
     notifyListeners();
@@ -519,6 +647,7 @@ class IdentityService extends ChangeNotifier
 
   /// Get user profile
   Future<ProfileInfo> getProfile(String pubkey, {bool refresh = false}) async {
+    subscribeToProfile(pubkey);
     try {
       if (!refresh && _profiles.containsKey(pubkey)) {
         return _profiles[pubkey]!;
@@ -541,8 +670,61 @@ class IdentityService extends ChangeNotifier
     }
   }
 
+  /// Get many user profiles in one bridge call, in the order requested.
+  ///
+  /// `getProfile` is a `#[frb(sync)]` fn, so a `for` loop of `await getProfile`
+  /// performs one blocking UI-isolate round-trip per pubkey — and the Rust
+  /// side re-reads the viewer's own contact list on every one of those, so an
+  /// N-entry grid cost 2N indexed queries. This keeps the same cache and
+  /// live-subscription behaviour but fetches every cache miss in a single
+  /// call.
+  ///
+  /// A pubkey the batch call cannot satisfy is omitted, matching the
+  /// per-pubkey loop's `try/catch` that skipped failures rather than aborting
+  /// the whole list.
+  Future<List<ProfileInfo>> getProfiles(
+    List<String> pubkeys, {
+    bool refresh = false,
+  }) async {
+    final ordered = <String>[];
+    final wanted = <String>[];
+    for (final pk in pubkeys) {
+      if (pk.trim().isEmpty || ordered.contains(pk)) continue;
+      ordered.add(pk);
+      subscribeToProfile(pk);
+      if (refresh || !_profiles.containsKey(pk)) wanted.add(pk);
+    }
+
+    if (wanted.isNotEmpty) {
+      try {
+        final fetched = await runOffThreadCompute(
+          _parseProfiles,
+          RustLib.instance.api
+              .crateFfiIdentityIdentityGetProfilesBatch(pubkeys: wanted),
+        );
+        for (final p in fetched) {
+          _profiles[p.pubkey] =
+              refresh ? _mergeProfile(p, _profiles[p.pubkey]) : p;
+        }
+        clearLastError();
+        notifyDeferred();
+      } catch (e) {
+        setLastError(e);
+        notifyDeferred();
+      }
+    }
+
+    // Request order, skipping anyone we have no profile for — the per-pubkey
+    // loop's `try/catch` skipped failures instead of aborting the whole list.
+    return [
+      for (final pk in ordered)
+        if (_profiles[pk] case final p?) p,
+    ];
+  }
+
   /// Get current user's profile
   Future<ProfileInfo> getSelfProfile(String pubkey) async {
+    subscribeToProfile(pubkey);
     try {
       final json = RustLib.instance.api
           .crateFfiIdentityIdentityGetProfile(pubkey: pubkey);
@@ -840,6 +1022,19 @@ class DirectMessage {
     this.tagsJson = '',
   });
 
+  factory DirectMessage.fromDto(DirectMessageDto dto) {
+    return DirectMessage(
+      id: dto.id,
+      sender: dto.sender,
+      recipient: dto.recipient,
+      content: dto.content,
+      createdAt: dto.createdAt.toInt(),
+      decrypted: dto.decrypted,
+      isOwn: dto.isOwn,
+      tagsJson: dto.tags,
+    );
+  }
+
   factory DirectMessage.fromJson(Map<String, dynamic> json) {
     return DirectMessage(
       id: json.strOf('id'),
@@ -865,15 +1060,6 @@ class DirectMessage {
       tagsJson: tagsJson,
     );
   }
-}
-
-/// JSON → [DirectMessage] list, top-level so [compute] can run it on a
-/// background isolate (fetchDMs decodes off the UI thread).
-List<DirectMessage> _parseDmsJson(String json) {
-  final list = jsonDecode(json) as List<dynamic>;
-  return list
-      .map((e) => DirectMessage.fromJson(e as Map<String, dynamic>))
-      .toList();
 }
 
 /// User profile info as served by the identity module.

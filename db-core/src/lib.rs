@@ -2,6 +2,7 @@
 
 pub mod change_bus;
 pub mod error;
+pub mod observable;
 pub mod query;
 pub mod repos;
 pub mod schema;
@@ -9,6 +10,7 @@ pub mod turso;
 
 pub use change_bus::{ChangeBus, Table, TableChangeEvent};
 pub use libsql;
+pub use observable::{ObservableHandle, ObservableOptions};
 
 use libsql::Connection;
 use std::ops::{Deref, DerefMut};

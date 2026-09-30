@@ -4,6 +4,7 @@
 //! follow state, and local blocklist. Publishing profile/contact-list events
 //! signs with the unlocked signer (kind 0 / kind 3).
 
+use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use nostr::event::EventBuilder;
 use nostr::event::Kind;
@@ -68,34 +69,78 @@ fn row_to_profile(row: &UserRow) -> ProfileInfo {
     p
 }
 
+pub(crate) fn query_profile_internal(
+    db: &soshal_db_core::Database,
+    pubkey: &str,
+    me: Option<&str>,
+) -> Result<ProfileInfo, soshal_db_core::error::DbError> {
+    let repo = UserRepo::new(db);
+    let row = repo.get_by_pubkey(pubkey)?;
+    let p = match row {
+        Some(r) => {
+            let mut p = row_to_profile(&r);
+            if let (Some(me), true) = (me, me != Some(r.pubkey.as_str())) {
+                if let Ok(Some(my_row)) = repo.get_by_pubkey(me) {
+                    if let Ok(follows) =
+                        serde_json::from_str::<Vec<String>>(&my_row.contact_pubkeys)
+                    {
+                        p.is_following = follows.iter().any(|f| f.eq_ignore_ascii_case(&r.pubkey));
+                    }
+                }
+            }
+            p
+        }
+        None => empty_profile(pubkey.to_string()),
+    };
+    Ok(p)
+}
+
 /// Get a user profile from the local DB (created empty on first sight).
 #[frb(sync, serialize)]
 pub fn identity_get_profile(pubkey: String) -> Result<String, String> {
     let me = super::signer::signer_pubkey().ok();
-    super::db::with_db_result(|db| {
-        let repo = UserRepo::new(db);
-        let row = repo.get_by_pubkey(&pubkey)?;
-        let p = match row {
-            Some(r) => {
-                let mut p = row_to_profile(&r);
-                if let (Some(me), true) = (me.as_deref(), me.as_deref() != Some(r.pubkey.as_str()))
-                {
-                    if let Ok(Some(my_row)) = repo.get_by_pubkey(me) {
-                        if let Ok(follows) =
-                            serde_json::from_str::<Vec<String>>(&my_row.contact_pubkeys)
-                        {
-                            p.is_following =
-                                follows.iter().any(|f| f.eq_ignore_ascii_case(&r.pubkey));
-                        }
-                    }
-                }
-                p
+    super::db::with_db_result(|db| query_profile_internal(db, &pubkey, me.as_deref()))
+        .map(super::util::json_ok)?
+}
+
+/// Observe live profile changes for a user from the local DB.
+/// Streams updated ProfileInfo JSON whenever the user or contacts change.
+pub fn identity_watch_profile(sink: StreamSink<String>, pubkey: String) -> Result<(), String> {
+    let pk = pubkey.trim().to_ascii_lowercase();
+    if pk.is_empty() || pk.len() > 128 {
+        return Err("invalid pubkey".to_string());
+    }
+    let pk_clone = pk.clone();
+
+    let db = super::db::db_handle()?;
+    let handle = db
+        .observe(
+            &[soshal_db_core::change_bus::Table::Profiles],
+            soshal_db_core::observable::ObservableOptions::default()
+                .with_debounce(std::time::Duration::from_millis(50)),
+            move |db| {
+                let me = super::signer::signer_pubkey().ok();
+                let profile = query_profile_internal(db, &pk_clone, me.as_deref())?;
+                serde_json::to_string(&profile)
+                    .map_err(|e| soshal_db_core::error::DbError::Migration(e.to_string()))
+            },
+        )
+        .map_err(|e| format!("observe failed: {e}"))?;
+
+    let mut rx = handle.subscribe();
+    let _ = sink.add(handle.current());
+
+    tokio::spawn(async move {
+        let _keep_handle = handle;
+        while rx.changed().await.is_ok() {
+            let val = rx.borrow().clone();
+            if sink.add(val).is_err() {
+                break;
             }
-            None => empty_profile(pubkey),
-        };
-        Ok(p)
-    })
-    .map(super::util::json_ok)?
+        }
+    });
+
+    Ok(())
 }
 
 /// Upsert a fetched kind-0 profile row into the DB.
@@ -650,6 +695,82 @@ pub fn identity_fetch_follows(pubkey: String) -> Result<String, String> {
     serde_json::to_string(&follows).map_err(|e| format!("serialize: {e}"))
 }
 
+/// Fetch the union of followed pubkeys for many accounts, deduped, order-stable
+/// (first-seen). Returns a JSON array of pubkey strings.
+///
+/// The friends-of-friends traversal walked up to 25 first-degree follows with
+/// one `identity_fetch_follows` round-trip each — 25 blocking FFI calls and 25
+/// `get_by_pubkey` queries, on the Dart UI isolate, every time the audience
+/// graph was built (feed, dating and events screen open all trigger it). This
+/// collapses that to one `WHERE LOWER(pubkey) IN (json_each(?))` query and one
+/// array back. Unknown pubkeys contribute nothing, matching the single-pubkey
+/// fn's `[]` behaviour for an unknown key.
+#[frb(sync, serialize)]
+pub fn identity_fetch_follows_union(pubkeys: Vec<String>) -> Result<String, String> {
+    let follows = super::db::with_db_result(|db| {
+        let rows = UserRepo::new(db).rows_for_pubkeys(&pubkeys)?;
+        // Preserve caller order and first-occurrence dedupe semantics of the
+        // old `Set.addAll` loop, so the audience graph is byte-identical.
+        let mut seen = std::collections::HashSet::new();
+        let mut union = Vec::new();
+        for pk in pubkeys.iter().filter(|p| !p.trim().is_empty()) {
+            let norm = pk.trim().to_ascii_lowercase();
+            let Some(row) = rows.get(&norm) else { continue };
+            let list: Vec<String> = serde_json::from_str(&row.contact_pubkeys).unwrap_or_default();
+            for followed in list {
+                if seen.insert(followed.to_ascii_lowercase()) {
+                    union.push(followed);
+                }
+            }
+        }
+        Ok(union)
+    })?;
+    Ok(super::util::json_ok_or_empty(follows)).into()
+}
+
+/// Fetch many user profiles in one call. Returns a JSON array of `ProfileInfo`,
+/// in the order requested, with an empty profile for any pubkey that has no
+/// stored row — same shape `identity_get_profile` returns one at a time.
+///
+/// The viewer's own contact list is read once for the whole batch; the
+/// single-pubkey path re-read it per call, so a profile grid of N entries cost
+/// 2N indexed queries and N FFI round-trips to render.
+#[frb(sync, serialize)]
+pub fn identity_get_profiles_batch(pubkeys: Vec<String>) -> Result<String, String> {
+    let profiles = super::db::with_db_result(|db| {
+        let repo = UserRepo::new(db);
+        let me = super::signer::signer_pubkey().ok();
+        let rows = repo.rows_for_pubkeys(&pubkeys)?;
+        // One read of the viewer's contacts, reused for every profile's
+        // `is_following`. None when the viewer is locked or is the only
+        // subject, matching `query_profile_internal`'s own conditions.
+        let my_follows: Option<Vec<String>> = me.as_deref().and_then(|me| {
+            rows.get(&me.to_ascii_lowercase())
+                .and_then(|r| serde_json::from_str::<Vec<String>>(&r.contact_pubkeys).ok())
+        });
+        let out: Vec<ProfileInfo> = pubkeys
+            .iter()
+            .filter(|p| !p.trim().is_empty())
+            .map(|pubkey| {
+                let norm = pubkey.trim().to_ascii_lowercase();
+                let Some(row) = rows.get(&norm) else {
+                    return empty_profile(pubkey.trim().to_string());
+                };
+                let mut p = row_to_profile(row);
+                if let (Some(me), Some(follows)) = (me.as_deref(), my_follows.as_ref()) {
+                    if !me.eq_ignore_ascii_case(&row.pubkey) {
+                        p.is_following =
+                            follows.iter().any(|f| f.eq_ignore_ascii_case(&row.pubkey));
+                    }
+                }
+                p
+            })
+            .collect();
+        Ok(out)
+    })?;
+    Ok(super::util::json_ok_or_empty(profiles)).into()
+}
+
 /// Publish a NIP-65 relay-list metadata event (kind 10002) for the unlocked
 /// signer. Every URL must be valid `wss://`. Returns the event id.
 #[frb(sync, serialize)]
@@ -840,6 +961,131 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(!v["is_following"].as_bool().unwrap(), "json: {json}");
         super::super::signer::signer_lock().unwrap();
+    }
+
+    /// Insert a user row with the given contact list, returning its pubkey.
+    fn seed_user(pubkey: &str, contacts: &[&str]) {
+        let contacts_json = serde_json::json!(contacts).to_string();
+        crate::ffi::db::db_execute_raw_test(format!(
+            "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('{pubkey}', 'npub1{pubkey}', '{contacts_json}') ON CONFLICT(pubkey) DO UPDATE SET contact_pubkeys='{contacts_json}'"
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn test_fetch_follows_union_matches_per_pubkey_loop() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _p = crate::ffi::db::tmp_db("follows-union", "identity");
+        let a = "a".repeat(64);
+        let b = "b".repeat(64);
+        let c = "c".repeat(64);
+        let d = "d".repeat(64);
+        // Deliberately overlapping lists, plus a pubkey with no row at all —
+        // the loop the batch replaces skipped unknowns silently.
+        seed_user(&a, &[&b, &c]);
+        seed_user(&b, &[&c, &d]);
+        seed_user(&c, &[&d]);
+
+        let requested = vec![a.clone(), b.clone(), c.clone(), d.clone()];
+        let union_json = identity_fetch_follows_union(requested.clone()).unwrap();
+        let union: Vec<String> = serde_json::from_str(&union_json).unwrap();
+
+        // Reference: exactly what `loadAudienceGraph`'s 25-iteration loop built.
+        let mut expected: Vec<String> = Vec::new();
+        for pk in &requested {
+            let raw = identity_fetch_follows(pk.clone()).unwrap();
+            let decoded: Vec<String> = serde_json::from_str(&raw).unwrap();
+            for f in decoded {
+                if !expected.contains(&f) {
+                    expected.push(f);
+                }
+            }
+        }
+        assert_eq!(union, expected);
+        assert_eq!(union, vec![b.clone(), c.clone(), d.clone()]);
+    }
+
+    #[test]
+    fn test_fetch_follows_union_is_case_insensitive_and_deduped() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _p = crate::ffi::db::tmp_db("follows-union-case", "identity");
+        let a = "A".repeat(64);
+        let b = "b".repeat(64);
+        // Stored lowercase, requested uppercase — `get_by_pubkey` is LOWER()-based.
+        seed_user(&a.to_lowercase(), &[&b]);
+        seed_user(&b, &[&b]);
+
+        let union: Vec<String> = serde_json::from_str(
+            &identity_fetch_follows_union(vec![a.clone(), a.to_lowercase(), b.clone()]).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(union, vec![b], "repeated/differently-cased input dedupes");
+    }
+
+    #[test]
+    fn test_fetch_follows_union_empty_input() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _p = crate::ffi::db::tmp_db("follows-union-empty", "identity");
+        assert_eq!(identity_fetch_follows_union(vec![]).unwrap(), "[]");
+    }
+
+    #[test]
+    fn test_get_profiles_batch_matches_single_calls() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = crate::ffi::db::tmp_db("profiles-batch", "identity");
+        let keys = nostr::key::Keys::generate();
+        let me = keys.public_key().to_hex();
+        let followed = "f".repeat(64);
+        let stranger = "9".repeat(64);
+        let missing = "e".repeat(64);
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        seed_user(&me, &[&followed]);
+        seed_user(&followed, &[]);
+        seed_user(&stranger, &[]);
+        // `missing` intentionally has no row -> empty profile.
+
+        let requested = vec![
+            followed.clone(),
+            stranger.clone(),
+            missing.clone(),
+            me.clone(),
+        ];
+        let batch_json = identity_get_profiles_batch(requested.clone()).unwrap();
+        let batch: Vec<serde_json::Value> = serde_json::from_str(&batch_json).unwrap();
+
+        assert_eq!(batch.len(), requested.len());
+        for (i, pk) in requested.iter().enumerate() {
+            let single: serde_json::Value =
+                serde_json::from_str(&identity_get_profile(pk.clone()).unwrap()).unwrap();
+            assert_eq!(batch[i], single, "profile {i} diverges for {pk}");
+        }
+        assert_eq!(batch[0]["is_following"], serde_json::json!(true));
+        assert_eq!(batch[1]["is_following"], serde_json::json!(false));
+        // A pubkey with no stored row still comes back, as an empty profile.
+        assert_eq!(batch[2]["pubkey"], missing);
+        assert_eq!(batch[2]["name"], serde_json::json!(""));
+        // Never "following" yourself, even when listed in your own contacts.
+        assert_eq!(batch[3]["is_following"], serde_json::json!(false));
+        super::super::signer::signer_lock().unwrap();
+    }
+
+    #[test]
+    fn test_get_profiles_batch_preserves_request_order_and_skips_blanks() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _p = crate::ffi::db::tmp_db("profiles-batch-order", "identity");
+        let a = "a".repeat(64);
+        let b = "b".repeat(64);
+        seed_user(&a, &[]);
+        seed_user(&b, &[]);
+
+        let batch: Vec<serde_json::Value> = serde_json::from_str(
+            &identity_get_profiles_batch(vec![b.clone(), "  ".to_string(), a.clone()]).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(batch.len(), 2, "blank pubkeys are dropped");
+        assert_eq!(batch[0]["pubkey"], b);
+        assert_eq!(batch[1]["pubkey"], a);
     }
 
     #[test]

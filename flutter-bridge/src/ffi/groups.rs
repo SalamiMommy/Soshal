@@ -4,11 +4,14 @@
 //! Group chat encryption uses groups-core (`group_enc`) envelope builders;
 //! keys live Rust-side only.
 
+use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
+use soshal_db_core::error::DbError;
 use soshal_db_core::repos::banned_member::BannedMemberRepo;
 use soshal_db_core::repos::group::GroupRepo;
 use soshal_db_core::repos::role::{GroupRoleRepo, GroupRoleRow};
+use soshal_db_core::Database;
 use soshal_groups_core::group_enc::seal::group_message_envelope;
 
 /// Group info result
@@ -101,37 +104,86 @@ pub(crate) fn shared_key_for_group(
     }
 }
 
+fn query_groups_internal(
+    db: &Database,
+    user_pubkey: &str,
+    audience: &str,
+) -> Result<Vec<GroupInfo>, DbError> {
+    let repo = GroupRepo::new(db);
+    let rows = repo.get_user_groups(user_pubkey)?;
+    let owners = super::identity::resolve_audience_authors(audience)
+        .map_err(soshal_db_core::error::DbError::Migration)?;
+    let rows: Vec<_> = match &owners {
+        Some(a) => {
+            let set: std::collections::HashSet<String> =
+                a.iter().map(|s| s.trim().to_ascii_lowercase()).collect();
+            rows.into_iter()
+                .filter(|r| set.contains(&r.pubkey.trim().to_ascii_lowercase()))
+                .collect()
+        }
+        None => rows,
+    };
+    let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
+    let counts = repo.member_count_many(&ids)?;
+    let groups: Vec<GroupInfo> = rows
+        .iter()
+        .map(|r| {
+            let mut g = row_to_group(r, Some(user_pubkey), true);
+            g.members = counts.get(&r.id).copied().unwrap_or(0) as i32;
+            g
+        })
+        .collect();
+    Ok(groups)
+}
+
 /// Fetch all groups the user belongs to (DB-backed).
 #[frb(sync, serialize)]
 pub fn groups_fetch_groups(user_pubkey: String, audience: String) -> Result<String, String> {
-    super::db::with_db_result(|db| {
-        let repo = GroupRepo::new(db);
-        let rows = repo.get_user_groups(&user_pubkey)?;
-        let owners = super::identity::resolve_audience_authors(&audience)
-            .map_err(soshal_db_core::error::DbError::Migration)?;
-        let rows: Vec<_> = match &owners {
-            Some(a) => {
-                let set: std::collections::HashSet<String> =
-                    a.iter().map(|s| s.trim().to_ascii_lowercase()).collect();
-                rows.into_iter()
-                    .filter(|r| set.contains(&r.pubkey.trim().to_ascii_lowercase()))
-                    .collect()
+    let user_pubkey = user_pubkey.trim().to_ascii_lowercase();
+    super::db::with_db_result(|db| query_groups_internal(db, &user_pubkey, &audience))
+        .map(super::util::json_ok)?
+}
+
+/// Observe live user groups from the local DB. Streams updated groups JSON
+/// whenever the `groups` table undergoes mutation, with automatic debouncing.
+#[frb(serialize)]
+pub fn groups_watch_groups(
+    sink: StreamSink<String>,
+    user_pubkey: String,
+    audience: String,
+) -> Result<(), String> {
+    let user_pubkey = user_pubkey.trim().to_ascii_lowercase();
+    let db = super::db::db_handle()?;
+    let user_pk = user_pubkey.clone();
+    let aud = audience.clone();
+
+    let handle = db
+        .observe(
+            &[soshal_db_core::change_bus::Table::Groups],
+            soshal_db_core::observable::ObservableOptions::default()
+                .with_account(user_pubkey)
+                .with_debounce(std::time::Duration::from_millis(50)),
+            move |db| {
+                let groups = query_groups_internal(db, &user_pk, &aud)?;
+                serde_json::to_string(&groups).map_err(|e| DbError::Migration(e.to_string()))
+            },
+        )
+        .map_err(|e| format!("observe failed: {e}"))?;
+
+    let mut rx = handle.subscribe();
+    let _ = sink.add(handle.current());
+
+    tokio::spawn(async move {
+        let _keep_handle = handle;
+        while rx.changed().await.is_ok() {
+            let val = rx.borrow().clone();
+            if sink.add(val).is_err() {
+                break;
             }
-            None => rows,
-        };
-        let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
-        let counts = repo.member_count_many(&ids)?;
-        let groups: Vec<GroupInfo> = rows
-            .iter()
-            .map(|r| {
-                let mut g = row_to_group(r, Some(&user_pubkey), true);
-                g.members = counts.get(&r.id).copied().unwrap_or(0) as i32;
-                g
-            })
-            .collect();
-        Ok(groups)
-    })
-    .map(super::util::json_ok)?
+        }
+    });
+
+    Ok(())
 }
 
 fn get_group_info_with_viewer(group_id: &str, viewer: Option<&str>) -> Result<String, String> {
@@ -157,6 +209,67 @@ fn get_group_info_with_viewer(group_id: &str, viewer: Option<&str>) -> Result<St
 pub fn groups_get_group_info(group_id: String) -> Result<String, String> {
     let viewer = super::signer::signer_pubkey().ok();
     get_group_info_with_viewer(&group_id, viewer.as_deref())
+}
+
+/// One-shot bundle of every small facet a group-detail screen needs, as a JSON
+/// object: `{group, members, memberRoles, roles, rooms, voiceChannels}`.
+///
+/// The detail screen used to `await` six independent `#[frb(sync)]` calls in
+/// sequence. Each is a *blocking* call on the Dart UI isolate, so `Future.wait`
+/// cannot overlap them (see the Phase 5 note in the parallelization plan) —
+/// the win had to come from doing the work in Rust: one bridge crossing and one
+/// Dart-side `jsonDecode` instead of six of each, and a single DB handle for
+/// all six reads.
+///
+/// Deliberately excludes threads and messages: both run access-control checks
+/// (ban list, private-group membership) whose empty-result paths must keep
+/// their own error semantics, and the message list is unbounded — folding it in
+/// would move a large `jsonDecode` onto the UI isolate, since only the message
+/// parser is currently offloaded via `runOffThreadCompute`.
+#[frb(sync, serialize)]
+pub fn groups_get_detail_bundle(group_id: String) -> Result<String, String> {
+    let viewer = super::signer::signer_pubkey().ok();
+    let bundle = super::db::with_db_result(|db| {
+        let repo = GroupRepo::new(db);
+        let group_row = repo.get_by_id(&group_id)?;
+        let is_member = match viewer.as_deref() {
+            Some(pk) => repo.is_member(&group_id, pk).unwrap_or(false),
+            None => false,
+        };
+        let group = match group_row {
+            Some(ref row) => {
+                let mut g = row_to_group(row, viewer.as_deref(), is_member);
+                let counts = repo.member_count_many(&[group_id.clone()])?;
+                g.members = counts.get(&group_id).copied().unwrap_or(0) as i32;
+                g
+            }
+            // The single-facet fn surfaces NotFound as an error; the bundle
+            // keeps that, because the detail screen gates rendering on it.
+            None => return Err(DbError::NotFound),
+        };
+
+        let members = repo.get_members(&group_id)?;
+        let member_roles: Vec<serde_json::Value> = members
+            .iter()
+            .map(|m| serde_json::json!({ "pubkey": m.pubkey, "role": m.role }))
+            .collect();
+        let member_pubkeys: Vec<String> = members.into_iter().map(|m| m.pubkey).collect();
+
+        let roles = GroupRoleRepo::new(db).list(&group_id)?;
+        let rooms = soshal_db_core::repos::room::GroupRoomRepo::new(db).list(&group_id)?;
+        let voice_channels =
+            soshal_db_core::repos::voice::GroupVoiceRepo::new(db).list_channels(&group_id)?;
+
+        Ok(serde_json::json!({
+            "group": group,
+            "members": member_pubkeys,
+            "memberRoles": member_roles,
+            "roles": roles,
+            "rooms": rooms,
+            "voiceChannels": voice_channels,
+        }))
+    })?;
+    super::util::json_ok(bundle)
 }
 
 /// Get group members (pubkeys + roles from the membership table).
@@ -1513,6 +1626,116 @@ mod tests {
 
         assert!(groups_role_delete(role_id).unwrap());
         assert_eq!(groups_roles_list("g4".to_string()).unwrap(), "[]");
+    }
+
+    #[test]
+    fn test_detail_bundle_matches_individual_facets() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _db = TestDb::init("detail_bundle");
+        let owner_keys = soshal_nostr_core::keys::generate_keys();
+        let owner = owner_keys.public_key().to_hex();
+        let member_keys = soshal_nostr_core::keys::generate_keys();
+        let member = member_keys.public_key().to_hex();
+        // Join as the member first (the owner gate blocks the member's own
+        // `groups_join` on a private group, but this one is public).
+        super::super::signer::signer_unlock(member_keys.secret_key().to_secret_hex()).unwrap();
+        crate::ffi::db::insert_test_user(&member);
+        create_group("gb", &owner);
+        groups_join("gb".to_string(), member.clone(), None).unwrap();
+        // From here on every mutation is owner-gated.
+        super::super::signer::signer_unlock(owner_keys.secret_key().to_secret_hex()).unwrap();
+        groups_role_upsert(
+            String::new(),
+            "gb".to_string(),
+            "Mod".to_string(),
+            "#00ff00".to_string(),
+            1,
+            "read".to_string(),
+        )
+        .unwrap();
+        groups_rooms_create(
+            "gb".to_string(),
+            "general".to_string(),
+            String::new(),
+            ":speech_balloon:".to_string(),
+            "#111111".to_string(),
+            owner.clone(),
+        )
+        .unwrap();
+        groups_voice_channels_create("gb".to_string(), "stage".to_string(), owner.clone()).unwrap();
+
+        let bundle: serde_json::Value =
+            serde_json::from_str(&groups_get_detail_bundle("gb".to_string()).unwrap()).unwrap();
+
+        // Every facet must be byte-identical to the standalone fn it replaces,
+        // or the detail screen would render differently depending on which path
+        // populated its state.
+        assert_eq!(
+            bundle["group"],
+            serde_json::from_str::<serde_json::Value>(
+                &groups_get_group_info("gb".to_string()).unwrap()
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            bundle["members"],
+            serde_json::json!(groups_get_members("gb".to_string()).unwrap())
+        );
+        assert_eq!(
+            bundle["roles"],
+            serde_json::from_str::<serde_json::Value>(
+                &groups_roles_list("gb".to_string()).unwrap()
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            bundle["memberRoles"],
+            serde_json::from_str::<serde_json::Value>(
+                &groups_members_with_roles("gb".to_string()).unwrap()
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            bundle["rooms"],
+            serde_json::from_str::<serde_json::Value>(
+                &groups_rooms_list("gb".to_string()).unwrap()
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            bundle["voiceChannels"],
+            serde_json::from_str::<serde_json::Value>(
+                &groups_voice_channels_list("gb".to_string()).unwrap()
+            )
+            .unwrap()
+        );
+
+        // And the facets are actually populated, not silently empty.
+        assert_eq!(bundle["group"]["id"], "gb");
+        // Creator + the joined member.
+        assert_eq!(bundle["group"]["members"], 2);
+        assert!(
+            bundle["members"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|v| v.as_str() == Some(member.as_str())),
+            "members: {}",
+            bundle["members"]
+        );
+        assert_eq!(bundle["roles"][0]["name"], "Mod");
+        assert_eq!(bundle["rooms"][0]["name"], "general");
+        assert_eq!(bundle["voiceChannels"][0]["name"], "stage");
+
+        let _ = super::super::signer::signer_lock();
+    }
+
+    #[test]
+    fn test_detail_bundle_missing_group_errors_like_get_group_info() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _db = TestDb::init("detail_bundle_missing");
+        assert!(groups_get_detail_bundle("nope".to_string()).is_err());
     }
 
     #[test]
