@@ -225,5 +225,120 @@ void main() {
       await expectLater(minis.fetchSavedMinis(), throwsException);
       expect(minis.lastError.toString(), contains('saved down'));
     });
+
+    // ─── the saved-id mirror (6.4) ─────────────────────────────────────────
+    //
+    // `isSaved` used to be `_saved.any((m) => m.id == id)`, called once per row
+    // by the ForYou grid, so every build of the grid cost O(rows x saved). It is
+    // now a lookup in a `Set` that has to be kept in step with `_saved` at four
+    // separate mutation sites, and these pin each one.
+
+    test('the saved-id mirror tracks every mutation of the saved list',
+        () async {
+      final minis = MinisService();
+      expect(minis.isSaved('m-1'), isFalse);
+
+      api.stubString('crateFfiMinisMinisSaved', _savedJson(['m-1', 'm-2']));
+      await minis.fetchSavedMinis();
+      expect(minis.isSaved('m-1'), isTrue);
+      expect(minis.isSaved('m-2'), isTrue);
+      expect(minis.isSaved('m-3'), isFalse);
+
+      // Re-fetching with a different set must replace the mirror, not add to it.
+      api.stubString('crateFfiMinisMinisSaved', _savedJson(['m-2', 'm-3']));
+      await minis.fetchSavedMinis();
+      expect(minis.isSaved('m-1'), isFalse,
+          reason: 'm-1 is no longer saved, so the mirror must drop it');
+      expect(minis.isSaved('m-3'), isTrue);
+
+      api.stubString('crateFfiMinisMinisSaved', '[]');
+      await minis.fetchSavedMinis();
+      expect(minis.isSaved('m-2'), isFalse);
+      expect(minis.isSaved('m-3'), isFalse);
+    });
+
+    test('unsaveMini drops the id from the mirror', () async {
+      final minis = MinisService();
+      api.stubString('crateFfiMinisMinisSaved', _savedJson(['m-1', 'm-2']));
+      await minis.fetchSavedMinis();
+      expect(minis.isSaved('m-1'), isTrue);
+
+      api.stub('crateFfiMinisMinisUnsave', (_) => true);
+      await minis.unsaveMini('m-1');
+
+      expect(minis.isSaved('m-1'), isFalse);
+      expect(minis.savedMinis.map((m) => m.id), isNot(contains('m-1')));
+      // The untouched sibling must survive: this is the case a mirror that was
+      // cleared rather than pruned on removal would get wrong.
+      expect(minis.isSaved('m-2'), isTrue);
+      expect(minis.savedMinis.single.id, 'm-2');
+    });
+
+    test('unsaving an id that is not saved leaves the mirror alone', () async {
+      final minis = MinisService();
+      api.stubString('crateFfiMinisMinisSaved', _savedJson(['m-1']));
+      await minis.fetchSavedMinis();
+
+      api.stub('crateFfiMinisMinisUnsave', (_) => true);
+      await minis.unsaveMini('m-absent');
+
+      expect(minis.isSaved('m-1'), isTrue,
+          reason: 'removing something absent must not empty the mirror');
+      expect(minis.savedMinis.single.id, 'm-1');
+    });
+
+    test('resetForAccountSwitch clears the mirror as well as the list',
+        () async {
+      final minis = MinisService();
+      api.stubString('crateFfiMinisMinisSaved', _savedJson(['m-1', 'm-2']));
+      await minis.fetchSavedMinis();
+      expect(minis.isSaved('m-1'), isTrue);
+
+      minis.resetForAccountSwitch();
+
+      expect(minis.isSaved('m-1'), isFalse);
+      expect(minis.isSaved('m-2'), isFalse);
+      expect(minis.savedMinis, isEmpty);
+    });
+
+    test('the mirror agrees with the list for every id, by construction',
+        () async {
+      // The mirror is a cache over a list that is also public, so the invariant
+      // that matters is "the two never disagree". Walk a sequence of mutations
+      // and check both views after each step rather than spot-checking ids.
+      final minis = MinisService();
+      api.stubString('crateFfiMinisMinisSaved', _savedJson(['a', 'b', 'c']));
+      api.stub('crateFfiMinisMinisUnsave', (_) => true);
+
+      Future<void> expectConsistent(String label) async {
+        final fromList = minis.savedMinis.map((m) => m.id).toSet();
+        for (final id in ['a', 'b', 'c', 'd', 'absent']) {
+          expect(minis.isSaved(id), fromList.contains(id),
+              reason: 'isSaved($id) disagrees with the list after $label');
+        }
+      }
+
+      await minis.fetchSavedMinis();
+      await expectConsistent('fetch');
+      await minis.unsaveMini('b');
+      await expectConsistent('unsave b');
+      await minis.unsaveMini('absent');
+      await expectConsistent('unsave absent');
+      await minis.unsaveMini('a');
+      await expectConsistent('unsave a');
+      minis.resetForAccountSwitch();
+      await expectConsistent('account switch');
+    });
   });
+}
+
+/// A `crateFfiMinisMinisSaved` payload for the given ids, in the shape
+/// `parseMinis` expects. `MiniItem.id` is what the mirror keys on, so the ids
+/// are the only part that matters here.
+String _savedJson(List<String> ids) {
+  return '[${ids.map((id) => '{"id":"$id","pubkey":"pk-1",'
+          '"videoUrl":"blob://x","blobHash":"h","mediaSize":1,'
+          '"textOverlay":"","thumbnail":"","audience":"public",'
+          '"createdAt":1700000000}')
+      .join(',')}]';
 }

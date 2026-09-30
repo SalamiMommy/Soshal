@@ -25,16 +25,29 @@ class MusicService extends ChangeNotifier
   List<MusicTrack> get tracks => _tracks;
 
   List<MusicTrack> _savedTracks = [];
+  /// Mirror of [_savedTracks]'s ids, so [isTrackSaved] is a hash lookup.
+  ///
+  /// Unlike the minis list, this one has only two writers — [resetForAccountSwitch]
+  /// and [fetchSavedTracks] — and both replace the whole list, so the mirror
+  /// cannot drift. Four screens call [isTrackSaved] per visible row, including
+  /// two `watch<MusicService>()` sites.
+  Set<String> _savedTrackIds = {};
   List<MusicPlaylist> _playlists = [];
 
   List<MusicTrack> get savedTracks => _savedTracks;
   List<MusicPlaylist> get playlists => _playlists;
 
-  bool isTrackSaved(String id) => _savedTracks.any((t) => t.id == id);
+  bool isTrackSaved(String id) => _savedTrackIds.contains(id);
+
+  /// The single writer for [_savedTracks]; keeps the id mirror in step.
+  void _setSavedTracks(List<MusicTrack> list) {
+    _savedTracks = list;
+    _savedTrackIds = {for (final t in list) t.id};
+  }
 
   /// Clears in-memory saved tracks, playlists, and transient state on account switch.
   void resetForAccountSwitch() {
-    _savedTracks = [];
+    _setSavedTracks(const []);
     _playlists = [];
     // `_tracks` is scoped to the active account too — leaving the previous
     // account's fetched stream behind leaks their lib into the new account.
@@ -128,7 +141,7 @@ class MusicService extends ChangeNotifier
   /// Saved tracks from the local `saved_content` store, newest saved first.
   Future<List<MusicTrack>> fetchSavedTracks() => guard(() async {
         final json = RustLib.instance.api.crateFfiMusicMusicSaved();
-        _savedTracks = await runOffThreadCompute(_parseTracks, json);
+        _setSavedTracks(await runOffThreadCompute(_parseTracks, json));
         return _savedTracks;
       });
 

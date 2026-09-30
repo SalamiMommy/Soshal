@@ -1195,7 +1195,7 @@ class _EventsAudienceDiscoveryScreenState
     extends State<EventsAudienceDiscoveryScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  List<String> _friendPubkeys = const [];
+  Set<String> _friendPubkeys = const {};
 
   @override
   void initState() {
@@ -1218,9 +1218,13 @@ class _EventsAudienceDiscoveryScreenState
       final friends = context.friendsServiceReadOrNull;
       if (friends != null) {
         final followsJson = await friends.fetchFollows(pk);
+        // A set, not a list: `_visibleEvents` tests membership once per event
+        // on every build, so a list made the visible list cost O(events x
+        // follows) — and this screen is one of the twelve that watch
+        // `FriendsService` and rebuild on each notification.
         final decoded = (jsonDecode(followsJson) as List<dynamic>)
             .whereType<String>()
-            .toList();
+            .toSet();
         if (mounted) setState(() => _friendPubkeys = decoded);
       }
     } catch (e) {

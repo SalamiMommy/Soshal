@@ -410,5 +410,120 @@ void main() {
               'one, or a failed request would leave no banner');
       expect(friends.lastError, contains('relay refused'));
     });
+
+    // ─── membership mirrors (6.4) ─────────────────────────────────────────
+    //
+    // `matchesAudience` is called once per item by `filterList`, and it used to
+    // do `_contacts.any(...)` and `_suggestions.contains(...)` inline, so a
+    // filtered list cost O(items x contacts). Both are now `Set` lookups whose
+    // mirrors have to stay in step with the public lists at every writer.
+
+    test('contacts added and removed are reflected in the audience tiers',
+        () async {
+      final friends = FriendsService();
+      final items = ['pk-a', 'pk-b', 'pk-c'];
+
+      expect(friends.filterList(items, AudienceFilter.friends, (p) => p),
+          isEmpty);
+      expect(
+          friends.filterList(items, AudienceFilter.friendsOfFriends, (p) => p),
+          isEmpty);
+
+      friends.addContact(profile('pk-a', 'A'));
+      expect(
+          friends.filterList(items, AudienceFilter.friends, (p) => p),
+          ['pk-a']);
+      expect(
+          friends.filterList(items, AudienceFilter.friendsOfFriends, (p) => p),
+          ['pk-a'],
+          reason: 'a friend is also a friend-of-friend');
+
+      friends.removeContact('pk-a');
+      expect(friends.filterList(items, AudienceFilter.friends, (p) => p),
+          isEmpty,
+          reason: 'the contact mirror must drop it, not just the contact list');
+    });
+
+    test('a duplicate add does not double-count, and removal is symmetric',
+        () async {
+      final friends = FriendsService();
+      friends.addContact(profile('pk-a', 'A'));
+      friends.addContact(profile('pk-a', 'A'));
+      expect(friends.contacts.where((c) => c.pubkey == 'pk-a'), hasLength(1));
+
+      friends.removeContact('pk-a');
+      expect(
+          friends.filterList(['pk-a'], AudienceFilter.friends, (p) => p),
+          isEmpty);
+      expect(friends.contacts, isEmpty);
+    });
+
+    test('suggestions reach the friends-of-friends tier only', () async {
+      final friends = FriendsService();
+      // A *fresh* list per call: the bridge decodes a new one every time, and an
+      // identity comparison would call every refresh a change.
+      api.stub('crateFfiSocialSocialFriendSuggestions',
+          (_) => List<String>.of(const ['pk-s1', 'pk-s2']));
+
+      await friends.fetchSuggestions();
+
+      expect(
+          friends.filterList(['pk-s1'], AudienceFilter.friends, (p) => p),
+          isEmpty,
+          reason: 'a suggestion is not a friend');
+      expect(
+          friends
+              .filterList(['pk-s1'], AudienceFilter.friendsOfFriends, (p) => p),
+          ['pk-s1']);
+    });
+
+    test('resetForAccountSwitch clears both mirrors', () async {
+      final friends = FriendsService();
+      api.stub('crateFfiSocialSocialFriendSuggestions',
+          (_) => List<String>.of(const ['pk-s1']));
+      await friends.fetchSuggestions();
+      friends.addContact(profile('pk-a', 'A'));
+
+      expect(
+          friends
+              .filterList(['pk-s1'], AudienceFilter.friendsOfFriends, (p) => p),
+          ['pk-s1']);
+      expect(
+          friends.filterList(['pk-a'], AudienceFilter.friends, (p) => p),
+          ['pk-a']);
+
+      friends.resetForAccountSwitch();
+
+      // A new account has neither, and a stale mirror here would show the
+      // previous account's friends and suggestions.
+      expect(
+          friends
+              .filterList(['pk-s1'], AudienceFilter.friendsOfFriends, (p) => p),
+          isEmpty);
+      expect(friends.filterList(['pk-a'], AudienceFilter.friends, (p) => p),
+          isEmpty);
+    });
+
+    test('the mirrors agree with the public lists for every id', () async {
+      final friends = FriendsService();
+      api.stub('crateFfiSocialSocialFriendSuggestions',
+          (_) => List<String>.of(const ['s1', 's2']));
+      await friends.fetchSuggestions();
+      friends.addContact(profile('c1', 'C1'));
+      friends.addContact(profile('c2', 'C2'));
+      friends.removeContact('c1');
+
+      final contactIds = friends.contacts.map((c) => c.pubkey).toSet();
+      const probe = ['c1', 'c2', 's1', 's2', 'other'];
+      for (final id in probe) {
+        final expected = contactIds.contains(id) ||
+            friends.suggestions.contains(id);
+        expect(
+            friends
+                .matchesAudience(id, AudienceFilter.friendsOfFriends),
+            expected,
+            reason: 'membership mirrors disagree for $id');
+      }
+    });
   });
 }

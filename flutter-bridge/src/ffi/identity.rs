@@ -810,9 +810,19 @@ pub fn identity_get_profiles_batch(pubkeys: Vec<String>) -> Result<String, Strin
         // One read of the viewer's contacts, reused for every profile's
         // `is_following`. None when the viewer is locked or is the only
         // subject, matching `query_profile_internal`'s own conditions.
-        let my_follows: Option<Vec<String>> = me.as_deref().and_then(|me| {
+        let my_follows: Option<std::collections::HashSet<String>> = me.as_deref().and_then(|me| {
             rows.get(&me.to_ascii_lowercase())
                 .and_then(|r| serde_json::from_str::<Vec<String>>(&r.contact_pubkeys).ok())
+                .map(|follows| {
+                    // Lowercased keys, because the check this replaces was
+                    // `eq_ignore_ascii_case`, which compares exactly the
+                    // ASCII-lowercased bytes. `to_ascii_lowercase` is what
+                    // that method is defined in terms of, so the hash lookup
+                    // is equivalent -- including for non-ASCII, where
+                    // `to_lowercase` (full Unicode case folding) would *not*
+                    // have been.
+                    follows.iter().map(|f| f.to_ascii_lowercase()).collect()
+                })
         });
         let out: Vec<ProfileInfo> = pubkeys
             .iter()
@@ -825,8 +835,19 @@ pub fn identity_get_profiles_batch(pubkeys: Vec<String>) -> Result<String, Strin
                 let mut p = row_to_profile(row);
                 if let (Some(me), Some(follows)) = (me.as_deref(), my_follows.as_ref()) {
                     if !me.eq_ignore_ascii_case(&row.pubkey) {
-                        p.is_following =
-                            follows.iter().any(|f| f.eq_ignore_ascii_case(&row.pubkey));
+                        // Was a scan of every follow for every profile in the
+                        // batch: 200 profiles against a 5 000-entry contact list
+                        // is a million case-insensitive comparisons on the Dart
+                        // UI isolate, for one boolean per row.
+                        //
+                        // No fold on the lookup key: `rows_for_pubkeys` selects
+                        // `WHERE pubkey IN (SELECT LOWER(value) ...)`, so a row
+                        // that was found at all has a lowercase `pubkey`. The
+                        // contact list, by contrast, is a JSON blob and is *not*
+                        // normalized, which is why the keys are folded above --
+                        // that side is the one the old scan was really being
+                        // robust about.
+                        p.is_following = follows.contains(&row.pubkey);
                     }
                 }
                 p
@@ -1036,6 +1057,51 @@ mod tests {
             "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES ('{pubkey}', 'npub1{pubkey}', '{contacts_json}') ON CONFLICT(pubkey) DO UPDATE SET contact_pubkeys='{contacts_json}'"
         ))
         .unwrap();
+    }
+
+    /// The batch `is_following` check replaced a per-profile scan of the
+    /// viewer's contact list with a lookup in a `HashSet` of ASCII-lowercased
+    /// keys. That is only equivalent if the fold is the *same* fold
+    /// `str::eq_ignore_ascii_case` used, so the stored contact is upper-case
+    /// here and the requested profile lower-case -- the case the old scan
+    /// matched and a naive `HashSet<&str>` would have missed.
+    ///
+    /// The *requested* profile is lower-case in the test for the same reason:
+    /// `rows_for_pubkeys` only finds rows whose stored `pubkey` is lowercase, so
+    /// that side of the comparison cannot be exercised any other way and does
+    /// not need a fold.
+    #[test]
+    fn test_get_profiles_batch_is_following_is_case_insensitive() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _s = crate::ffi::util::lock(&crate::ffi::test_lock::SIGNER_TEST_LOCK);
+        let _p = crate::ffi::db::tmp_db("profiles-batch-case", "identity");
+        let keys = nostr::key::Keys::generate();
+        let me = keys.public_key().to_hex();
+        // Hex with letters, so upper/lower-casing actually differs.
+        let followed = "abcdef01".repeat(8);
+        let stranger = format!("{}ab", "9f3d7a".repeat(10));
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        // Store the contact upper-cased, request the profile lower-cased.
+        seed_user(&me, &[&followed.to_ascii_uppercase()]);
+        seed_user(&followed.to_ascii_lowercase(), &[]);
+        seed_user(&stranger.to_ascii_lowercase(), &[]);
+
+        let json = identity_get_profiles_batch(vec![
+            followed.to_ascii_lowercase(),
+            stranger.to_ascii_lowercase(),
+            me.clone(),
+        ])
+        .unwrap();
+        let batch: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(
+            batch[0]["is_following"],
+            serde_json::json!(true),
+            "a contact stored upper-case must still match a lower-case request"
+        );
+        assert_eq!(batch[1]["is_following"], serde_json::json!(false));
+        // Self is never "following" regardless of the contact list.
+        assert_eq!(batch[2]["is_following"], serde_json::json!(false));
     }
 
     #[test]

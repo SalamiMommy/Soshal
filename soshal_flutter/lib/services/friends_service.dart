@@ -47,6 +47,23 @@ class FriendsService extends ChangeNotifier
   Set<String> _fofPubkeys = {};
   String? _loadedForPubkey;
 
+  /// Id-only mirrors of [_suggestions] and [_contacts], for the membership
+  /// tests in [matchesAudience].
+  ///
+  /// [filterList] calls that predicate once per item, so the `_contacts.any(...)`
+  /// scan it used to do made a full event list cost O(events x contacts) on
+  /// every build of every audience-filtered screen. These are caches derived
+  /// from the two lists, rebuilt by [_setSuggestions] and [addContact] /
+  /// [removeContact] / [resetForAccountSwitch] — the only writers.
+  Set<String> _suggestionSet = {};
+  Set<String> _contactPubkeys = {};
+
+  /// The single writer for [_suggestions].
+  void _setSuggestions(List<String> list) {
+    _suggestions = list;
+    _suggestionSet = list.toSet();
+  }
+
   /// Bumped whenever the audience graph's *contents* change.
   ///
   /// This is the service's own record of "a notification means something changed",
@@ -79,9 +96,10 @@ class FriendsService extends ChangeNotifier
     _friendPubkeys.clear();
     _fofPubkeys.clear();
     _loadedForPubkey = null;
-    _suggestions.clear();
+    _setSuggestions(const []);
     _suggestionsLoaded = false;
     _contacts.clear();
+    _contactPubkeys = {};
     clearLastError();
     _audienceRevision++;
     notifyListeners();
@@ -107,7 +125,7 @@ class FriendsService extends ChangeNotifier
     // keep a repeated no-op refresh from rebuilding every audience-filtered
     // screen.
     if (!listEquals(next, _suggestions)) {
-      _suggestions = next;
+      _setSuggestions(next);
       _audienceRevision++;
     }
     _suggestionsLoaded = true;
@@ -162,8 +180,9 @@ class FriendsService extends ChangeNotifier
 
   /// Add a profile to the in-memory contact list.
   void addContact(ProfileInfo profile) {
-    if (_contacts.any((c) => c.pubkey == profile.pubkey)) return;
+    if (_contactPubkeys.contains(profile.pubkey)) return;
     _contacts.add(profile);
+    _contactPubkeys.add(profile.pubkey);
     _friendPubkeys.add(profile.pubkey);
     _audienceRevision++;
     clearLastError();
@@ -174,6 +193,7 @@ class FriendsService extends ChangeNotifier
   void removeContact(String pubkey) {
     final before = _contacts.length;
     _contacts.removeWhere((c) => c.pubkey == pubkey);
+    _contactPubkeys.remove(pubkey);
     _friendPubkeys.remove(pubkey);
     if (_contacts.length != before) _audienceRevision++;
     notifyListeners();
@@ -256,15 +276,13 @@ class FriendsService extends ChangeNotifier
     if (pubkey == null || pubkey.isEmpty) return false;
     if (myPubkey != null && pubkey == myPubkey) return true;
 
-    final isFriend = _friendPubkeys.contains(pubkey) ||
-        _contacts.any((c) => c.pubkey == pubkey);
     if (filter == AudienceFilter.friends) {
-      return isFriend;
+      return _isFirstDegree(pubkey);
     }
     if (filter == AudienceFilter.friendsOfFriends) {
-      return isFriend ||
+      return _isFirstDegree(pubkey) ||
           _fofPubkeys.contains(pubkey) ||
-          _suggestions.contains(pubkey);
+          _suggestionSet.contains(pubkey);
     }
     return true;
   }
@@ -282,6 +300,17 @@ class FriendsService extends ChangeNotifier
             matchesAudience(getPubkey(item), filter, myPubkey: myPubkey))
         .toList();
   }
+
+  /// Resolve the union of every first-degree membership, once.
+  ///
+  /// [matchesAudience] is called once per item in [filterList], so the
+  /// `_contacts.any(...)` scan it used to do multiplied by the list length —
+  /// twelve audience-filtered screens, one of them over a full event list. Both
+  /// member collections are mirrored into sets, and this is the one place that
+  /// reads the mirror, so the union is computed at most once per item rather
+  /// than once per predicate.
+  bool _isFirstDegree(String pubkey) =>
+      _friendPubkeys.contains(pubkey) || _contactPubkeys.contains(pubkey);
 }
 
 /// Convenience extension for optional FriendsService access in screens.

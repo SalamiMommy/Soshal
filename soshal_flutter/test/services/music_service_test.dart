@@ -152,5 +152,74 @@ void main() {
           music.publishTrack(mediaSource: '/tmp/x.mp3'), throwsException);
       expect(music.lastError, contains('sign failed'));
     });
+
+    // ─── the saved-id mirror (6.4) ─────────────────────────────────────────
+    //
+    // `isTrackSaved` was `_savedTracks.any((t) => t.id == id)`, and four
+    // screens call it per visible row, two of them through
+    // `watch<MusicService>()`. It is now a set lookup, and the set has to stay
+    // in step with the list at its two writers.
+
+    test('isTrackSaved tracks the saved list across fetch and account switch',
+        () async {
+      final music = MusicService();
+      expect(music.isTrackSaved('t-1'), isFalse);
+
+      api.stubString('crateFfiMusicMusicSaved', _trackJson(['t-1', 't-2']));
+      await music.fetchSavedTracks();
+      expect(music.isTrackSaved('t-1'), isTrue);
+      expect(music.isTrackSaved('t-2'), isTrue);
+      expect(music.isTrackSaved('t-3'), isFalse);
+
+      // A re-fetch replaces the list, so the mirror must replace too rather
+      // than accumulate -- this is the case that separates a mirror from a
+      // set that is only ever added to.
+      api.stubString('crateFfiMusicMusicSaved', _trackJson(['t-2', 't-3']));
+      await music.fetchSavedTracks();
+      expect(music.isTrackSaved('t-1'), isFalse);
+      expect(music.isTrackSaved('t-3'), isTrue);
+
+      music.resetForAccountSwitch();
+      expect(music.isTrackSaved('t-2'), isFalse);
+      expect(music.isTrackSaved('t-3'), isFalse);
+      expect(music.savedTracks, isEmpty);
+    });
+
+    test('a failed fetch leaves the previous mirror intact', () async {
+      final music = MusicService();
+      api.stubString('crateFfiMusicMusicSaved', _trackJson(['t-1']));
+      await music.fetchSavedTracks();
+      expect(music.isTrackSaved('t-1'), isTrue);
+
+      api.stub('crateFfiMusicMusicSaved', (_) => throw Exception('db down'));
+      await expectLater(music.fetchSavedTracks(), throwsException);
+
+      // The list kept its old contents because the assignment never ran, so
+      // the mirror has to agree with it rather than clearing.
+      expect(music.savedTracks.map((t) => t.id), contains('t-1'));
+      expect(music.isTrackSaved('t-1'), isTrue);
+    });
+
+    test('the mirror agrees with the list for every id', () async {
+      final music = MusicService();
+      api.stubString('crateFfiMusicMusicSaved', _trackJson(['a', 'b']));
+      await music.fetchSavedTracks();
+
+      final fromList = music.savedTracks.map((t) => t.id).toSet();
+      for (final id in ['a', 'b', 'c', 'absent']) {
+        expect(music.isTrackSaved(id), fromList.contains(id),
+            reason: 'isTrackSaved($id) disagrees with savedTracks');
+      }
+    });
   });
+}
+
+/// A `crateFfiMusicMusicSaved` payload for the given ids. Only `id` matters
+/// here, since the mirror keys on it.
+String _trackJson(List<String> ids) {
+  return '[${ids.map((id) => '{"id":"$id","pubkey":"pk-1",'
+          '"audioUrl":"blob://x","blobHash":"h","mediaSize":1,'
+          '"title":"t","thumbnail":"","hashtags":[],"d":"",'
+          '"audience":"public","createdAt":1700000000}')
+      .join(',')}]';
 }

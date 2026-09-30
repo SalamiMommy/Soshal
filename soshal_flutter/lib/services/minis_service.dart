@@ -24,6 +24,13 @@ class MinisService extends ChangeNotifier
   bool get wasmRuntimeUnavailable => _wasmRuntimeUnavailable;
 
   List<MiniItem> _saved = [];
+  /// Mirror of [_saved]'s ids, so [isSaved] is a hash lookup rather than a scan.
+  ///
+  /// This is a cache, not a source of truth: [_saved] is the list callers read
+  /// and every mutation goes through [_setSaved] / [_removeSaved], which keep the
+  /// two in step. `MiniItem` is not `==`-comparable, so mirroring by hand is the
+  /// only option short of adding equality to it.
+  Set<String> _savedIds = {};
   List<MiniItem> _minis = [];
   bool _minisLoading = false;
   StreamSubscription<List<MiniItem>>? _minisSub;
@@ -33,7 +40,27 @@ class MinisService extends ChangeNotifier
   List<MiniItem> get minis => _minis;
   bool get minisLoading => _minisLoading;
 
-  bool isSaved(String id) => _saved.any((m) => m.id == id);
+  /// Replace the saved list wholesale, keeping [_savedIds] in step.
+  void _setSaved(List<MiniItem> list) {
+    _saved = list;
+    _savedIds = {for (final m in list) m.id};
+  }
+
+  /// Drop one id from [_saved] and the mirror. Returns whether anything was
+  /// actually removed, so callers can tell a real change from a no-op.
+  bool _removeSaved(String id) {
+    final before = _saved.length;
+    _saved.removeWhere((m) => m.id == id);
+    if (_saved.length == before) return false;
+    _savedIds = {..._savedIds}..remove(id);
+    return true;
+  }
+
+  /// Whether `id` is saved.
+  ///
+  /// Called once per row by the ForYou grid and the saved list, so this ran
+  /// O(rows x saved) on every build of either.
+  bool isSaved(String id) => _savedIds.contains(id);
 
   @override
   void dispose() {
@@ -45,7 +72,7 @@ class MinisService extends ChangeNotifier
   void resetForAccountSwitch() {
     _minisSub?.cancel();
     _minisSub = null;
-    _saved = [];
+    _setSaved(const []);
     _minis = [];
     _minisLoading = false;
     clearLastError();
@@ -100,7 +127,7 @@ class MinisService extends ChangeNotifier
           _parseMinis,
           RustLib.instance.api.crateFfiMinisMinisSaved(),
         );
-        _saved = list;
+        _setSaved(list);
         return list;
       });
 
@@ -116,6 +143,11 @@ class MinisService extends ChangeNotifier
     try {
       final hosted = await hostMiniBlob(mini, media, p2p);
       RustLib.instance.api.crateFfiMinisMinisSave(eventId: mini.id);
+      // Re-saving an already-saved mini moves it to the front without changing
+      // the set, so the mirror is only rebuilt when the id was new.
+      if (!_savedIds.contains(mini.id)) {
+        _savedIds = {..._savedIds, mini.id};
+      }
       _saved.removeWhere((m) => m.id == mini.id);
       _saved.insert(0, mini);
       clearLastError();
@@ -132,7 +164,7 @@ class MinisService extends ChangeNotifier
   Future<void> unsaveMini(String id) async {
     try {
       RustLib.instance.api.crateFfiMinisMinisUnsave(eventId: id);
-      _saved.removeWhere((m) => m.id == id);
+      _removeSaved(id);
       clearLastError();
       notifyDeferred();
     } catch (e, st) {
