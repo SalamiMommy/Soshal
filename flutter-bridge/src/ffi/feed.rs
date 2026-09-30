@@ -725,17 +725,13 @@ pub(crate) fn query_feed_posts_internal(
         .into_iter()
         .map(|row| {
             let ref_id = row.id.clone();
-            let content = if row.content.starts_with("eNo") || row.content.starts_with("eF4") {
-                let decompressed =
-                    soshal_content_core::compress::decompress_json_dict(&row.content);
-                if decompressed.is_empty() {
-                    row.content
-                } else {
-                    decompressed
-                }
-            } else {
-                row.content
-            };
+            // `content` is plaintext by invariant, not by convention: the
+            // moderation classifier above treats it as text, and the posts_fts
+            // trigger indexes it directly. Storing a compressed blob would
+            // break both silently. Content compression for the wire lives in
+            // `sync-core::outbox` under a `__zstd_b64__:` prefix and is undone
+            // on the transport, never in the DB.
+            let content = row.content;
             let engagement = counters.get(&ref_id);
             FeedPost {
                 event_id: ref_id,
@@ -838,17 +834,8 @@ pub(crate) fn query_feed_posts_typed_internal(
         .into_iter()
         .map(|row| {
             let ref_id = row.id.clone();
-            let content = if row.content.starts_with("eNo") || row.content.starts_with("eF4") {
-                let decompressed =
-                    soshal_content_core::compress::decompress_json_dict(&row.content);
-                if decompressed.is_empty() {
-                    row.content
-                } else {
-                    decompressed
-                }
-            } else {
-                row.content
-            };
+            // Plaintext by invariant — see the note in `feed_fetch_events`.
+            let content = row.content;
             let engagement = counters.get(&ref_id);
             let media = parse_media_dto(&row.tags_json);
             FeedPostDto {
@@ -1511,6 +1498,77 @@ mod tests {
         assert!(v["height_px"].as_f64().unwrap() > 0.0);
         assert_eq!(v["media"].as_array().unwrap().len(), 1);
         assert!(feed_compute_card_layout("nope".to_string()).is_err());
+    }
+
+    /// Regression: post content is plaintext by invariant.
+    ///
+    /// A dead branch used to gate decompression on `eNo`/`eF4` prefixes, which
+    /// are zlib headers that nothing in the workspace can produce (`flate2`'s
+    /// `DeflateEncoder` emits raw deflate, and the zstd-dict compressor emits
+    /// a `WkgBAAAA` prefix instead). It could never fire, so removing it is
+    /// behaviour-preserving.
+    ///
+    /// This test pins the invariant from the other side: content shaped like a
+    /// compressed blob must still round-trip verbatim, so a future change that
+    /// starts storing compressed content fails here rather than silently
+    /// breaking FTS indexing and text moderation, both of which read this
+    /// column as text.
+    #[test]
+    fn feed_content_is_returned_verbatim_not_decompressed() {
+        let _guard = crate::ffi::test_lock::DB_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _p = tmp_db("plaintext_invariant");
+        db::with_db_result(|db| {
+            // Prefixes of every compressed representation this repo can emit:
+            // zlib (eNo/eF4), raw deflate, and the zstd-dict frame.
+            for (label, blob) in [
+                ("zlib", "eNqzsVFLz0xFVVGyUbMPMDGyUkS"),
+                ("zlib-alt", "eF7NS81Iy0uKtRUlKqjLrCytNrYpLA"),
+                ("raw-deflate", "q1ZKVLJS"),
+                ("zstd-dict", "WkgBAAAAKABYnl7"),
+            ] {
+                let id = format!("plaintext-invariant-{label}");
+                insert_post(&id, &format!("pk-{label}"), blob, 1, 3000, "[]");
+            }
+            let opts = FeedQueryOptions {
+                limit: 50,
+                offset: 0,
+                filter_type: "all".to_string(),
+                cursor_created_at: None,
+                cursor_id: None,
+                audience: String::new(),
+            };
+            let posts = query_feed_posts_typed_internal(db, &opts).unwrap();
+            for p in posts
+                .iter()
+                .filter(|p| p.event_id.starts_with("plaintext-invariant-"))
+            {
+                let stored = match p.event_id.rsplit('-').next().unwrap() {
+                    "zlib" => "eNqzsVFLz0xFVVGyUbMPMDGyUkS",
+                    "alt" => "eF7NS81Iy0uKtRUlKqjLrCytNrYpLA",
+                    "deflate" => "q1ZKVLJS",
+                    "dict" => "WkgBAAAAKABYnl7",
+                    other => panic!("unexpected fixture {other}"),
+                };
+                assert_eq!(
+                    p.content, stored,
+                    "content was transformed for {}; the DB stores plaintext",
+                    p.event_id
+                );
+            }
+            // Guard against the filter silently matching nothing.
+            assert_eq!(
+                posts
+                    .iter()
+                    .filter(|p| p.event_id.starts_with("plaintext-invariant-"))
+                    .count(),
+                4,
+                "expected all four fixtures in the page"
+            );
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[test]
