@@ -99,10 +99,10 @@ fn card_from_value(v: &serde_json::Value) -> Option<DatingCardInfo> {
 fn profile_rows_sql(extra: &str, limit: i32) -> String {
     format!(
         "SELECT p.id, p.pubkey, p.content, p.created_at, COALESCE(u.name,'') AS name \
-         FROM posts p LEFT JOIN users u ON LOWER(u.pubkey) = LOWER(p.pubkey) \
+         FROM posts p LEFT JOIN users u ON u.pubkey = p.pubkey \
          WHERE p.kind = {KIND_PROFILE} AND p.is_deleted = 0 {extra} \
          AND p.created_at = (SELECT MAX(created_at) FROM posts p2 \
-                             WHERE LOWER(p2.pubkey) = LOWER(p.pubkey) AND p2.kind = p.kind AND p2.is_deleted = 0) \
+                             WHERE p2.pubkey = p.pubkey AND p2.kind = p.kind AND p2.is_deleted = 0) \
          ORDER BY p.created_at DESC LIMIT {}",
         limit.clamp(1, 100)
     )
@@ -441,28 +441,31 @@ fn fetch_profiles_internal(
     audience: &str,
 ) -> Result<Vec<DatingCardInfo>, String> {
     let authors = super::identity::resolve_audience_authors(audience)?;
-    let mut params: Vec<String> = vec![user_pubkey.to_string()];
+    // Every predicate below is now a plain `=` against a normalized column, so
+    // the binds have to arrive normalized too.
+    let norm_user_pk = user_pubkey.trim().to_ascii_lowercase();
+    let mut params: Vec<String> = vec![norm_user_pk.clone()];
     let mut audience_clause = String::new();
     if let Some(a) = &authors {
         if a.is_empty() {
             return Ok(Vec::new());
         }
         if a.len() == 1 {
-            audience_clause = " AND LOWER(p.pubkey) = LOWER(?2)".to_string();
-            params.push(a[0].clone());
+            audience_clause = " AND p.pubkey = ?2".to_string();
+            params.push(a[0].trim().to_ascii_lowercase());
         } else {
             audience_clause =
-                " AND LOWER(p.pubkey) IN (SELECT LOWER(value) FROM json_each(?2))".to_string();
+                " AND p.pubkey IN (SELECT LOWER(value) FROM json_each(?2))".to_string();
             params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
         }
     }
     let rows = super::db::db_query_json(
         &profile_rows_sql(
             &format!(
-                "AND LOWER(p.pubkey) != LOWER(?1) AND p.id NOT IN \
-                 (SELECT event_id FROM reactions WHERE LOWER(pubkey) = LOWER(?1)) \
-                 AND LOWER(p.pubkey) NOT IN (SELECT LOWER(pubkey) FROM dating_unmatches WHERE LOWER(actor_pubkey) = LOWER(?1) UNION SELECT LOWER(actor_pubkey) FROM dating_unmatches WHERE LOWER(pubkey) = LOWER(?1)) \
-                 AND LOWER(p.pubkey) NOT IN (SELECT LOWER(blocked_pubkey) FROM blocks WHERE LOWER(pubkey) = LOWER(?1) UNION SELECT LOWER(pubkey) FROM blocks WHERE LOWER(blocked_pubkey) = LOWER(?1)){audience_clause}",
+                "AND p.pubkey != ?1 AND p.id NOT IN \
+                 (SELECT event_id FROM reactions WHERE pubkey = ?1) \
+                 AND p.pubkey NOT IN (SELECT pubkey FROM dating_unmatches WHERE actor_pubkey = ?1 UNION SELECT actor_pubkey FROM dating_unmatches WHERE pubkey = ?1) \
+                 AND p.pubkey NOT IN (SELECT blocked_pubkey FROM blocks WHERE pubkey = ?1 UNION SELECT pubkey FROM blocks WHERE blocked_pubkey = ?1){audience_clause}",
             ),
             limit,
         ),
@@ -820,9 +823,7 @@ pub fn dating_delete_profile(user_pubkey: String) -> Result<bool, String> {
     super::signer::require_identity(&user_pubkey)?;
     let norm_pk = user_pubkey.trim().to_ascii_lowercase();
     super::db::db_execute_params(
-        &format!(
-            "UPDATE posts SET is_deleted = 1 WHERE kind = {KIND_PROFILE} AND LOWER(pubkey) = ?1"
-        ),
+        &format!("UPDATE posts SET is_deleted = 1 WHERE kind = {KIND_PROFILE} AND pubkey = ?1"),
         &[norm_pk],
     )
     .map(|_| true)
@@ -846,7 +847,7 @@ fn react(user_pubkey: &str, profile_pubkey: &str, content: &str) -> Result<bool,
     let rows = super::db::db_query_json(
         &format!(
             "SELECT p.id FROM posts p WHERE p.kind = {KIND_PROFILE} \
-             AND LOWER(p.pubkey) = ?1 AND p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT 1"
+             AND p.pubkey = ?1 AND p.is_deleted = 0 ORDER BY p.created_at DESC LIMIT 1"
         ),
         &[norm_profile_pk.clone()],
     )?;
@@ -940,7 +941,7 @@ pub fn dating_reset_passes(user_pubkey: String) -> Result<i64, String> {
     super::signer::require_identity(&user_pubkey)?;
     let norm_user_pk = user_pubkey.trim().to_ascii_lowercase();
     let n = super::db::db_execute_params(
-        "DELETE FROM reactions WHERE LOWER(pubkey) = ?1 AND content = 'pass'",
+        "DELETE FROM reactions WHERE pubkey = ?1 AND content = 'pass'",
         &[norm_user_pk],
     )?;
     Ok(n as i64).into()
@@ -956,9 +957,9 @@ pub fn dating_fetch_likes(user_pubkey: String) -> Result<String, String> {
         &format!(
             "SELECT r.event_id, r.pubkey FROM reactions r \
              WHERE r.content = '+' AND r.event_id IN \
-             (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND LOWER(pubkey) = ?1 AND is_deleted = 0) \
-             AND LOWER(r.pubkey) NOT IN (SELECT LOWER(pubkey) FROM dating_unmatches WHERE LOWER(actor_pubkey) = ?1 UNION SELECT LOWER(actor_pubkey) FROM dating_unmatches WHERE LOWER(pubkey) = ?1) \
-             AND LOWER(r.pubkey) NOT IN (SELECT LOWER(blocked_pubkey) FROM blocks WHERE LOWER(pubkey) = ?1 UNION SELECT LOWER(pubkey) FROM blocks WHERE LOWER(blocked_pubkey) = ?1) \
+             (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1 AND is_deleted = 0) \
+             AND r.pubkey NOT IN (SELECT pubkey FROM dating_unmatches WHERE actor_pubkey = ?1 UNION SELECT actor_pubkey FROM dating_unmatches WHERE pubkey = ?1) \
+             AND r.pubkey NOT IN (SELECT blocked_pubkey FROM blocks WHERE pubkey = ?1 UNION SELECT pubkey FROM blocks WHERE blocked_pubkey = ?1) \
              ORDER BY r.created_at DESC LIMIT 200"
         ),
         &[norm_user_pk.clone()],
@@ -995,11 +996,11 @@ pub fn dating_fetch_matches(user_pubkey: String) -> Result<String, String> {
         &format!(
             "SELECT r.event_id, r.pubkey, p.pubkey AS profile_owner FROM reactions r \
              JOIN posts p ON p.id = r.event_id \
-             WHERE p.kind = {KIND_PROFILE} AND r.content = '+' AND LOWER(r.pubkey) = ?1 \
-             AND EXISTS (SELECT 1 FROM reactions r2 WHERE r2.content = '+' AND LOWER(r2.pubkey) = LOWER(p.pubkey) \
-                         AND r2.event_id IN (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND LOWER(pubkey) = ?1)) \
-             AND LOWER(p.pubkey) NOT IN (SELECT LOWER(pubkey) FROM dating_unmatches WHERE LOWER(actor_pubkey) = ?1 UNION SELECT LOWER(actor_pubkey) FROM dating_unmatches WHERE LOWER(pubkey) = ?1) \
-             AND LOWER(p.pubkey) NOT IN (SELECT LOWER(blocked_pubkey) FROM blocks WHERE LOWER(pubkey) = ?1 UNION SELECT LOWER(pubkey) FROM blocks WHERE LOWER(blocked_pubkey) = ?1) \
+             WHERE p.kind = {KIND_PROFILE} AND r.content = '+' AND r.pubkey = ?1 \
+             AND EXISTS (SELECT 1 FROM reactions r2 WHERE r2.content = '+' AND r2.pubkey = p.pubkey \
+                         AND r2.event_id IN (SELECT id FROM posts WHERE kind = {KIND_PROFILE} AND pubkey = ?1)) \
+             AND p.pubkey NOT IN (SELECT pubkey FROM dating_unmatches WHERE actor_pubkey = ?1 UNION SELECT actor_pubkey FROM dating_unmatches WHERE pubkey = ?1) \
+             AND p.pubkey NOT IN (SELECT blocked_pubkey FROM blocks WHERE pubkey = ?1 UNION SELECT pubkey FROM blocks WHERE blocked_pubkey = ?1) \
              ORDER BY r.created_at DESC LIMIT 100"
         ),
         &[norm_user_pk.clone()],
@@ -1068,7 +1069,7 @@ pub fn dating_calculate_score(
         super::db::db_query_params(
             &format!(
                 "SELECT p.id, p.pubkey, p.content FROM posts p \
-                 WHERE p.kind = {KIND_PROFILE} AND LOWER(p.pubkey) = LOWER(?1) AND p.is_deleted = 0 \
+                 WHERE p.kind = {KIND_PROFILE} AND p.pubkey = ?1 AND p.is_deleted = 0 \
                  ORDER BY p.created_at DESC LIMIT 1"
             ),
             &[pubkey.to_string()],
@@ -2066,6 +2067,76 @@ mod tests {
         let tags_v: serde_json::Value =
             serde_json::from_str(rv[0]["tags"].as_str().unwrap()).unwrap();
         assert_eq!(tags_v, serde_json::json!(["dating"]));
+        let _ = super::super::signer::signer_lock();
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+    }
+
+    /// Every dating query dropped its `LOWER()` wrapper when the bind side was
+    /// normalized (migration v2 stores these columns lowercase). That is only
+    /// safe if the *caller's* spelling is folded before it becomes `?1`, so
+    /// this exercises the whole exclusion set through an uppercase viewer
+    /// key: own profile, already-swiped, and blocked must all still drop out.
+    ///
+    /// Before the strip these passed trivially, because `LOWER(?1)` did the
+    /// folding. They are the regression guard for removing it.
+    #[test]
+    fn test_fetch_profiles_normalizes_uppercase_viewer_key() {
+        let _g = crate::ffi::test_lock::DB_TEST_LOCK.lock().unwrap();
+        let _s = crate::ffi::test_lock::SIGNER_TEST_LOCK.lock().unwrap();
+        let path = crate::ffi::db::tmp_db("dating_case", "dt");
+        let keys = soshal_nostr_core::keys::generate_keys();
+        let me = keys.public_key().to_hex();
+        super::super::signer::signer_unlock(keys.secret_key().to_secret_hex()).unwrap();
+        for u in [&me, "swiped", "blocked", "visible"] {
+            crate::ffi::db::insert_test_user(u);
+            assert!(super::super::db::db_execute_raw_test(format!(
+                "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
+                 VALUES ('p_{u}','{u}','{{\"age\":30,\"bio\":\"\",\"locationGeohash\":\"u33dc0\",\"interests\":[]}}',{KIND_PROFILE},100,'[]','synced',0)"
+            ))
+            .is_ok());
+        }
+        // viewer passed on `swiped`
+        assert!(super::super::db::db_execute_raw_test(
+            "INSERT INTO reactions (id, event_id, pubkey, content, created_at, kind) \
+             VALUES ('r_swiped','p_swiped','"
+                .to_string()
+                + &me
+                + "','pass',100,7)"
+        )
+        .is_ok());
+        // viewer blocked `blocked`
+        assert!(super::super::db::db_execute_raw_test(format!(
+            "INSERT INTO blocks (pubkey, blocked_pubkey, created_at) VALUES ('{me}','blocked',100)"
+        ))
+        .is_ok());
+
+        let cards = dating_fetch_profiles(me.to_ascii_uppercase(), 100, "public".to_string())
+            .expect("uppercase viewer key must still resolve");
+        let pubs: Vec<String> = serde_json::from_str::<Vec<DatingCardInfo>>(&cards)
+            .unwrap()
+            .into_iter()
+            .map(|c| c.pubkey)
+            .collect();
+
+        assert!(
+            !pubs.contains(&me),
+            "own profile must be excluded with an uppercase key: {pubs:?}"
+        );
+        assert!(
+            !pubs.contains(&"swiped".to_string()),
+            "already-swiped profile must stay excluded: {pubs:?}"
+        );
+        assert!(
+            !pubs.contains(&"blocked".to_string()),
+            "blocked profile must stay excluded: {pubs:?}"
+        );
+        assert!(
+            pubs.contains(&"visible".to_string()),
+            "the unfiltered profile must still come through: {pubs:?}"
+        );
+
         let _ = super::super::signer::signer_lock();
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}-wal"));

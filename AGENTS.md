@@ -315,7 +315,16 @@ each migration SQL records its own version
 `v001_initial.rs` is the squashed pre-release schema (the old v001–v013 chain
 was flattened into it, `SCHEMA_VERSION = 1`); upgrades are forward-only from
 version 1 — never edit v001 to mutate an existing database, add a new `v0NN`
-file instead.
+file instead. Current: **3** — v1 baseline, v2 backfills key columns to
+lowercase (`v002_normalize_keys.rs`, 35 tables), v3 adds the reverse-direction
+key indexes (`v003_reverse_key_indexes.rs`) that v2's unblocked predicates
+needed. A new migration must register its module + re-export in
+`migrations/mod.rs`, add itself to the `steps` array in `migrate()`, and bump
+`SCHEMA_VERSION`. Migrations must tolerate an absent table (a pre-squash
+database can be missing one `heal_legacy_schema` would otherwise repair), and
+`PRAGMA foreign_keys` is a no-op inside a transaction — use
+`PRAGMA defer_foreign_keys=ON` when a child column is rewritten before its
+parent.
 
 ## Architecture Rules
 

@@ -310,3 +310,130 @@ fn mixed_case_post_is_reachable_after_write() {
     let by_author = repo.get_user_posts(MIXED_PK, 10, 0).unwrap();
     assert_eq!(by_author.len(), 1, "get_user_posts must find the post");
 }
+
+// ---------------------------------------------------------------------------
+// Migration 3: reverse-direction indexes (plan item 2.3, second half)
+//
+// Removing `LOWER()` only pays off if the predicate then *seeks*. Four of the
+// predicates this wave unblocked had no index on the far side of their lookup,
+// so they were a folded scan before and an unfolded scan after — the SQL got
+// faster, the query plan did not. These assert the plan, which is the part
+// that was actually broken.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn dating_unmatch_lookup_by_target_seeks() {
+    // PK is (actor_pubkey, pubkey); the dating query asks this direction too.
+    let db = seeded();
+    let plan = query_plan(
+        &db,
+        "SELECT actor_pubkey FROM dating_unmatches WHERE pubkey = 'x'",
+    );
+    assert!(
+        seeks_index(&plan),
+        "dating_unmatches by target should seek.\nplan:\n{plan}"
+    );
+}
+
+#[test]
+fn dating_unmatch_lookup_by_actor_seeks() {
+    let db = seeded();
+    let plan = query_plan(
+        &db,
+        "SELECT pubkey FROM dating_unmatches WHERE actor_pubkey = 'x'",
+    );
+    assert!(
+        seeks_index(&plan),
+        "dating_unmatches by actor should seek.\nplan:\n{plan}"
+    );
+}
+
+#[test]
+fn block_lookup_by_blocked_pubkey_seeks() {
+    // PK is (pubkey, blocked_pubkey); "who blocked me" is the reverse read.
+    let db = seeded();
+    let plan = query_plan(&db, "SELECT pubkey FROM blocks WHERE blocked_pubkey = 'x'");
+    assert!(
+        seeks_index(&plan),
+        "blocks by blocked_pubkey should seek.\nplan:\n{plan}"
+    );
+}
+
+#[test]
+fn block_lookup_by_owner_seeks() {
+    let db = seeded();
+    let plan = query_plan(&db, "SELECT blocked_pubkey FROM blocks WHERE pubkey = 'x'");
+    assert!(
+        seeks_index(&plan),
+        "blocks by owner should seek.\nplan:\n{plan}"
+    );
+}
+
+#[test]
+fn musicloud_playlist_lookup_by_author_seeks() {
+    let db = seeded();
+    // No GROUP BY here on purpose: the listing query's `GROUP BY p.id` seeks
+    // the primary key on its own, so a plan assertion over the full query
+    // would pass whether or not this index exists. This form leaves the new
+    // index as the only thing that can produce a SEARCH.
+    let plan = query_plan(
+        &db,
+        "SELECT p.id FROM musicloud_playlists p WHERE p.is_private=0 AND p.pubkey='x'",
+    );
+    assert!(
+        seeks_index(&plan),
+        "musicloud_playlists by author should seek.\nplan:\n{plan}"
+    );
+}
+
+#[test]
+fn saved_content_lookup_by_author_seeks() {
+    let db = seeded();
+    let plan = query_plan(&db, "SELECT kind FROM saved_content WHERE pubkey='x'");
+    assert!(
+        seeks_index(&plan),
+        "saved_content by author should seek.\nplan:\n{plan}"
+    );
+}
+
+/// Negative control for the new indexes, mirroring
+/// `wrapping_the_column_in_lower_forces_a_scan`: the index has to be the thing
+/// making these seek. An unindexed column must still scan.
+#[test]
+fn an_unindexed_column_still_scans() {
+    let db = seeded();
+    // `unmatched_at` is neither part of the PK nor indexed by anything.
+    let plan = query_plan(
+        &db,
+        "SELECT actor_pubkey FROM dating_unmatches WHERE unmatched_at = 1",
+    );
+    assert!(
+        !seeks_index(&plan),
+        "an unindexed predicate must scan — if this seeks, `seeks_index` is \
+         not measuring what the payoff tests above claim.\nplan:\n{plan}"
+    );
+}
+
+/// Re-running the migration must be a no-op: `migrate()` is called on every
+/// app start, and the `_migrations` short-circuit skips already-applied steps,
+/// so v3 only runs once. This pins the `IF NOT EXISTS` guarantee for the paths
+/// that call the step directly.
+#[test]
+fn reverse_key_index_migration_is_idempotent() {
+    let db = seeded();
+    let conn = db.conn().unwrap();
+    for _ in 0..3 {
+        soshal_db_core::schema::migrations::v3_reverse_key_indexes(&conn).unwrap();
+    }
+    let n: i64 = soshal_db_core::query::query_first(
+        &conn,
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='index' \
+         AND name IN ('idx_dating_unmatches_pubkey','idx_blocks_blocked_pubkey',\
+                      'idx_mcl_pl_pubkey','idx_saved_content_pubkey')",
+        (),
+        |r| r.get(0),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(n, 4, "the four indexes exist exactly once after three runs");
+}
