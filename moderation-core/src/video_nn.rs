@@ -432,6 +432,19 @@ fn yuv_to_rgb(yuv: &DecodedYuv, tw: usize, th: usize) -> Vec<u8> {
     rgb
 }
 
+/// The image network's 96x96 input for one frame's gathered RGB.
+///
+/// The ≤384 gather this resamples is **not** an arbitrary intermediate: the
+/// `Triangle` resample is what stands between a 4:1 decimation and the
+/// aliasing that point-sampling would introduce. `nn_downscale_is_filtered_not_
+/// sampled` fails if that filter is replaced, and records the measurement that
+/// made "just gather straight to 96" a rejected optimization rather than an
+/// obvious win.
+fn frame_nn_input(rgb: Vec<u8>, w: usize, h: usize) -> Option<image_nn::Rgb96> {
+    let img = image::RgbImage::from_raw(w as u32, h as u32, rgb)?;
+    Some(image_nn::rgb_to_rgb96(&img))
+}
+
 /// Runs chrominance + image NN on a decoded frame.
 fn classify_frame(yuv: &DecodedYuv) -> Option<FrameStat> {
     if yuv.yw == 0 || yuv.yh == 0 || yuv.yw > MAX_FRAME_DIM || yuv.yh > MAX_FRAME_DIM {
@@ -439,9 +452,12 @@ fn classify_frame(yuv: &DecodedYuv) -> Option<FrameStat> {
     }
     let (tw, th) = fit_scale(yuv.yw, yuv.yh);
     let rgb = yuv_to_rgb(yuv, tw, th);
+    // Chrominance wants the full 384; the NN resamples it down. `rgb` moves
+    // into `frame_nn_input` (no copy — `from_raw` takes the buffer), so the
+    // chrominance pass has to happen first.
     let (exposure, gore_chrom) = analyze_pixel_buffer(&rgb, 3, tw, th);
-    let img = image::RgbImage::from_raw(tw as u32, th as u32, rgb)?;
-    let nn = image_nn::classify_rgb(&img);
+    let nn = image_nn::image_nn_model()
+        .and_then(|model| frame_nn_input(rgb, tw, th).map(|inp| model.classify(&inp)));
     Some(FrameStat {
         exposure,
         gore_chrom,
@@ -814,6 +830,152 @@ mod tests {
             }
             _ => None,
         }
+    }
+
+    /// Synthetic 4:2:0 luma plane, neutral chroma, from a per-pixel luma
+    /// closure. `w`/`h` are the luma extent; chroma is half-res as 4:2:0.
+    fn synthetic_yuv(w: usize, h: usize, luma: impl Fn(usize, usize) -> u8) -> DecodedYuv {
+        let (uw, uh) = (w / 2, h / 2);
+        let mut y = vec![0u8; w * h];
+        for j in 0..h {
+            for i in 0..w {
+                y[j * w + i] = luma(i, j);
+            }
+        }
+        DecodedYuv {
+            yw: w,
+            yh: h,
+            y,
+            u: vec![128u8; uw * uh],
+            v: vec![128u8; uw * uh],
+            uw,
+            uh,
+            has_chroma: true,
+        }
+    }
+
+    /// The production path's network input, gathered at 384 as `classify_frame`
+    /// does. Calls the same `frame_nn_input` the production code does, so this
+    /// test fails if *that function* is rewritten — not merely if a copy of it
+    /// inside the test is.
+    fn production_nn_input(yuv: &DecodedYuv) -> crate::image_nn::Rgb96 {
+        let (tw, th) = fit_scale(yuv.yw, yuv.yh);
+        let rgb = yuv_to_rgb(yuv, tw, th);
+        frame_nn_input(rgb, tw, th).expect("dims fit")
+    }
+
+    /// What a "skip the 384 intermediate, gather straight to the input size"
+    /// rewrite would produce: the same nearest-neighbour gather, pointed at 96
+    /// instead of 384, through the same resample function.
+    fn point_sampled_nn_input(yuv: &DecodedYuv) -> crate::image_nn::Rgb96 {
+        let n = crate::image_nn::INPUT as usize;
+        let rgb = yuv_to_rgb(yuv, n, n);
+        frame_nn_input(rgb, n, n).expect("dims fit")
+    }
+
+    fn score_of(inp: &crate::image_nn::Rgb96) -> ImageNnScores {
+        crate::image_nn::image_nn_model()
+            .expect("model loads")
+            .classify(inp)
+    }
+
+    fn luma_differing(a: &crate::image_nn::Rgb96, b: &crate::image_nn::Rgb96) -> usize {
+        let n = crate::image_nn::INPUT as usize;
+        (0..n)
+            .flat_map(|y| (0..n).map(move |x| (y, x)))
+            .filter(|&(y, x)| a[0][y][x] != b[0][y][x])
+            .count()
+    }
+
+    /// The 384 -> 96 downscale is a **filtered** resample, not a point sample,
+    /// and this is the only thing standing between the frame classifier and a
+    /// plausible-looking optimization.
+    ///
+    /// Item 7.4 proposed dropping the 384 intermediate and gathering straight
+    /// to the network's 96x96 input. Measured on 22 frames across 9 clips from
+    /// 64x64 to 1920x1080, that is a real 1.25x per frame (2.04 ms -> 1.64 ms)
+    /// and it also moves the classifier: on content with structure near the
+    /// Nyquist limit the nudity head shifted by up to 0.42 and the csam-risk
+    /// composition flipped on one frame. A 2x2 checkerboard is the worst case,
+    /// and it is what this test pins.
+    ///
+    /// The naive salvage — area-averaging the 4x4 source block per output pixel
+    /// instead of point-sampling — halves the nudity drift but is **slower than
+    /// the status quo** (2.25 ms vs 2.04 ms), because `image`'s `Triangle`
+    /// resize is separable and so costs ~4 taps per output pixel where a
+    /// 4x4 box costs 16. There is no free version of this.
+    #[test]
+    fn nn_downscale_is_filtered_not_point_sampled() {
+        let n = crate::image_nn::INPUT as usize;
+
+        // Flat content: both samplers must agree exactly, which proves any
+        // difference below is the filter and not a broken test double.
+        let flat = synthetic_yuv(384, 384, |_, _| 137);
+        assert_eq!(
+            production_nn_input(&flat),
+            point_sampled_nn_input(&flat),
+            "a flat frame must be identical under both samplers"
+        );
+
+        // 2x2 checkerboard over a 4:1 decimation: every output pixel's source
+        // block holds two of each luma level, so a *correct* area average is
+        // the mid grey everywhere. A point sample returns one level or the
+        // other depending on phase, so roughly half the grid must differ.
+        let checker = synthetic_yuv(
+            384,
+            384,
+            |x, y| {
+                if (x + y).is_multiple_of(2) {
+                    25
+                } else {
+                    235
+                }
+            },
+        );
+        let filtered = production_nn_input(&checker);
+        let sampled = point_sampled_nn_input(&checker);
+        let differing = luma_differing(&filtered, &sampled);
+        assert!(
+            differing > n * n / 4,
+            "the downscale must filter, not point-sample: only {differing} of {} \
+             luma cells differ from a nearest-neighbour gather",
+            n * n
+        );
+
+        // And the classification actually moves, which is the reason this is
+        // documented rather than left as an implementation detail.
+        let (a, b) = (score_of(&filtered), score_of(&sampled));
+        assert!(
+            head_spread(a, b) > 1e-4,
+            "sampler choice must be observable in the scores, or the guard above \
+             is measuring something that does not matter"
+        );
+
+        // The two tensor comparisons above read well when they fail, but they
+        // only exercise `frame_nn_input`, so editing `classify_frame` to gather
+        // at 96 would slip past them. This one goes through the production
+        // entry point, so the "gather at 384" decision is pinned too: a
+        // rewrite that pointed `classify_frame` at the 96 gather produces the
+        // rewrite's scores, not these.
+        let stat = classify_frame(&checker).expect("checkerboard frame classifies");
+        let produced = stat.nn.expect("model loaded");
+        assert!(
+            head_spread(produced, a) < 1e-6,
+            "classify_frame must classify the filtered 384 gather, got {produced:?} \
+             instead of {a:?}"
+        );
+        assert!(
+            head_spread(produced, b) > 1e-4,
+            "classify_frame scoring identically to a point-sampled 96 gather means \
+             the 384 intermediate is no longer doing anything"
+        );
+    }
+
+    fn head_spread(a: ImageNnScores, b: ImageNnScores) -> f32 {
+        (a.nudity - b.nudity)
+            .abs()
+            .max((a.juvenile - b.juvenile).abs())
+            .max((a.gore - b.gore).abs())
     }
 
     #[test]
