@@ -24,7 +24,7 @@ impl<'a> ReactionRepo<'a> {
         let norm_id = row.id.trim().to_ascii_lowercase();
         let existing: Option<i64> = crate::query::query_first_async(
             tx,
-            "SELECT created_at FROM reactions WHERE LOWER(event_id) = LOWER(?1) AND LOWER(pubkey) = LOWER(?2)",
+            "SELECT created_at FROM reactions WHERE event_id = ?1 AND pubkey = ?2",
             params![norm_eid.as_str(), norm_pk.as_str()],
             |r| r.get::<i64>(0),
         )
@@ -35,7 +35,7 @@ impl<'a> ReactionRepo<'a> {
             }
         }
         tx.execute(
-            "DELETE FROM reactions WHERE LOWER(event_id) = LOWER(?1) AND LOWER(pubkey) = LOWER(?2)",
+            "DELETE FROM reactions WHERE event_id = ?1 AND pubkey = ?2",
             params![norm_eid.as_str(), norm_pk.as_str()],
         )
         .await?;
@@ -81,7 +81,7 @@ impl<'a> ReactionRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, event_id, kind, content, created_at FROM reactions WHERE LOWER(event_id) = LOWER(?1) ORDER BY created_at DESC LIMIT 2000",
+            "SELECT id, pubkey, event_id, kind, content, created_at FROM reactions WHERE event_id = ?1 ORDER BY created_at DESC LIMIT 2000",
             params![norm_eid.as_str()],
             |row| {
                 Ok(ReactionRow {

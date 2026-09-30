@@ -9,12 +9,12 @@ impl<'a> FriendBackupRepo<'a> {
     soshal_repo_new!();
 
     pub fn upsert(&self, b: &FriendBackupRow) -> Result<(), crate::error::DbError> {
-        let norm_pk = b.user_pubkey.trim();
+        let norm_pk = b.user_pubkey.trim().to_ascii_lowercase();
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM friend_backups WHERE LOWER(user_pubkey)=LOWER(?1)",
-            params![norm_pk],
+            "DELETE FROM friend_backups WHERE user_pubkey=?1",
+            params![norm_pk.as_str()],
         )?;
         crate::query::execute(
             &conn,
@@ -29,7 +29,7 @@ impl<'a> FriendBackupRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query_first(
             &conn,
-            "SELECT user_pubkey, encrypted_data, updated_at FROM friend_backups WHERE LOWER(user_pubkey)=LOWER(?1)",
+            "SELECT user_pubkey, encrypted_data, updated_at FROM friend_backups WHERE user_pubkey=?1",
             params![norm_pk.as_str()],
             Self::map_row,
         )
@@ -40,7 +40,7 @@ impl<'a> FriendBackupRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM friend_backups WHERE LOWER(user_pubkey)=LOWER(?1)",
+            "DELETE FROM friend_backups WHERE user_pubkey=?1",
             params![norm_pk.as_str()],
         )?;
         Ok(())

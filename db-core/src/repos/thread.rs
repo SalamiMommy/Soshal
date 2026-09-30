@@ -267,8 +267,13 @@ impl<'a> GroupThreadRepo<'a> {
         let changed = crate::query::execute(
             &conn,
             "DELETE FROM group_thread_reactions
-             WHERE thread_id = ?1 AND reply_id = ?2 AND LOWER(pubkey) = LOWER(?3) AND emoji = ?4",
-            params![thread_id, reply_id, pubkey.trim(), emoji],
+             WHERE thread_id = ?1 AND reply_id = ?2 AND pubkey = ?3 AND emoji = ?4",
+            params![
+                thread_id,
+                reply_id,
+                pubkey.trim().to_ascii_lowercase(),
+                emoji,
+            ],
         )?;
         Ok(changed > 0)
     }
@@ -287,7 +292,7 @@ impl<'a> GroupThreadRepo<'a> {
         let deleted = crate::query::execute(
             &conn,
             "DELETE FROM group_thread_reactions
-             WHERE thread_id = ?1 AND reply_id = ?2 AND LOWER(pubkey) = LOWER(?3) AND emoji = ?4",
+             WHERE thread_id = ?1 AND reply_id = ?2 AND pubkey = ?3 AND emoji = ?4",
             params![thread_id, reply_id, norm_pk.as_str(), emoji],
         )?;
         if deleted > 0 {
@@ -319,8 +324,13 @@ impl<'a> GroupThreadRepo<'a> {
         Ok(crate::query::query_first(
             &conn,
             "SELECT 1 FROM group_thread_reactions
-             WHERE thread_id = ?1 AND reply_id = ?2 AND LOWER(pubkey) = LOWER(?3) AND emoji = ?4",
-            params![thread_id, reply_id, pubkey.trim(), emoji],
+             WHERE thread_id = ?1 AND reply_id = ?2 AND pubkey = ?3 AND emoji = ?4",
+            params![
+                thread_id,
+                reply_id,
+                pubkey.trim().to_ascii_lowercase(),
+                emoji,
+            ],
             |r| r.get::<i64>(0),
         )?
         .is_some())
@@ -335,15 +345,16 @@ impl<'a> GroupThreadRepo<'a> {
         viewer_pubkey: &str,
     ) -> Result<Vec<ThreadReactionSummaryRow>, crate::error::DbError> {
         let conn = self.db.conn()?;
+        let norm_viewer = viewer_pubkey.trim().to_ascii_lowercase();
         crate::query::query(
             &conn,
             "SELECT r.thread_id, r.reply_id, r.emoji, COUNT(*) AS cnt,
-                    MAX(CASE WHEN LOWER(r.pubkey) = LOWER(?2) THEN 1 ELSE 0 END) AS reacted
+                    MAX(CASE WHEN r.pubkey = ?2 THEN 1 ELSE 0 END) AS reacted
              FROM group_thread_reactions r
              WHERE r.thread_id = ?1
              GROUP BY r.reply_id, r.emoji
              ORDER BY cnt DESC, r.emoji ASC",
-            [thread_id, viewer_pubkey.trim()],
+            [thread_id, norm_viewer.as_str()],
             |row| {
                 Ok(ThreadReactionSummaryRow {
                     thread_id: row.get(0)?,

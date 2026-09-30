@@ -87,12 +87,17 @@ impl<'a> IgnoredNotificationRepo<'a> {
         Ok(crate::query::query_first(
             &conn,
             "SELECT 1 FROM ignored_notifications
-             WHERE LOWER(pubkey)=LOWER(?1) AND (kind=?2 OR kind='all' OR kind='user' OR kind='thread') AND (
-                 (LOWER(from_pubkey)=LOWER(?3) AND event_id='')
-              OR (LOWER(event_id)=LOWER(?4) AND from_pubkey='')
-              OR (LOWER(event_id)=LOWER(?4) AND LOWER(from_pubkey)=LOWER(?3))
+             WHERE pubkey=?1 AND (kind=?2 OR kind='all' OR kind='user' OR kind='thread') AND (
+                 (from_pubkey=?3 AND event_id='')
+              OR (event_id=?4 AND from_pubkey='')
+              OR (event_id=?4 AND from_pubkey=?3)
              ) LIMIT 1",
-            params![user_pubkey.trim(), kind.trim(), from_pubkey.trim(), event_id.trim()],
+            params![
+                user_pubkey.trim().to_ascii_lowercase(),
+                kind.trim(),
+                from_pubkey.trim().to_ascii_lowercase(),
+                event_id.trim().to_ascii_lowercase(),
+            ],
             |_| Ok(true),
         )?
         .is_some())
@@ -107,8 +112,8 @@ impl<'a> IgnoredNotificationRepo<'a> {
         crate::query::query(
             &conn,
             "SELECT kind, from_pubkey, event_id, created_at
-             FROM ignored_notifications WHERE LOWER(pubkey)=LOWER(?1) ORDER BY created_at DESC",
-            params![user_pubkey.trim()],
+             FROM ignored_notifications WHERE pubkey=?1 ORDER BY created_at DESC",
+            params![user_pubkey.trim().to_ascii_lowercase()],
             |r| {
                 Ok((
                     r.get::<String>(0)?,
@@ -158,8 +163,13 @@ fn delete_ignore(
     crate::query::execute(
         conn,
         "DELETE FROM ignored_notifications
-         WHERE LOWER(pubkey)=LOWER(?1) AND kind=?2 AND LOWER(from_pubkey)=LOWER(?3) AND LOWER(event_id)=LOWER(?4)",
-        params![user_pubkey.trim(), kind.trim(), from_pubkey.trim(), event_id.trim()],
+         WHERE pubkey=?1 AND kind=?2 AND from_pubkey=?3 AND event_id=?4",
+        params![
+            user_pubkey.trim().to_ascii_lowercase(),
+            kind.trim(),
+            from_pubkey.trim().to_ascii_lowercase(),
+            event_id.trim().to_ascii_lowercase(),
+        ],
     )?;
     Ok(())
 }

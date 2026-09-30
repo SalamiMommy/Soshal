@@ -14,7 +14,7 @@ impl<'a> GroupJoinRequestRepo<'a> {
         let pk = r.pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
-            "DELETE FROM group_join_requests WHERE group_id=?1 AND LOWER(pubkey)=?2",
+            "DELETE FROM group_join_requests WHERE group_id=?1 AND pubkey=?2",
             params![gid, pk.as_str()],
         )?;
         crate::query::execute(
@@ -55,7 +55,7 @@ impl<'a> GroupJoinRequestRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query_first(
             &conn,
-            "SELECT group_id, pubkey, status, requested_at FROM group_join_requests WHERE group_id=?1 AND LOWER(pubkey)=LOWER(?2)",
+            "SELECT group_id, pubkey, status, requested_at FROM group_join_requests WHERE group_id=?1 AND pubkey=?2",
             params![group_id.trim(), pubkey.trim().to_ascii_lowercase()],
             Self::map_row,
         )
@@ -65,7 +65,7 @@ impl<'a> GroupJoinRequestRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM group_join_requests WHERE group_id=?1 AND LOWER(pubkey)=LOWER(?2)",
+            "DELETE FROM group_join_requests WHERE group_id=?1 AND pubkey=?2",
             params![group_id.trim(), pubkey.trim().to_ascii_lowercase()],
         )?;
         Ok(())

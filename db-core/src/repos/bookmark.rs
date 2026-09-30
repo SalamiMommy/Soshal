@@ -12,8 +12,8 @@ impl<'a> BookmarkRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query_first(
             &conn,
-            "SELECT id, pubkey, event_id, created_at FROM bookmarks WHERE LOWER(id) = LOWER(?1)",
-            params![id.trim()],
+            "SELECT id, pubkey, event_id, created_at FROM bookmarks WHERE id = ?1",
+            params![id.trim().to_ascii_lowercase()],
             Self::map_row,
         )
     }
@@ -29,7 +29,7 @@ impl<'a> BookmarkRepo<'a> {
         let pk_clean = pubkey.trim().to_ascii_lowercase();
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, event_id, created_at FROM bookmarks WHERE LOWER(pubkey) = LOWER(?1) ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
+            "SELECT id, pubkey, event_id, created_at FROM bookmarks WHERE pubkey = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
             params![pk_clean.as_str(), limit, offset],
             Self::map_row,
         )
@@ -84,7 +84,7 @@ impl<'a> BookmarkRepo<'a> {
         let norm_pk = pubkey.trim().to_ascii_lowercase();
         let res = tx
             .execute(
-                "DELETE FROM bookmarks WHERE LOWER(pubkey)=LOWER(?1) AND event_id IN (SELECT id FROM posts WHERE is_deleted = 1)",
+                "DELETE FROM bookmarks WHERE pubkey=?1 AND event_id IN (SELECT id FROM posts WHERE is_deleted = 1)",
                 params![norm_pk.as_str()],
             )
             .await?;
@@ -95,8 +95,8 @@ impl<'a> BookmarkRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM bookmarks WHERE LOWER(id) = LOWER(?1)",
-            params![id.trim()],
+            "DELETE FROM bookmarks WHERE id = ?1",
+            params![id.trim().to_ascii_lowercase()],
         )?;
         self.db
             .notify_change(crate::change_bus::Table::Bookmarks, None);

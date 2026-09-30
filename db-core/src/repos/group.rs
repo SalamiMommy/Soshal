@@ -22,7 +22,7 @@ impl<'a> GroupRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT g.id, g.name, g.about, g.picture, g.pubkey, g.created_at, g.updated_at, g.access_type, g.relay, g.sync_status, g.password_hash FROM groups g JOIN group_members gm ON g.id = gm.group_id WHERE LOWER(gm.pubkey) = LOWER(?1) ORDER BY g.updated_at DESC",
+            "SELECT g.id, g.name, g.about, g.picture, g.pubkey, g.created_at, g.updated_at, g.access_type, g.relay, g.sync_status, g.password_hash FROM groups g JOIN group_members gm ON g.id = gm.group_id WHERE gm.pubkey = ?1 ORDER BY g.updated_at DESC",
             params![pubkey.trim().to_ascii_lowercase()],
             Self::map_row,
         )
@@ -64,7 +64,7 @@ impl<'a> GroupRepo<'a> {
         let trimmed_pk = pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
-            "DELETE FROM group_members WHERE group_id = ?1 AND LOWER(pubkey) = LOWER(?2)",
+            "DELETE FROM group_members WHERE group_id = ?1 AND pubkey = ?2",
             params![group_id, trimmed_pk.as_str()],
         )?;
         crate::query::execute(
@@ -83,7 +83,7 @@ impl<'a> GroupRepo<'a> {
         let norm_pk = pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
-            "DELETE FROM group_members WHERE group_id = ?1 AND LOWER(pubkey) = LOWER(?2)",
+            "DELETE FROM group_members WHERE group_id = ?1 AND pubkey = ?2",
             params![group_id, norm_pk.as_str()],
         )?;
         self.db
@@ -96,7 +96,7 @@ impl<'a> GroupRepo<'a> {
         let conn = self.db.conn()?;
         Ok(crate::query::query_first(
             &conn,
-            "SELECT 1 FROM group_members WHERE group_id = ?1 AND LOWER(pubkey) = LOWER(?2)",
+            "SELECT 1 FROM group_members WHERE group_id = ?1 AND pubkey = ?2",
             params![group_id, pubkey.trim().to_ascii_lowercase()],
             |_| Ok(true),
         )?
