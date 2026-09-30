@@ -15,10 +15,10 @@ pub mod migrations;
 
 use crate::block_on;
 use crate::libsql::{params, Connection};
-use migrations::v1_create_tables;
+use migrations::{v1_create_tables, v2_normalize_keys};
 
 /// Latest schema version the migration runner produces.
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 /// Columns added by ALTER TABLE in the pre-squash migrations but
 /// lost when they were collapsed into v001_initial. Legacy databases created
@@ -394,7 +394,10 @@ pub fn migrate(conn: &Connection) -> Result<(), crate::error::DbError> {
     }
 
     type StepFn = fn(&Connection) -> Result<(), crate::error::DbError>;
-    let steps: &[(i64, StepFn)] = &[(1, |c| v1_create_tables(c).map_err(Into::into))];
+    let steps: &[(i64, StepFn)] = &[
+        (1, |c| v1_create_tables(c).map_err(Into::into)),
+        (2, |c| v2_normalize_keys(c).map_err(Into::into)),
+    ];
 
     for &(version, step_fn) in steps {
         if version > current {

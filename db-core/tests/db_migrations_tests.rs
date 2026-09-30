@@ -103,7 +103,11 @@ fn v1_creates_canonical_schema() {
     ] {
         assert!(table_exists(&conn, t), "missing table {t}");
     }
-    assert_eq!(max_version(&conn), SCHEMA_VERSION);
+    // This test drives `v1_create_tables` directly rather than `migrate()`,
+    // so it lands on version 1 by construction. Comparing against
+    // `SCHEMA_VERSION` happened to work only while that was also 1; the
+    // step-v2 key normalization lives in `migration_v002_tests.rs`.
+    assert_eq!(max_version(&conn), 1);
     assert!(column_exists(&conn, "group_messages", "room_id"));
     assert!(column_exists(&conn, "groups", "password_hash"));
     assert!(column_exists(&conn, "zk_state_rollups", "genesis_root"));
