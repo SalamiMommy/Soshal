@@ -16,6 +16,17 @@ class ZapService extends ChangeNotifier
   int _totalMsat = 0;
   List<ZapReceipt> _receipts = [];
 
+  /// Per-id in-flight map, so two callers asking for the same event's total
+  /// issue one `zap_get_total_msat` rather than two.
+  final Map<String, Future<int>> _totalInFlight = {};
+
+  /// The [fetchTotals] batch currently in the air, if any. A single-id
+  /// [fetchTotalMsat] for an id inside that batch joins it instead of issuing
+  /// its own round-trip. The feed fires one of those per card while the page's
+  /// batch is still in flight, and every one of them was previously thrown
+  /// away the moment the batch landed.
+  _TotalsBatch? _pendingBatch;
+
   String? get nwcStatus => _nwcStatus;
   String? get nwcPubkey => _nwcPubkey;
   int get totalMsat => _totalMsat;
@@ -30,6 +41,8 @@ class ZapService extends ChangeNotifier
     disconnect();
     _totalMsat = 0;
     _receipts.clear();
+    _totalInFlight.clear();
+    _pendingBatch = null;
     clearLastError();
     notifyDeferred();
   }
@@ -72,16 +85,62 @@ class ZapService extends ChangeNotifier
   }
 
   /// Total msats zapped to an event.
-  Future<int> fetchTotalMsat(String eventId) => guard(() async {
+  ///
+  /// Coalesced two ways: onto an in-flight batch that already covers this id
+  /// (see [_pendingBatch]), and onto an in-flight single-id call for the same
+  /// id. Only a genuinely uncovered id pays its own FFI round-trip.
+  Future<int> fetchTotalMsat(String eventId) {
+    final batch = _pendingBatch;
+    if (batch != null && batch.ids.contains(eventId)) {
+      // The batch never rejects — [fetchTotals] absorbs its own errors and
+      // resolves to an empty map — so this join cannot fail where the direct
+      // call would have.
+      return batch.result.then((totals) => _recordTotal(
+            eventId,
+            totals[eventId] ?? 0,
+          ));
+    }
+    final inFlight = _totalInFlight[eventId];
+    if (inFlight != null) return inFlight;
+    final future = _fetchTotalMsatUncoalesced(eventId);
+    _totalInFlight[eventId] = future;
+    future.then((_) {
+      _totalInFlight.remove(eventId);
+    }, onError: (_) {
+      // Drop the entry on failure too, or a rejected future is cached for the
+      // rest of the session and every later caller replays the error.
+      _totalInFlight.remove(eventId);
+    });
+    return future;
+  }
+
+  int _recordTotal(String eventId, int msat) {
+    _totalMsat = msat;
+    return _totalMsat;
+  }
+
+  Future<int> _fetchTotalMsatUncoalesced(String eventId) => guard(() async {
         final msat = await RustLib.instance.api.crateFfiZapZapGetTotalMsat(
           eventId: eventId,
         );
-        _totalMsat = msat.toInt();
-        return _totalMsat;
+        return _recordTotal(eventId, msat.toInt());
       }, onNotify: notifyDeferred);
 
   /// Total msats zapped to many events, keyed by event id.
-  Future<Map<String, int>> fetchTotals(List<String> eventIds) async {
+  Future<Map<String, int>> fetchTotals(List<String> eventIds) {
+    final batch = _TotalsBatch(eventIds.toSet());
+    _pendingBatch = batch;
+    final future = _fetchTotals(eventIds);
+    batch.result = future;
+    future.then((_) {
+      if (identical(_pendingBatch, batch)) _pendingBatch = null;
+    }, onError: (_) {
+      if (identical(_pendingBatch, batch)) _pendingBatch = null;
+    });
+    return future;
+  }
+
+  Future<Map<String, int>> _fetchTotals(List<String> eventIds) async {
     try {
       final json = RustLib.instance.api.crateFfiZapZapFetchTotals(
         eventIds: eventIds,
@@ -144,6 +203,20 @@ class ZapService extends ChangeNotifier
 }
 
 /// A zap receipt row.
+/// A [ZapService.fetchTotals] batch that is currently in the air, so
+/// single-id lookups for ids it covers can join it instead of duplicating the
+/// query. [result] is assigned by [ZapService.fetchTotals] immediately after
+/// construction, before the instance is reachable from [_pendingBatch].
+class _TotalsBatch {
+  _TotalsBatch(this.ids);
+
+  /// Ids this batch covers. A single-id request for an id outside this set is
+  /// not answered by the batch and falls through to its own FFI call.
+  final Set<String> ids;
+
+  late final Future<Map<String, int>> result;
+}
+
 class ZapReceipt {
   final String id;
   final String eventId;

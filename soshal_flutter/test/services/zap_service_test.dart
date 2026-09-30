@@ -147,4 +147,83 @@ void main() {
       expect(zap.lastError, contains('bad lnurl'));
     });
   });
+
+  group('ZapService total coalescing', () {
+    test('single-id call joins an in-flight batch covering that id', () async {
+      final zap = ZapService();
+      api.stubString('crateFfiZapZapFetchTotals', '{"ev-1":500,"ev-2":700}');
+      api.stub('crateFfiZapZapGetTotalMsat', (_) => BigInt.from(999));
+
+      // Batch in the air; the per-card fallback then asks for one of its ids.
+      final batch = zap.fetchTotals(['ev-1', 'ev-2']);
+      final single = zap.fetchTotalMsat('ev-1');
+
+      expect(await single, 500,
+          reason: 'must come from the batch, not a duplicate single-id query');
+      await batch;
+      expect(api.callsOf('crateFfiZapZapGetTotalMsat'), isEmpty,
+          reason: 'a covered id must not cost its own round-trip');
+      expect(zap.totalMsat, 500);
+    });
+
+    test('single-id call for an id outside the batch still queries', () async {
+      final zap = ZapService();
+      api.stubString('crateFfiZapZapFetchTotals', '{"ev-1":500}');
+      api.stub('crateFfiZapZapGetTotalMsat', (_) => BigInt.from(42));
+
+      final batch = zap.fetchTotals(['ev-1']);
+      final single = zap.fetchTotalMsat('ev-9');
+      await batch;
+
+      expect(await single, 42);
+      expect(api.callsOf('crateFfiZapZapGetTotalMsat').length, 1);
+    });
+
+    test('batch is forgotten once settled, so later calls go direct',
+        () async {
+      final zap = ZapService();
+      api.stubString('crateFfiZapZapFetchTotals', '{"ev-1":500}');
+      api.stub('crateFfiZapZapGetTotalMsat', (_) => BigInt.from(77));
+
+      await zap.fetchTotals(['ev-1']);
+      expect(await zap.fetchTotalMsat('ev-1'), 77,
+          reason: 'a settled batch must not be answered from a stale snapshot');
+    });
+
+    test('concurrent single-id calls for one id issue one query', () async {
+      final zap = ZapService();
+      api.stub('crateFfiZapZapGetTotalMsat', (_) => BigInt.from(21000));
+
+      final a = zap.fetchTotalMsat('ev-1');
+      final b = zap.fetchTotalMsat('ev-1');
+      expect(await a, 21000);
+      expect(await b, 21000);
+      expect(api.callsOf('crateFfiZapZapGetTotalMsat').length, 1);
+    });
+
+    test('a failed single-id call is not cached for later callers', () async {
+      final zap = ZapService();
+      var calls = 0;
+      api.stub('crateFfiZapZapGetTotalMsat', (_) {
+        calls++;
+        if (calls == 1) throw Exception('nwc down');
+        return BigInt.from(1234);
+      });
+
+      await expectLater(zap.fetchTotalMsat('ev-1'), throwsException);
+      // The rejected future must have been dropped from the in-flight map.
+      expect(await zap.fetchTotalMsat('ev-1'), 1234);
+      expect(calls, 2);
+    });
+
+    test('account switch drops in-flight coalescing state', () async {
+      final zap = ZapService();
+      api.stub('crateFfiZapZapGetTotalMsat', (_) => BigInt.from(5000));
+      api.stubBool('crateFfiZapZapDisconnectNwc', true);
+      await zap.fetchTotalMsat('ev-1');
+      zap.resetForAccountSwitch();
+      expect(zap.totalMsat, 0);
+      expect(zap.receipts, isEmpty);
+    });
+  });
 }

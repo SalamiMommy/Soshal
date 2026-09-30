@@ -74,10 +74,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           _lockoutTimer = null;
           return;
         }
-        await shell.refreshLockout(notify: false);
-        if (shell.lockoutRemaining != _lastLockoutNotified) {
+        // One bridge call per tick. The previous shape called this with
+        // `notify: false` and then issued a *second* identical call purely to
+        // trigger a rebuild — two round-trips to the same `sync` FFI for one
+        // state that had not changed in between. `refreshLockout` now notifies
+        // only when the countdown actually moved.
+        final changed = await shell.refreshLockout(notify: false);
+        if (changed && shell.lockoutRemaining != _lastLockoutNotified) {
           _lastLockoutNotified = shell.lockoutRemaining;
-          shell.refreshLockout();
+          shell.notifyLockoutChanged();
         }
       });
     } else if (!locked && _lockoutTimer != null) {

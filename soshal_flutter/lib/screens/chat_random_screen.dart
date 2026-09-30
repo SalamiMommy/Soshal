@@ -31,6 +31,7 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
   String? _pubkey;
   Timer? _pollTimer;
   int _pollCount = 0;
+  bool _pollInFlight = false;
   AudienceFilter _audienceFilter = AudienceFilter.all;
 
   static const _pollInterval = Duration(seconds: 5);
@@ -135,10 +136,17 @@ class _ChatRandomScreenState extends State<ChatRandomScreen> {
   Future<void> _poll() async {
     final pubkey = _pubkey;
     if (pubkey == null) return;
+    // Skip rather than overlap: a slow peer-discovery round on an unhealthy
+    // network outlives the poll interval, and the queued calls all return the
+    // same empty result anyway.
+    if (_pollInFlight) return;
+    _pollInFlight = true;
     try {
       await context.read<ChatrandomService>().fetch(pubkey, limit: 20);
     } catch (e) {
       debugPrint('chatrandom poll: $e');
+    } finally {
+      _pollInFlight = false;
     }
   }
 

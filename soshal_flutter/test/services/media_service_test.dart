@@ -105,6 +105,119 @@ void main() {
       expect(media.lastError, contains('chunk missing'));
     });
 
+    test('getCachePath is memoized after the first resolved call', () async {
+      final media = MediaService();
+      api.stubString('crateFfiMediaMediaGetCachePath', '/tmp/cache');
+
+      expect(await media.getCachePath(), '/tmp/cache');
+      expect(await media.getCachePath(), '/tmp/cache');
+      expect(await media.getCachePath(), '/tmp/cache');
+
+      expect(
+        api.callsOf('crateFfiMediaMediaGetCachePath').length,
+        1,
+        reason: 'the path is pinned once at startup by db_init; every extra '
+            'call is a pure FFI round-trip for a constant',
+      );
+    });
+
+    test('a failed getCachePath is not memoized for later callers', () async {
+      final media = MediaService();
+      var calls = 0;
+      api.stub('crateFfiMediaMediaGetCachePath', (_) {
+        calls++;
+        if (calls == 1) throw Exception('bridge not ready');
+        return '/tmp/cache';
+      });
+
+      await expectLater(media.getCachePath(), throwsException);
+      expect(await media.getCachePath(), '/tmp/cache');
+      expect(calls, 2,
+          reason: 'a rejected future must be dropped, not cached for the '
+              'rest of the process');
+    });
+
+    test('fetchBlobQuiet resolves a hit to the cache path', () async {
+      final media = MediaService();
+      api.stubString('crateFfiMediaMediaGetCachePath', '/tmp/cache');
+      api.stubString(
+        'crateFfiMediaMediaFetchBlob',
+        '{"success":true,"blob_hash":"h-abc","size":12}',
+      );
+
+      expect(await media.fetchBlobQuiet('h-abc'), '/tmp/cache/h-abc');
+      final inv = api.callsOf('crateFfiMediaMediaFetchBlob').single;
+      expect(api.namedArg(inv, 'outPath'), '/tmp/cache/h-abc');
+    });
+
+    test('fetchBlobQuiet returns null and sets no error on a miss', () async {
+      final media = MediaService();
+      api.stubString('crateFfiMediaMediaGetCachePath', '/tmp/cache');
+      api.stub('crateFfiMediaMediaFetchBlob',
+          (_) => throw Exception('manifest not found'));
+
+      expect(await media.fetchBlobQuiet('h-missing'), isNull);
+      expect(media.lastError, isNull,
+          reason: 'a local cache miss is expected for LAN/URL fallback '
+              'callers and must not spam the error log');
+    });
+
+    test('fetchBlobQuiet deduplicates concurrent fetches of one hash',
+        () async {
+      final media = MediaService();
+      api.stubString('crateFfiMediaMediaGetCachePath', '/tmp/cache');
+      api.stubString(
+        'crateFfiMediaMediaFetchBlob',
+        '{"success":true,"blob_hash":"h-abc","size":12}',
+      );
+
+      final paths = await Future.wait([
+        media.fetchBlobQuiet('h-abc'),
+        media.fetchBlobQuiet('h-abc'),
+        media.fetchBlobQuiet('h-abc'),
+      ]);
+
+      expect(paths, everyElement('/tmp/cache/h-abc'));
+      expect(
+        api.callsOf('crateFfiMediaMediaFetchBlob').length,
+        1,
+        reason: 'each FFI call re-reads and re-writes every chunk of the '
+            'blob; N cards showing one image must cost one CAS rebuild',
+      );
+    });
+
+    test('a quiet fetch seeds the shared cache for a later fetchBlob',
+        () async {
+      final media = MediaService();
+      api.stubString('crateFfiMediaMediaGetCachePath', '/tmp/cache');
+      api.stubString(
+        'crateFfiMediaMediaFetchBlob',
+        '{"success":true,"blob_hash":"h-abc","size":12}',
+      );
+
+      await media.fetchBlobQuiet('h-abc');
+      // A cache hit returns without re-deriving the manifest from the FFI.
+      api.handlers.remove('crateFfiMediaMediaFetchBlob');
+      expect(await media.fetchBlob('h-abc'), '/tmp/cache/h-abc');
+    });
+
+    test('fetchBlobQuiet respects an explicit outPath without deduplicating',
+        () async {
+      final media = MediaService();
+      api.stubString(
+        'crateFfiMediaMediaFetchBlob',
+        '{"success":true,"blob_hash":"h-abc","size":12}',
+      );
+
+      await media.fetchBlobQuiet('h-abc', outPath: '/tmp/a.bin');
+      await media.fetchBlobQuiet('h-abc', outPath: '/tmp/b.bin');
+
+      expect(api.callsOf('crateFfiMediaMediaFetchBlob').length, 2,
+          reason: 'distinct explicit destinations must not share a result');
+      expect(api.callsOf('crateFfiMediaMediaGetCachePath').isEmpty, isTrue,
+          reason: 'an explicit outPath needs no cache-path round-trip');
+    });
+
     test('local server start/stop and URL building', () async {
       final media = MediaService();
       expect(() => media.getLocalUrl('h-abc'), throwsException,

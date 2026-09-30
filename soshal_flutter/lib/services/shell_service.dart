@@ -98,6 +98,16 @@ class ShellService extends ChangeNotifier {
   bool _offline = false;
   bool get offline => _offline;
 
+  // In-flight guards for the background pollers. Each is driven by a
+  // `Timer.periodic` whose interval is shorter than the FFI call can take when
+  // the network is unhealthy, so without these a slow tick overlaps the next one
+  // and the calls pile up. Same pattern as `P2PService._pollInFlight`.
+  //
+  // Deliberately NOT applied to `refreshLockout`: its bridge call is `sync`, so
+  // the body cannot suspend and cannot overlap.
+  bool _relayStatusInFlight = false;
+  bool _callSignalsInFlight = false;
+
   bool _locked = false;
   bool get locked => _locked;
   bool _unlockPending = false;
@@ -254,7 +264,12 @@ class ShellService extends ChangeNotifier {
   }
 
   /// Poll relay connectivity (drives the offline banner).
+  ///
+  /// Guarded against overlap: the 15 s app-shell timer can fire again while a
+  /// slow call is still awaiting the bridge.
   Future<void> refreshRelayStatus() async {
+    if (_relayStatusInFlight) return;
+    _relayStatusInFlight = true;
     try {
       final json = await RustLib.instance.api
           .crateFfiNetworkNetworkRelayConnectionStatus();
@@ -271,25 +286,42 @@ class ShellService extends ChangeNotifier {
         _offline = true;
         notifyListeners();
       }
+    } finally {
+      _relayStatusInFlight = false;
     }
   }
 
   // ─── PIN lock ────────────────────────────────────────────────────────────
 
-  Future<void> refreshLockout({bool notify = true}) async {
+  /// Re-read PIN lockout state from the bridge.
+  ///
+  /// Returns whether the countdown actually moved, so a caller that polls on a
+  /// timer can decide whether a rebuild is warranted without paying for a
+  /// second identical round-trip just to trigger one.
+  Future<bool> refreshLockout({bool notify = true}) async {
     try {
       final json = RustLib.instance.api.crateFfiPinPinLockoutState();
       final v = jsonDecode(json) as Map<String, dynamic>;
-      _lockAttempts = v['attemptCount'] as int? ?? 0;
       final until = v['lockoutUntil'] as int? ?? 0;
-      _lockoutRemaining =
+      final remaining =
           (until - DateTime.now().millisecondsSinceEpoch).clamp(0, 1 << 62);
-      _permanentLocked = v['permanentLocked'] as bool? ?? false;
+      final permanent = v['permanentLocked'] as bool? ?? false;
+      final changed =
+          remaining != _lockoutRemaining || permanent != _permanentLocked;
+      _lockAttempts = v['attemptCount'] as int? ?? 0;
+      _lockoutRemaining = remaining;
+      _permanentLocked = permanent;
       if (notify) notifyListeners();
+      return changed;
     } catch (e) {
       debugPrint('lockout state: $e');
+      return false;
     }
   }
+
+  /// Rebuild after a lockout countdown tick, for callers that already fetched
+  /// the new state via [refreshLockout].
+  void notifyLockoutChanged() => notifyListeners();
 
   Future<bool> unlock(String pin) async {
     if (pin.isEmpty || _unlockPending) return false;
@@ -491,8 +523,13 @@ class ShellService extends ChangeNotifier {
   // ─── Incoming calls ──────────────────────────────────────────────────────
 
   /// Poll relay kind-20001..20004 signals addressed to me.
+  ///
+  /// Guarded against overlap: driven by a 30 s timer plus a resume-time call,
+  /// either of which can still be running when the other fires.
   Future<void> pollCallSignals(String myPubkey) async {
     if (myPubkey.isEmpty) return;
+    if (_callSignalsInFlight) return;
+    _callSignalsInFlight = true;
     try {
       final json = await RustLib.instance.api.crateFfiCallsCallsFetchSignals(
         myPubkey: myPubkey,
@@ -516,6 +553,8 @@ class ShellService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('poll call signals: $e');
+    } finally {
+      _callSignalsInFlight = false;
     }
   }
 

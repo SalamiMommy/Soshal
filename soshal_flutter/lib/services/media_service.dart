@@ -25,6 +25,12 @@ class MediaService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   final Map<String, String> _blobCache = {};
   final Map<String, Future<String>> _blobInFlight = {};
 
+  /// Separate in-flight map for [fetchBlobQuiet] because its contract differs
+  /// from [fetchBlob] — it resolves to null on a miss instead of throwing — so
+  /// the two cannot share one map without changing a caller's error handling.
+  final Map<String, Future<String?>> _blobQuietInFlight = {};
+  Future<String>? _cachePathFuture;
+
   int? get localServerPort => _localServerPort;
 
   MediaService() {
@@ -134,17 +140,51 @@ class MediaService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   /// blob is absent from the chunk store. For callers with a LAN/URL
   /// fallback chain (feed, minis, blob_resolver) — a cache miss is expected
   /// there and must not spam the error log.
-  Future<String?> fetchBlobQuiet(String blobHash, {String? outPath}) async {
+  ///
+  /// Deduplicated against [_blobCache] / [_blobQuietInFlight] exactly like
+  /// [fetchBlob]. The underlying `media_fetch_blob` re-reads and re-writes every
+  /// chunk of the blob, so without this the same hash appearing in N feed cards
+  /// paid N full CAS reconstructions.
+  Future<String?> fetchBlobQuiet(String blobHash, {String? outPath}) {
+    if (outPath == null) {
+      final cached = _blobCache[blobHash];
+      if (cached != null) return Future.value(cached);
+      final inFlight = _blobQuietInFlight[blobHash];
+      if (inFlight != null) return inFlight;
+    }
+    final future = _fetchBlobQuiet(blobHash, outPath);
+    if (outPath == null) {
+      _blobQuietInFlight[blobHash] = future;
+      future.then((path) {
+        _blobQuietInFlight.remove(blobHash);
+        // A hit left the blob on disk at exactly the path `fetchBlob` would
+        // have returned, so seed the shared cache and let a later `fetchBlob`
+        // for the same hash skip the FFI entirely.
+        if (path != null) {
+          _blobCache[blobHash] = path;
+          if (_blobCache.length > _blobCacheCap) {
+            _blobCache.remove(_blobCache.keys.first);
+          }
+        }
+      }, onError: (_) {
+        _blobQuietInFlight.remove(blobHash);
+      });
+    }
+    return future;
+  }
+
+  Future<String?> _fetchBlobQuiet(String blobHash, String? outPath) async {
     try {
-      if (outPath == null) {
-        final tempDir = RustLib.instance.api.crateFfiMediaMediaGetCachePath();
-        outPath = '$tempDir/$blobHash';
+      var target = outPath;
+      if (target == null) {
+        final tempDir = await getCachePath();
+        target = '$tempDir/$blobHash';
       }
       await RustLib.instance.api.crateFfiMediaMediaFetchBlob(
         blobHash: blobHash,
-        outPath: outPath,
+        outPath: target,
       );
-      return outPath;
+      return target;
     } catch (_) {
       return null;
     }
@@ -248,10 +288,25 @@ class MediaService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
   }
 
   /// Get the cache path for the chunk store.
-  Future<String> getCachePath() async {
-    return await guard(() async {
+  ///
+  /// Memoized. The Rust side resolves this from the `OnceLock` that `db_init`
+  /// pins once at startup (`ChunkStore::set_default_root`), and `db_init` is
+  /// itself memoized process-wide in `FfiBridge.ensureDatabaseInitialized`, so
+  /// the value is fixed for the process lifetime. Five call sites — including
+  /// every `fetch` — were each paying an FFI round-trip for that constant.
+  Future<String> getCachePath() {
+    final existing = _cachePathFuture;
+    if (existing != null) return existing;
+    final future = guard(() async {
       return RustLib.instance.api.crateFfiMediaMediaGetCachePath();
     }, notifyOnSuccess: false);
+    _cachePathFuture = future;
+    // Never memoize a rejected future: one transient FFI failure would
+    // otherwise poison the path for the rest of the process.
+    future.then((_) {}, onError: (_) {
+      if (identical(_cachePathFuture, future)) _cachePathFuture = null;
+    });
+    return future;
   }
 
   /// Clear the chunk cache (evicts all stored chunks).
@@ -261,6 +316,7 @@ class MediaService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
       RustLib.instance.api.crateFfiMediaMediaClearCache(cacheDir: cachePath);
       _blobCache.clear();
       _blobInFlight.clear();
+      _blobQuietInFlight.clear();
       clearLastError();
       notifyListeners();
     } catch (e, st) {
