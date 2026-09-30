@@ -163,3 +163,150 @@ fn repeated_mixed_case_upsert_does_not_duplicate() {
         "three upserts of the same reaction must leave one row"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Why the LOWER() has to go (plan item 2.3)
+//
+// These are the payoff tests. Removing `LOWER()` from a predicate is only
+// worth anything if the query then stops scanning, so assert on the query plan
+// rather than on the SQL text — the text is the thing being changed, the plan
+// is the thing being bought.
+// ---------------------------------------------------------------------------
+
+/// `EXPLAIN QUERY PLAN` detail lines for `sql`, joined.
+fn query_plan(db: &Database, sql: &str) -> String {
+    let conn = db.conn().unwrap();
+    soshal_db_core::block_on(async {
+        let mut rows = conn
+            .query(&format!("EXPLAIN QUERY PLAN {sql}"), ())
+            .await
+            .unwrap();
+        let mut out = String::new();
+        while let Some(row) = rows.next().await.unwrap() {
+            out.push_str(&row.get::<String>(3).unwrap());
+            out.push('\n');
+        }
+        out
+    })
+}
+
+/// SQLite reports a btree lookup as `SEARCH`, and a full pass as `SCAN`.
+fn seeks_index(plan: &str) -> bool {
+    plan.contains("SEARCH")
+}
+
+#[test]
+fn post_lookup_by_id_seeks_the_primary_key() {
+    let db = seeded();
+    let plan = query_plan(&db, "SELECT id FROM posts WHERE id = 'x'");
+    assert!(
+        seeks_index(&plan),
+        "post lookup by primary key should seek, not scan.\nplan:\n{plan}"
+    );
+}
+
+/// Negative control. `LOWER()` on the column is what forced the scan, so
+/// without this the test above would pass even if the predicate regressed
+/// back to a scan for an unrelated reason.
+#[test]
+fn wrapping_the_column_in_lower_forces_a_scan() {
+    let db = seeded();
+    let plan = query_plan(&db, "SELECT id FROM posts WHERE LOWER(id) = 'x'");
+    assert!(
+        !seeks_index(&plan),
+        "LOWER(id) should not be able to use the index — if this ever starts \
+         seeking, the premise of removing LOWER() has changed.\nplan:\n{plan}"
+    );
+}
+
+#[test]
+fn post_lookup_by_author_seeks_an_index() {
+    let db = seeded();
+    let plan = query_plan(&db, "SELECT id FROM posts WHERE pubkey = 'x'");
+    assert!(
+        seeks_index(&plan),
+        "post lookup by author should seek.\nplan:\n{plan}"
+    );
+}
+
+#[test]
+fn user_lookup_by_pubkey_seeks_the_primary_key() {
+    let db = seeded();
+    let plan = query_plan(&db, "SELECT npub FROM users WHERE pubkey = 'x'");
+    assert!(
+        seeks_index(&plan),
+        "user lookup by pubkey should seek.\nplan:\n{plan}"
+    );
+}
+
+#[test]
+fn post_upsert_stores_keys_lowercase() {
+    use soshal_db_core::repos::post::{PostRepo, PostRow};
+    let db = seeded();
+    let repo = PostRepo::new(&db);
+    let row = PostRow {
+        id: MIXED_ID.to_string(),
+        pubkey: MIXED_PK.to_string(),
+        content: "hello".to_string(),
+        kind: 1,
+        created_at: 1_000,
+        tags_json: "[]".to_string(),
+        sig: None,
+        reply_to: Some("BBBBCCCC1111".to_string()),
+        root_id: Some("DDDDeeee2222".to_string()),
+        mentioned_pubkeys: "[]".to_string(),
+        mentioned_hashtags: "[]".to_string(),
+        subject: None,
+        sync_status: "synced".to_string(),
+        is_deleted: false,
+        scheduled_at: None,
+        freenet_key: None,
+        is_freenet_native: false,
+        rsvp_event_id: None,
+    };
+    repo.upsert(&row).unwrap();
+
+    assert_column_lowercase(&db, "posts", "id");
+    assert_column_lowercase(&db, "posts", "pubkey");
+    assert_column_lowercase(&db, "posts", "root_id");
+    assert_column_lowercase(&db, "posts", "reply_to");
+}
+
+/// A post written with mixed-case keys must still be findable through the
+/// index-backed lookups, and through the `json_each` batch path.
+#[test]
+fn mixed_case_post_is_reachable_after_write() {
+    use soshal_db_core::repos::post::{PostRepo, PostRow};
+    let db = seeded();
+    let repo = PostRepo::new(&db);
+    let row = PostRow {
+        id: MIXED_ID.to_string(),
+        pubkey: MIXED_PK.to_string(),
+        content: "hello".to_string(),
+        kind: 1,
+        created_at: 1_000,
+        tags_json: "[]".to_string(),
+        sig: None,
+        reply_to: None,
+        root_id: None,
+        mentioned_pubkeys: "[]".to_string(),
+        mentioned_hashtags: "[]".to_string(),
+        subject: None,
+        sync_status: "synced".to_string(),
+        is_deleted: false,
+        scheduled_at: None,
+        freenet_key: None,
+        is_freenet_native: false,
+        rsvp_event_id: None,
+    };
+    repo.upsert(&row).unwrap();
+
+    // Looked up with the *original* mixed-case value, which is what a caller
+    // holding a relay-supplied id would pass.
+    assert!(
+        repo.get_by_id(MIXED_ID).unwrap().is_some(),
+        "get_by_id must normalize its argument and find the row"
+    );
+    let by_author = repo.get_user_posts(MIXED_PK, 10, 0).unwrap();
+    assert_eq!(by_author.len(), 1, "get_user_posts must find the post");
+}

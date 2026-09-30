@@ -9,14 +9,10 @@ macro_rules! post_columns {
 }
 
 const POST_UPSERT_SQL: &str = "INSERT INTO posts (id, pubkey, content, kind, created_at, tags_json, sig, reply_to, root_id, mentioned_pubkeys, mentioned_hashtags, subject, sync_status, is_deleted, scheduled_at, freenet_key, is_freenet_native, rsvp_event_id, category) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18, CASE WHEN ?4 = 30402 THEN (SELECT json_extract(je.value, '$[1]') FROM json_each(CASE WHEN json_valid(?6) THEN ?6 ELSE '[]' END) je WHERE json_extract(je.value, '$[0]') = 't' LIMIT 1) ELSE NULL END) ON CONFLICT(id) DO UPDATE SET content=excluded.content, tags_json=excluded.tags_json, sig=excluded.sig, mentioned_pubkeys=excluded.mentioned_pubkeys, mentioned_hashtags=excluded.mentioned_hashtags, subject=excluded.subject, sync_status=excluded.sync_status, is_deleted=excluded.is_deleted, scheduled_at=excluded.scheduled_at, freenet_key=excluded.freenet_key, is_freenet_native=excluded.is_freenet_native, rsvp_event_id=excluded.rsvp_event_id, category=excluded.category WHERE posts.is_deleted = 0";
-const POST_FEED_SQL: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE LOWER(pubkey) IN (SELECT LOWER(value) FROM json_each(?1)) AND is_deleted = 0 AND scheduled_at IS NULL ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3");
-const POST_SELECT_BY_ID: &str = concat!(
-    "SELECT ",
-    post_columns!(),
-    " FROM posts WHERE LOWER(id) = LOWER(?1)"
-);
-const POST_SELECT_BY_PUBKEY: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE LOWER(pubkey) = LOWER(?1) AND is_deleted = 0 AND scheduled_at IS NULL ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3");
-const POST_SELECT_REPLIES: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE (LOWER(root_id) = LOWER(?1) OR LOWER(id) = LOWER(?1)) AND is_deleted = 0 AND scheduled_at IS NULL ORDER BY created_at ASC LIMIT 1000");
+const POST_FEED_SQL: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE pubkey IN (SELECT LOWER(value) FROM json_each(?1)) AND is_deleted = 0 AND scheduled_at IS NULL ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3");
+const POST_SELECT_BY_ID: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE id = ?1");
+const POST_SELECT_BY_PUBKEY: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE pubkey = ?1 AND is_deleted = 0 AND scheduled_at IS NULL ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3");
+const POST_SELECT_REPLIES: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE (root_id = ?1 OR id = ?1) AND is_deleted = 0 AND scheduled_at IS NULL ORDER BY created_at ASC LIMIT 1000");
 const POST_SELECT_PAGED: &str = concat!(
     "SELECT ",
     post_columns!(),
@@ -32,14 +28,14 @@ const POST_SELECT_PAGED_META_CURSOR: &str =
 /// Author-filtered variants of the slim feed pages: `?3`/`?4` is a JSON
 /// array of reachable pubkeys (audience filter: friends / network).
 const POST_SELECT_PAGED_META_AUTHORS: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND scheduled_at IS NULL AND LOWER(pubkey) IN (SELECT LOWER(value) FROM json_each(?3)) ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND scheduled_at IS NULL AND pubkey IN (SELECT LOWER(value) FROM json_each(?3)) ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
 const POST_SELECT_PAGED_META_SINGLE_AUTHOR: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND scheduled_at IS NULL AND LOWER(pubkey) = LOWER(?3) ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND scheduled_at IS NULL AND pubkey = ?3 ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2";
 const POST_SELECT_PAGED_META_CURSOR_AUTHORS: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND scheduled_at IS NULL AND LOWER(pubkey) IN (SELECT LOWER(value) FROM json_each(?4)) AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND scheduled_at IS NULL AND pubkey IN (SELECT LOWER(value) FROM json_each(?4)) AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
 const POST_SELECT_PAGED_META_CURSOR_SINGLE_AUTHOR: &str =
-    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND scheduled_at IS NULL AND LOWER(pubkey) = LOWER(?4) AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
-const POST_SELECT_SCHEDULED: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE LOWER(pubkey) = LOWER(?1) AND scheduled_at IS NOT NULL AND is_deleted = 0 ORDER BY scheduled_at ASC");
+    "SELECT id, pubkey, content, created_at, tags_json FROM posts WHERE is_deleted = 0 AND kind = 1 AND scheduled_at IS NULL AND pubkey = ?4 AND (created_at < ?1 OR (created_at = ?1 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?2";
+const POST_SELECT_SCHEDULED: &str = concat!("SELECT ", post_columns!(), " FROM posts WHERE pubkey = ?1 AND scheduled_at IS NOT NULL AND is_deleted = 0 ORDER BY scheduled_at ASC");
 
 pub struct PostRepo<'a> {
     db: &'a Database,
@@ -49,8 +45,14 @@ impl<'a> PostRepo<'a> {
     soshal_repo_new!();
 
     pub fn get_by_id(&self, id: &str) -> Result<Option<PostRow>, crate::error::DbError> {
+        let norm_id = id.trim().to_ascii_lowercase();
         let conn = self.db.conn()?;
-        crate::query::query_first(&conn, POST_SELECT_BY_ID, params![id], Self::map_row)
+        crate::query::query_first(
+            &conn,
+            POST_SELECT_BY_ID,
+            params![norm_id.as_str()],
+            Self::map_row,
+        )
     }
 
     /// Fetch many rows by id in a single indexed `IN (json_each)` query.
@@ -77,7 +79,7 @@ impl<'a> PostRepo<'a> {
             concat!(
                 "SELECT ",
                 post_columns!(),
-                " FROM posts WHERE LOWER(id) IN (SELECT value FROM json_each(?1))"
+                " FROM posts WHERE id IN (SELECT LOWER(value) FROM json_each(?1))"
             ),
             params![ids_json.as_str()],
             Self::map_row,
@@ -127,8 +129,14 @@ impl<'a> PostRepo<'a> {
         &self,
         root_id: &str,
     ) -> Result<Vec<PostRow>, crate::error::DbError> {
+        let norm_root = root_id.trim().to_ascii_lowercase();
         let conn = self.db.conn()?;
-        crate::query::query(&conn, POST_SELECT_REPLIES, params![root_id], Self::map_row)
+        crate::query::query(
+            &conn,
+            POST_SELECT_REPLIES,
+            params![norm_root.as_str()],
+            Self::map_row,
+        )
     }
 
     pub fn upsert(&self, post: &PostRow) -> Result<(), crate::error::DbError> {
@@ -141,25 +149,25 @@ impl<'a> PostRepo<'a> {
             )));
         }
         let conn = self.db.conn()?;
-        let norm_pk = post.pubkey.trim();
+        let k = PostKeys::from(post);
         crate::query::execute(
             &conn,
             "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
-            params![norm_pk],
+            params![k.pubkey.as_str()],
         )?;
         crate::query::execute(
             &conn,
             POST_UPSERT_SQL,
             params![
-                post.id.as_str(),
-                norm_pk,
+                k.id.as_str(),
+                k.pubkey.as_str(),
                 post.content.as_str(),
                 post.kind,
                 post.created_at,
                 post.tags_json.as_str(),
                 post.sig.as_deref(),
-                post.reply_to.as_deref(),
-                post.root_id.as_deref(),
+                k.reply_to.as_deref(),
+                k.root_id.as_deref(),
                 post.mentioned_pubkeys.as_str(),
                 post.mentioned_hashtags.as_str(),
                 post.subject.as_deref(),
@@ -172,7 +180,7 @@ impl<'a> PostRepo<'a> {
             ],
         )?;
         self.db
-            .notify_change(crate::change_bus::Table::Posts, Some(norm_pk.to_string()));
+            .notify_change(crate::change_bus::Table::Posts, Some(k.pubkey.clone()));
         Ok(())
     }
 
@@ -203,27 +211,24 @@ impl<'a> PostRepo<'a> {
                 limits::MAX_BATCH_BYTES
             )));
         }
-        let norm_id = post.id.trim();
-        let norm_pk = post.pubkey.trim();
-        let norm_reply_to = post.reply_to.as_deref().map(|s| s.trim());
-        let norm_root_id = post.root_id.as_deref().map(|s| s.trim());
+        let k = PostKeys::from(post);
         tx.execute(
             "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
-            params![norm_pk],
+            params![k.pubkey.as_str()],
         )
         .await?;
         tx.execute(
             POST_UPSERT_SQL,
             params![
-                norm_id,
-                norm_pk,
+                k.id.as_str(),
+                k.pubkey.as_str(),
                 post.content.as_str(),
                 post.kind,
                 post.created_at,
                 post.tags_json.as_str(),
                 post.sig.as_deref(),
-                norm_reply_to,
-                norm_root_id,
+                k.reply_to.as_deref(),
+                k.root_id.as_deref(),
                 post.mentioned_pubkeys.as_str(),
                 post.mentioned_hashtags.as_str(),
                 post.subject.as_deref(),
@@ -249,25 +254,22 @@ impl<'a> PostRepo<'a> {
             if limits::row_too_big(&post.content, &post.tags_json) {
                 continue; // relay content too large: skip, never store
             }
-            let norm_id = post.id.trim();
-            let norm_pk = post.pubkey.trim();
-            let norm_reply_to = post.reply_to.as_deref().map(|s| s.trim());
-            let norm_root_id = post.root_id.as_deref().map(|s| s.trim());
+            let k = PostKeys::from(post);
             tx.execute(
                 "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
-                params![norm_pk],
+                params![k.pubkey.as_str()],
             )
             .await?;
             stmt.run(params![
-                norm_id,
-                norm_pk,
+                k.id.as_str(),
+                k.pubkey.as_str(),
                 post.content.as_str(),
                 post.kind,
                 post.created_at,
                 post.tags_json.as_str(),
                 post.sig.as_deref(),
-                norm_reply_to,
-                norm_root_id,
+                k.reply_to.as_deref(),
+                k.root_id.as_deref(),
                 post.mentioned_pubkeys.as_str(),
                 post.mentioned_hashtags.as_str(),
                 post.subject.as_deref(),
@@ -289,7 +291,7 @@ impl<'a> PostRepo<'a> {
         let norm_id = id.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
-            "UPDATE posts SET is_deleted = 1 WHERE LOWER(id) = ?1",
+            "UPDATE posts SET is_deleted = 1 WHERE id = ?1",
             params![norm_id.as_str()],
         )?;
         self.db.notify_change(crate::change_bus::Table::Posts, None);
@@ -309,7 +311,7 @@ impl<'a> PostRepo<'a> {
         let norm_id = id.trim().to_ascii_lowercase();
         let norm_author = author.trim().to_ascii_lowercase();
         tx.execute(
-            "UPDATE posts SET is_deleted = 1 WHERE LOWER(id) = LOWER(?1) AND LOWER(pubkey) = LOWER(?2)",
+            "UPDATE posts SET is_deleted = 1 WHERE id = ?1 AND pubkey = ?2",
             params![norm_id.as_str(), norm_author.as_str()],
         )
         .await?;
@@ -355,16 +357,24 @@ impl<'a> PostRepo<'a> {
             return Ok(vec![]);
         }
         let (limit, offset) = crate::repos::clamp_page(limit, offset);
+        // Normalized here so both the single-key and the `json_each` path bind
+        // values the stored columns can actually match. The query still
+        // applies `LOWER(value)` to the subquery side, which keeps it correct
+        // for a caller that hands this repo an un-normalized slice.
+        let norm_pubkeys: Vec<String> = pubkeys
+            .iter()
+            .map(|p| p.trim().to_ascii_lowercase())
+            .collect();
         let conn = self.db.conn()?;
-        if pubkeys.len() == 1 {
+        if norm_pubkeys.len() == 1 {
             return crate::query::query(
                 &conn,
                 POST_SELECT_BY_PUBKEY,
-                params![pubkeys[0].as_str(), limit, offset],
+                params![norm_pubkeys[0].as_str(), limit, offset],
                 Self::map_row,
             );
         }
-        let pubkeys_json = serde_json::to_string(pubkeys).unwrap_or_else(|_| "[]".into());
+        let pubkeys_json = serde_json::to_string(&norm_pubkeys).unwrap_or_else(|_| "[]".into());
         crate::query::query(
             &conn,
             POST_FEED_SQL,
@@ -518,7 +528,7 @@ impl<'a> PostRepo<'a> {
             concat!(
                 "SELECT ",
                 post_columns!(),
-                " FROM posts WHERE LOWER(pubkey) = LOWER(?1) AND scheduled_at IS NOT NULL AND scheduled_at <= ?2 AND is_deleted = 0 AND sync_status = 'scheduled' ORDER BY scheduled_at ASC LIMIT ?3"
+                " FROM posts WHERE pubkey = ?1 AND scheduled_at IS NOT NULL AND scheduled_at <= ?2 AND is_deleted = 0 AND sync_status = 'scheduled' ORDER BY scheduled_at ASC LIMIT ?3"
             ),
             params![norm_pk.as_str(), now, limit],
             Self::map_row,
@@ -556,6 +566,40 @@ impl<'a> PostRepo<'a> {
             is_freenet_native: row.get(16)?,
             rsvp_event_id: row.get(17)?,
         })
+    }
+}
+
+/// The key columns bound into `POST_UPSERT_SQL`, normalized.
+///
+/// The reads on these columns no longer apply `LOWER()` — `id` is the primary
+/// key and `pubkey`/`root_id` are indexed — so the *stored* value has to
+/// already be lowercase or the seek misses. These are defined in one place
+/// because three write paths share the statement, and a fourth that forgets to
+/// normalize is exactly the regression that makes rows unreachable.
+///
+/// The pre-existing `norm_*` locals only trimmed; trimming is kept, the
+/// lowercasing is new.
+struct PostKeys {
+    id: String,
+    pubkey: String,
+    reply_to: Option<String>,
+    root_id: Option<String>,
+}
+
+impl PostKeys {
+    fn from(post: &PostRow) -> Self {
+        Self {
+            id: post.id.trim().to_ascii_lowercase(),
+            pubkey: post.pubkey.trim().to_ascii_lowercase(),
+            reply_to: post
+                .reply_to
+                .as_deref()
+                .map(|s| s.trim().to_ascii_lowercase()),
+            root_id: post
+                .root_id
+                .as_deref()
+                .map(|s| s.trim().to_ascii_lowercase()),
+        }
     }
 }
 
