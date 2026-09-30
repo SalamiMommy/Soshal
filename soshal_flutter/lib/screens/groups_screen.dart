@@ -459,7 +459,17 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
   bool _loading = true;
   bool _sidebarOpen = false;
-  double _sidebarWidth = 300.0;
+
+  /// Sidebar width lives in a notifier, not in `State`, so that resizing the
+  /// sidebar does not rebuild the whole screen.
+  ///
+  /// The drag handle fires `onHorizontalDragUpdate` once per pointer-move frame.
+  /// With `setState` that rebuilt `build()` wholesale at display refresh rate —
+  /// the `Consumer<GroupsService>`, the group header, and all three tab
+  /// subtrees — for a change that only affects the sidebar's width. Only the
+  /// `ValueListenableBuilder` around the sidebar container re-runs now; the tabs
+  /// keep their elements and widgets, so a resize touches one subtree.
+  final ValueNotifier<double> _sidebarWidth = ValueNotifier<double>(300.0);
 
   @override
   void initState() {
@@ -468,10 +478,18 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     if (saved.isNotEmpty) {
       final parsed = double.tryParse(saved);
       if (parsed != null) {
-        _sidebarWidth = parsed.clamp(_minSidebar, _maxSidebar);
+        // Safe before the first build: no listener is attached yet, and the
+        // first read of the notifier returns the restored width.
+        _sidebarWidth.value = parsed.clamp(_minSidebar, _maxSidebar);
       }
     }
     _load();
+  }
+
+  @override
+  void dispose() {
+    _sidebarWidth.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -504,16 +522,17 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   void _persistWidth() {
     context
         .read<SettingsService>()
-        .setSetting(_widthSetting, '${_sidebarWidth.round()}');
+        .setSetting(_widthSetting, '${_sidebarWidth.value.round()}');
   }
 
   Widget _resizeHandle() {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onHorizontalDragUpdate: (d) => setState(() {
-        _sidebarWidth =
-            (_sidebarWidth - d.delta.dx).clamp(_minSidebar, _maxSidebar);
-      }),
+      // No setState: the notifier only rebuilds the sidebar container, and
+      // ValueNotifier ignores an assignment that does not change the value, so
+      // a drag past the clamp stops costing anything.
+      onHorizontalDragUpdate: (d) => _sidebarWidth.value =
+          (_sidebarWidth.value - d.delta.dx).clamp(_minSidebar, _maxSidebar),
       onHorizontalDragEnd: (_) => _persistWidth(),
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeLeftRight,
@@ -571,11 +590,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       children: [
         Expanded(child: tabs),
         _resizeHandle(),
-        SizedBox(
-          width: _sidebarWidth,
-          child: Material(
-            color: Theme.of(context).colorScheme.surfaceContainerLow,
-            child: _sidebar(context),
+        ValueListenableBuilder<double>(
+          valueListenable: _sidebarWidth,
+          builder: (context, width, child) => SizedBox(
+            width: width,
+            child: Material(
+              color: Theme.of(context).colorScheme.surfaceContainerLow,
+              child: _sidebar(context),
+            ),
           ),
         ),
       ],
@@ -595,20 +617,22 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               ),
             ),
           ),
-          Positioned(
-            right: 0,
-            top: 0,
-            bottom: 0,
-            width: _sidebarWidth.clamp(
-                240.0, MediaQuery.sizeOf(context).width * 0.9),
-            child: Material(
-              elevation: 8,
-              color: Theme.of(context).colorScheme.surface,
-              child: Row(
-                children: [
-                  _resizeHandle(),
-                  Expanded(child: _sidebar(context)),
-                ],
+          ValueListenableBuilder<double>(
+            valueListenable: _sidebarWidth,
+            builder: (context, width, _) => Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: width.clamp(240.0, MediaQuery.sizeOf(context).width * 0.9),
+              child: Material(
+                elevation: 8,
+                color: Theme.of(context).colorScheme.surface,
+                child: Row(
+                  children: [
+                    _resizeHandle(),
+                    Expanded(child: _sidebar(context)),
+                  ],
+                ),
               ),
             ),
           ),

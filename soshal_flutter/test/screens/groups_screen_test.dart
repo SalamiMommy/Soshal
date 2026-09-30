@@ -6,6 +6,8 @@ import 'package:soshal_flutter/screens/groups_screen.dart';
 import 'package:soshal_flutter/services/groups_service.dart';
 import 'package:soshal_flutter/services/session_service.dart';
 import 'package:soshal_flutter/services/settings_service.dart';
+import 'package:soshal_flutter/widgets/group_sidebar.dart';
+import 'package:soshal_flutter/widgets/group_tabs.dart';
 
 import '../helpers/test_env.dart';
 
@@ -22,8 +24,7 @@ void main() {
     api.stubBool('crateFfiDbDbSetSetting', true);
   });
 
-  const sessionJson =
-      '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
+  const sessionJson = '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
       '"npub":"npub1abc","last_used":0,"relay_list":[]}]}';
 
   const groupJson =
@@ -46,8 +47,7 @@ void main() {
         GoRoute(path: '/groups', builder: (_, __) => const GroupsScreen()),
         GoRoute(
           path: '/groups/:groupId',
-          builder: (_, __) =>
-              const Scaffold(body: Text('group placeholder')),
+          builder: (_, __) => const Scaffold(body: Text('group placeholder')),
         ),
       ],
     );
@@ -319,7 +319,214 @@ void main() {
     expect(api.namedArg(inv2, 'emoji'), '🎉');
   });
 
-  testWidgets('private group renders lock icon and prompts for password on join',
+  // --- 6.7: the sidebar resize must not rebuild the screen ------------------
+  //
+  // The drag handle fires once per pointer-move frame. With the width in
+  // `State` that rebuilt all of `GroupDetailScreen.build()` at display refresh
+  // rate -- the `Consumer<GroupsService>`, the group header, and all three tab
+  // subtrees -- for a change that only moves the sidebar's edge.
+
+  const memberGroupJson =
+      '{"id":"g1","name":"Soshal Devs","description":"build stuff",'
+      '"picture":"","owner":"pk123","members":42,"is_member":true,'
+      '"role":"owner","created_at":0}';
+
+  /// `GroupDetailScreen` on a 800px viewport, which is past the 700px
+  /// breakpoint, so the sidebar renders beside the tabs (`_desktop`).
+  ///
+  /// [owner] defaults to the signed-in account, which makes the sidebar render
+  /// its `Privacy & Access` section. At the 240px minimum width that section
+  /// overflows under the widget-test font -- every glyph is a full em square, so
+  /// a 16-character title is roughly twice its real width. That is a test-font
+  /// artifact, not a layout bug, so the clamp tests pin a non-owner group to
+  /// keep the width assertions clean.
+  Future<void> pumpDetail(WidgetTester tester,
+      {String? savedWidth,
+      String owner = 'pk123',
+      Size size = const Size(800, 2400)}) async {
+    final group =
+        memberGroupJson.replaceFirst('"owner":"pk123"', '"owner":"$owner"');
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final session = SessionService();
+    api.stubString('crateFfiSessionSessionLoad', sessionJson);
+    await session.loadSession();
+    api.stubString('crateFfiDbDbGetSetting', savedWidth ?? '300');
+    api.stubString(
+      'crateFfiGroupsGroupsGetDetailBundle',
+      '{"group":$group,"members":["pkA"],"memberRoles":[],'
+          '"roles":[],"rooms":[],"voiceChannels":[]}',
+    );
+    api.stubString('crateFfiGroupsGroupsThreadsList', '[]');
+    api.stubString('crateFfiGroupsGroupsFetchMessages', '[]');
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SessionService>.value(value: session),
+          ChangeNotifierProvider(create: (_) => GroupsService()),
+          ChangeNotifierProvider(create: (_) => SettingsService()),
+        ],
+        child: const MaterialApp(home: GroupDetailScreen(groupId: 'g1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  /// The handle is the 8px strip immediately left of the sidebar.
+  Offset handleCenter(WidgetTester tester) =>
+      Offset(tester.getTopLeft(find.byType(GroupSidebar)).dx - 4, 400);
+
+  double sidebarWidth(WidgetTester tester) =>
+      tester.getSize(find.byType(GroupSidebar)).width;
+
+  /// The tab widgets a full `build()` re-creates. If the screen rebuilds these
+  /// are new instances; if only the sidebar's notifier fires, they are the very
+  /// same objects.
+  Map<Type, Widget> tabWidgets(WidgetTester tester) => {
+        for (final t in [GroupVoiceTab, GroupRoomsTab, GroupThreadsTab])
+          if (find.byType(t).evaluate().isNotEmpty)
+            t: tester.widget(find.byType(t)),
+      };
+
+  testWidgets('dragging the handle resizes the sidebar and persists the width',
+      (tester) async {
+    await pumpDetail(tester);
+    expect(sidebarWidth(tester), 300);
+
+    // The handle subtracts the drag delta, so a leftward drag widens.
+    final gesture = await tester.startGesture(handleCenter(tester));
+    await gesture.moveBy(const Offset(-60, 0));
+    await tester.pump();
+    expect(sidebarWidth(tester), 360);
+
+    // Not written on every frame -- only when the drag ends.
+    expect(api.callCount('crateFfiDbDbSetSetting'), 0);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    final inv = api.callsOf('crateFfiDbDbSetSetting').single;
+    expect(api.namedArg(inv, 'key'), 'group_sidebar_width');
+    expect(api.namedArg(inv, 'value'), '360');
+  });
+
+  testWidgets('the sidebar clamps at its min and max and settles exactly there',
+      (tester) async {
+    await pumpDetail(tester, owner: 'someone-else');
+
+    // Far past the 420px max.
+    final grow = await tester.startGesture(handleCenter(tester));
+    await grow.moveBy(const Offset(-900, 0));
+    await tester.pump();
+    expect(sidebarWidth(tester), 420);
+    await grow.up();
+    await tester.pumpAndSettle();
+    expect(api.namedArg(api.callsOf('crateFfiDbDbSetSetting').last, 'value'),
+        '420');
+
+    // Far past the 240px min.
+    final shrink = await tester.startGesture(handleCenter(tester));
+    await shrink.moveBy(const Offset(900, 0));
+    await tester.pump();
+    expect(sidebarWidth(tester), 240);
+    await shrink.up();
+    await tester.pumpAndSettle();
+    expect(api.namedArg(api.callsOf('crateFfiDbDbSetSetting').last, 'value'),
+        '240');
+  });
+
+  testWidgets('a restored width is applied before the first frame',
+      (tester) async {
+    // The notifier is written in initState, so this must be visible in the very
+    // first frame -- there is no setState to wait for.
+    await pumpDetail(tester, savedWidth: '355');
+    expect(sidebarWidth(tester), 355);
+  });
+
+  testWidgets('an out-of-range stored width is clamped, not trusted',
+      (tester) async {
+    await pumpDetail(tester, savedWidth: '5000', owner: 'someone-else');
+    expect(sidebarWidth(tester), 420);
+  });
+
+  testWidgets('resizing does not rebuild the tab subtrees', (tester) async {
+    await pumpDetail(tester);
+    final before = tabWidgets(tester);
+    expect(before, isNotEmpty,
+        reason: 'no tab is built, so "not rebuilt" would pass vacuously');
+
+    final gesture = await tester.startGesture(handleCenter(tester));
+    for (var i = 0; i < 5; i++) {
+      await gesture.moveBy(const Offset(-10, 0));
+      await tester.pump();
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(sidebarWidth(tester), 350, reason: 'the drag must still resize');
+    final after = tabWidgets(tester);
+    for (final entry in before.entries) {
+      expect(identical(after[entry.key], entry.value), isTrue,
+          reason: '${entry.key} was rebuilt by a sidebar resize');
+    }
+  });
+
+  testWidgets('the mobile overlay follows the same notifier and its own cap',
+      (tester) async {
+    // Below the 700px breakpoint the sidebar is an overlay, built by a second
+    // width consumer. It has to read the notifier too, and it caps at 90% of
+    // the viewport, which is what makes it distinguishable from the desktop
+    // path: at 400px wide that cap is 360, below the 420 hard maximum, so a
+    // grow drag settles at 360 rather than 420.
+    await pumpDetail(tester, owner: 'someone-else', size: const Size(400, 900));
+    await tester.tap(find.byTooltip('Members & roles'));
+    await tester.pumpAndSettle();
+
+    // The overlay is a Row of [8px handle][sidebar], so the sidebar itself is
+    // always 8px narrower than the width the notifier holds.
+    const handle = 8.0;
+    expect(sidebarWidth(tester), 300 - handle);
+
+    final grow = await tester.startGesture(handleCenter(tester));
+    await grow.moveBy(const Offset(-900, 0));
+    await tester.pump();
+    expect(sidebarWidth(tester), 360 - handle);
+    await grow.up();
+    await tester.pumpAndSettle();
+
+    final shrink = await tester.startGesture(handleCenter(tester));
+    await shrink.moveBy(const Offset(900, 0));
+    await tester.pump();
+    expect(sidebarWidth(tester), 240 - handle);
+    await shrink.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a real state change still rebuilds the tab subtrees',
+      (tester) async {
+    // The control for the test above. If this stopped rebuilding the tabs, then
+    // "resizing does not rebuild" would be passing for the wrong reason --
+    // a screen that never rebuilds at all.
+    await pumpDetail(tester);
+    final before = tabWidgets(tester);
+    expect(before, isNotEmpty);
+
+    // The app bar's Members button is a plain setState, so this *does* re-run
+    // build() and re-create the tab widgets.
+    await tester.tap(find.byTooltip('Members & roles'));
+    await tester.pumpAndSettle();
+
+    final after = tabWidgets(tester);
+    for (final entry in before.entries) {
+      expect(identical(after[entry.key], entry.value), isFalse,
+          reason: '${entry.key} should have been rebuilt by a setState');
+    }
+  });
+
+  testWidgets(
+      'private group renders lock icon and prompts for password on join',
       (tester) async {
     const privateGroupJson =
         '{"id":"g-priv","name":"Secret Club","description":"shh",'
@@ -355,7 +562,8 @@ void main() {
     expect(api.namedArg(inv, 'password'), 'superSecret42');
   });
 
-  testWidgets('create private group sends isPrivate and password', (tester) async {
+  testWidgets('create private group sends isPrivate and password',
+      (tester) async {
     api.stubString('crateFfiGroupsGroupsFetchGroups', '[]');
     api.stubString('crateFfiGroupsGroupsCreate', 'g-created-priv');
 
