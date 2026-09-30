@@ -4,7 +4,9 @@
 //! low-level TCP probes for daemon status checks.
 
 use flutter_rust_bridge::frb;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::hash::Hash;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -135,6 +137,10 @@ impl RateLimiter {
 /// static `OnceLock<Mutex<TtlCache<K, V>>>`, always accessed via [`lock`].
 pub(crate) struct TtlCache<K, V> {
     entries: HashMap<K, (i64, V)>,
+    /// Keys in insertion order, so a victim can be chosen without scanning
+    /// `entries`. See [`TtlCache::insert`] for the eviction policy and the
+    /// invariant this maintains.
+    order: VecDeque<K>,
     ttl_secs: i64,
     cap: usize,
 }
@@ -143,6 +149,7 @@ impl<K: Eq + Hash + Clone, V> TtlCache<K, V> {
     pub(crate) fn new(ttl_secs: i64, cap: usize) -> Self {
         Self {
             entries: HashMap::new(),
+            order: VecDeque::new(),
             ttl_secs,
             cap,
         }
@@ -164,12 +171,27 @@ impl<K: Eq + Hash + Clone, V> TtlCache<K, V> {
         Some(v)
     }
 
-    /// Insert `k -> v` at `now`, evicting one entry when the cache is at
-    /// capacity so distinct keys can't grow it without bound (TTL expiry
-    /// bounds actual staleness; eviction order is arbitrary).
-    pub(crate) fn insert(&mut self, k: K, v: V, now: i64) {
-        if !self.entries.contains_key(&k) && self.entries.len() >= self.cap {
-            let victim = self
+    /// Whether this cache can ever consider an entry expired.
+    ///
+    /// An entry expires when `now.saturating_sub(ts) >= ttl_secs`. With
+    /// `ttl_secs == i64::MAX` and a non-negative `ts`, the left side is bounded
+    /// by `now` — a wall-clock second count — and so can never reach `i64::MAX`.
+    /// The expired-entry search is therefore not merely slow on such a cache,
+    /// it is provably always empty.
+    fn can_expire(&self) -> bool {
+        self.ttl_secs != i64::MAX
+    }
+
+    /// Drop one entry, preferring an expired one.
+    ///
+    /// The moderation cache is built with [`Self::can_expire`] false and a cap
+    /// of 2048, so on that path the old code — a `find` for an expired entry,
+    /// then a `min_by_key` for the oldest, then a key clone — scanned all 2048
+    /// entries twice per insert past the cap and still found nothing to
+    /// prefer. Here the oldest-inserted key comes off `order` in O(1) instead.
+    fn evict_one(&mut self, now: i64) {
+        if self.can_expire() {
+            if let Some(victim) = self
                 .entries
                 .iter()
                 .find(|(_, (ts, _))| now.saturating_sub(*ts) >= self.ttl_secs)
@@ -179,16 +201,55 @@ impl<K: Eq + Hash + Clone, V> TtlCache<K, V> {
                         .iter()
                         .min_by_key(|(_, (ts, _))| *ts)
                         .map(|(k, _)| k.clone())
-                });
-            if let Some(victim_key) = victim {
-                self.entries.remove(&victim_key);
+                })
+            {
+                self.entries.remove(&victim);
+                // O(cap), same order as the two scans above, and it keeps
+                // `order` free of the victim's now-dangling reference. Only
+                // reached by the finite-TTL caches, whose caps are 8, 1000 and
+                // 1.
+                self.order.retain(|k| k != &victim);
+                return;
             }
         }
-        self.entries.insert(k, (now, v));
+        // Pop the oldest-inserted key still in `entries`. Skipping keys that
+        // are no longer present is belt-and-braces: `order` holds each live key
+        // exactly once, so nothing should be stale here.
+        while let Some(oldest) = self.order.pop_front() {
+            if self.entries.remove(&oldest).is_some() {
+                return;
+            }
+        }
+    }
+
+    /// Insert `k -> v` at `now`, evicting one entry when the cache is at
+    /// capacity so distinct keys can't grow it without bound (TTL expiry
+    /// bounds actual staleness; eviction order is arbitrary).
+    ///
+    /// `order` is maintained with one entry per live key: a re-insert updates
+    /// the value in place and keeps the key's original position rather than
+    /// pushing it again, so the deque cannot accumulate duplicates and stays
+    /// bounded by `cap` regardless of how many updates arrive.
+    pub(crate) fn insert(&mut self, k: K, v: V, now: i64) {
+        if !self.entries.contains_key(&k) && self.entries.len() >= self.cap {
+            self.evict_one(now);
+        }
+        // `order` and `entries` are disjoint fields, so the push inside the
+        // `Vacant` arm does not conflict with the `entries` borrow.
+        match self.entries.entry(k) {
+            Entry::Occupied(mut slot) => {
+                slot.insert((now, v));
+            }
+            Entry::Vacant(slot) => {
+                self.order.push_back(slot.key().clone());
+                slot.insert((now, v));
+            }
+        }
     }
 
     pub(crate) fn clear(&mut self) {
         self.entries.clear();
+        self.order.clear();
     }
 }
 
@@ -508,6 +569,166 @@ mod tests {
         // A clear wipes everything (used on moderation filter change).
         c.clear();
         assert!(c.entries.is_empty());
+    }
+
+    /// The moderation cache's actual configuration: `i64::MAX` TTL (nothing
+    /// ever expires) and a 2048 cap. This is the case the FIFO eviction exists
+    /// for, and the property worth pinning is the **bound** — the deque must
+    /// track the map exactly, or the O(1) victim lookup is paid for with a
+    /// memory leak instead.
+    #[test]
+    fn test_ttl_cache_infinite_ttl_evicts_and_stays_bounded() {
+        use super::super::util::TtlCache;
+        const CAP: usize = 64;
+        let mut c = TtlCache::new(i64::MAX, CAP);
+        for i in 0..(CAP * 40) {
+            c.insert(format!("k{i}"), i, 1_000);
+        }
+        assert_eq!(c.entries.len(), CAP, "the cap still bounds the map");
+        assert_eq!(c.order.len(), CAP, "and the deque tracks it exactly");
+        // Nothing ever expires at an `i64::MAX` TTL, so every survivor is live.
+        assert!(c.entries.values().all(|(ts, _)| *ts == 1_000));
+    }
+
+    /// The bound above is the thing a naive FIFO port breaks: re-inserting a
+    /// key pushes its old deque entry forward, so a long run of updates to a
+    /// small set of keys grows the deque without ever reaching the cap.
+    #[test]
+    fn test_ttl_cache_repeated_updates_do_not_grow_the_order() {
+        use super::super::util::TtlCache;
+        const CAP: usize = 16;
+        let mut c = TtlCache::new(i64::MAX, CAP);
+        for i in 0..CAP {
+            c.insert(format!("k{i}"), i as i64, 0);
+        }
+        // 10 000 updates across the same 16 keys.
+        for round in 1..=10_000i64 {
+            for i in 0..CAP {
+                c.insert(format!("k{i}"), round * CAP as i64 + i as i64, round);
+            }
+        }
+        assert_eq!(c.entries.len(), CAP);
+        assert_eq!(
+            c.order.len(),
+            CAP,
+            "an update must refresh in place, not re-push the key"
+        );
+        assert_eq!(
+            c.order.len(),
+            c.order
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+        );
+        // The most recent value for each key survived the churn.
+        assert_eq!(c.get("k0", 10_000), Some(&(10_000 * CAP as i64)));
+    }
+
+    /// FIFO eviction drops the *oldest-inserted* key. Where that is also the
+    /// oldest timestamp it matches the old `min_by_key` victim exactly, which
+    /// is the common case and the one whose determinism is worth pinning --
+    /// the old code's `min_by_key` broke ties by `HashMap` iteration order.
+    #[test]
+    fn test_ttl_cache_finite_ttl_still_prefers_an_expired_entry() {
+        use super::super::util::TtlCache;
+        let mut c = TtlCache::new(10, 2);
+        c.insert("old-expired".to_string(), 1, 0);
+        c.insert("newer-live".to_string(), 2, 95);
+        // `old-expired` is past its TTL and must go, even though it is also the
+        // oldest by timestamp. This is the branch the moderation cache can
+        // never take, so a refactor that dropped it would stay green there.
+        c.insert("third".to_string(), 3, 100);
+        assert!(c.entries.contains_key("newer-live"));
+        assert!(c.entries.contains_key("third"));
+        assert!(
+            !c.entries.contains_key("old-expired"),
+            "an expired entry must be preferred over a live one"
+        );
+        assert_eq!(c.order.len(), c.entries.len());
+    }
+
+    #[test]
+    fn test_ttl_cache_finite_ttl_without_an_expired_entry_still_evicts() {
+        use super::super::util::TtlCache;
+        let mut c = TtlCache::new(1000, 2);
+        c.insert("a".to_string(), 1, 0);
+        c.insert("b".to_string(), 2, 10);
+        // Nothing has expired, so the oldest timestamp is the victim.
+        c.insert("c".to_string(), 3, 20);
+        assert_eq!(c.entries.len(), 2);
+        assert!(!c.entries.contains_key("a"));
+        assert!(c.entries.contains_key("b"));
+        assert!(c.entries.contains_key("c"));
+        assert_eq!(c.order.len(), c.entries.len());
+    }
+
+    /// The infinite-TTL path takes the *oldest-inserted* key. This is the case
+    /// that decides which of the many possible victims is actually dropped, and
+    /// the old code resolved it by `min_by_key` over a `HashMap`, so ties broke
+    /// by iteration order. Pinning it makes the eviction deterministic.
+    #[test]
+    fn test_ttl_cache_infinite_ttl_evicts_the_oldest_inserted() {
+        use super::super::util::TtlCache;
+        let mut c = TtlCache::new(i64::MAX, 3);
+        for (i, k) in ["k0", "k1", "k2"].iter().enumerate() {
+            c.insert(k.to_string(), i as i64, 0);
+        }
+        c.insert("k3".to_string(), 3, 0);
+        assert!(
+            !c.entries.contains_key("k0"),
+            "the first insert is the victim"
+        );
+        for k in ["k1", "k2", "k3"] {
+            assert!(c.entries.contains_key(k), "{k} must survive");
+        }
+        assert_eq!(c.order.len(), c.entries.len());
+    }
+
+    /// The reason the finite-TTL path keeps its expired-entry search even
+    /// though the FIFO path is O(1): a refreshed key sits at the *front* of
+    /// `order` with a live timestamp while a later key has expired. Plain FIFO
+    /// would drop the live one and leave the dead weight, which costs a
+    /// recompute the next time that content is classified.
+    #[test]
+    fn test_ttl_cache_prefers_expired_over_a_refreshed_front() {
+        use super::super::util::TtlCache;
+        let mut c = TtlCache::new(10, 2);
+        c.insert("front".to_string(), 1, 0);
+        c.insert("behind".to_string(), 2, 0);
+        // Refresh `front` in place: its timestamp moves to 200 but its position
+        // in `order` does not, so it is now the oldest-inserted *live* entry
+        // while `behind` has expired.
+        c.insert("front".to_string(), 3, 200);
+        assert!(c.get("behind", 200).is_none(), "behind has expired");
+
+        c.insert("newcomer".to_string(), 4, 200);
+
+        assert!(
+            !c.entries.contains_key("behind"),
+            "the expired entry is the victim, not the refreshed front"
+        );
+        assert!(c.entries.contains_key("front"));
+        assert!(c.entries.contains_key("newcomer"));
+        assert_eq!(c.order.len(), c.entries.len());
+    }
+
+    #[test]
+    fn test_ttl_cache_clear_empties_the_order_too() {
+        use super::super::util::TtlCache;
+        let mut c = TtlCache::new(i64::MAX, 4);
+        for i in 0..3 {
+            c.insert(format!("k{i}"), i, 0);
+        }
+        assert_eq!(c.order.len(), 3);
+        c.clear();
+        assert!(c.entries.is_empty());
+        assert!(
+            c.order.is_empty(),
+            "a cleared cache that kept its order would evict phantom keys"
+        );
+        // And it still works afterwards.
+        c.insert("after".to_string(), 9, 0);
+        assert_eq!(c.get("after", 0), Some(&9));
     }
 
     #[test]
