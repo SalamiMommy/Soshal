@@ -274,6 +274,7 @@ async fn test_database_user_repo_emits_change() {
         contact_pubkeys: "".to_string(),
         relay_list: "".to_string(),
         follower_count: 0,
+        contact_count: 0,
     };
 
     repo.upsert(&row).expect("upsert user");

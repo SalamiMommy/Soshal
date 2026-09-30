@@ -145,6 +145,7 @@ mod tests {
             contact_pubkeys: "[]".into(),
             relay_list: "[]".into(),
             follower_count: 0,
+            contact_count: 0,
         };
         UserRepo::new(db).upsert(&user).unwrap();
     }

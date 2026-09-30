@@ -63,6 +63,7 @@ fn insert_test_user(db: &Database, pubkey: &str) {
         contact_pubkeys: "[]".into(),
         relay_list: "[]".into(),
         follower_count: 0,
+        contact_count: 0,
     };
     repo.upsert(&user).unwrap();
 }
@@ -294,6 +295,7 @@ fn insert_and_read_user() {
         contact_pubkeys: "[]".into(),
         relay_list: "[]".into(),
         follower_count: 0,
+        contact_count: 0,
     };
     repo.upsert(&user).unwrap();
     let found = repo.get_by_pubkey("pk1").unwrap().unwrap();
@@ -329,6 +331,7 @@ fn test_user_ensure_exists_and_search() {
         contact_pubkeys: "[]".into(),
         relay_list: "[]".into(),
         follower_count: 0,
+        contact_count: 0,
     };
     repo.upsert(&updated_user).unwrap();
 

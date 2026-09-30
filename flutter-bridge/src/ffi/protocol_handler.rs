@@ -492,6 +492,7 @@ mod tests {
             contact_pubkeys: "[]".to_string(),
             relay_list: "[]".to_string(),
             follower_count: 0,
+            contact_count: 0,
         };
         super::super::db::with_db_result(|db| {
             soshal_db_core::repos::user::UserRepo::new(db).upsert(&row)?;

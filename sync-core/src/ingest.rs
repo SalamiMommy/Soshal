@@ -391,6 +391,7 @@ fn user_row(event: &Event) -> Option<UserRow> {
         contact_pubkeys: String::new(),
         relay_list: String::new(),
         follower_count: 0,
+        contact_count: 0,
     })
 }
 
@@ -646,6 +647,7 @@ async fn handle_impl(
                 contact_pubkeys: String::new(),
                 relay_list: String::new(),
                 follower_count: 0,
+                contact_count: 0,
             });
             row.contact_pubkeys = serde_json::to_string(&p_tags(event)).unwrap_or_default();
             row.relay_list = serde_json::to_string(&r_tags(event)).unwrap_or_default();

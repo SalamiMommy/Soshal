@@ -93,6 +93,7 @@ mod tests {
             contact_pubkeys: String::new(),
             relay_list: String::new(),
             follower_count: 0,
+            contact_count: 0,
         }
     }
 

@@ -34,6 +34,7 @@ fn insert_user(db: &Database, pubkey: &str) {
             contact_pubkeys: "[]".into(),
             relay_list: "[]".into(),
             follower_count: 0,
+            contact_count: 0,
         })
         .unwrap();
 }
@@ -213,6 +214,7 @@ fn user_upsert_batch_updates() {
         contact_pubkeys: "[]".into(),
         relay_list: "[]".into(),
         follower_count: 0,
+        contact_count: 0,
     };
     repo.upsert_batch(&[mk("pk1", "a"), mk("pk2", "b")])
         .unwrap();

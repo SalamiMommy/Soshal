@@ -10,10 +10,93 @@ ON CONFLICT(pubkey) DO UPDATE SET \
   updated_at=excluded.updated_at, metadata_json=excluded.metadata_json, contact_pubkeys=excluded.contact_pubkeys, \
   relay_list=excluded.relay_list";
 
+/// Every column [`UserRepo::map_row`] decodes, in order, with the table alias
+/// prefix supplied by the caller (`""` or `"u."`).
+///
+/// This is a macro rather than a `const` string so all three read projections
+/// derive from one list: a projection that omits a column is a silent field
+/// shift, not a compile error, and the trailing derived `contact_count` in
+/// particular has to be present or `map_row` cannot read it at all.
+///
+/// `contact_count` is the length of the `contact_pubkeys` JSON array, computed
+/// by SQLite instead of by materializing a `String` per contact. The
+/// `json_valid` guard is what preserves the old behavior: the Rust side used
+/// `serde_json::from_str::<Vec<String>>(..).unwrap_or(0)`, and a malformed
+/// column must still yield 0 rather than raising a malformed-JSON error that
+/// would fail a whole batch. The JSON functions take a *value*, not a column
+/// reference, so the alias is deliberately absent inside the expression.
+///
+/// What this guards, and what it does not: a projection that *omits* a column
+/// or *reorders* one is caught (the FTS test's field assertions fail), because
+/// every field after the gap shifts. An *alias collision* is not — libsql
+/// permits two columns of the same name and [`UserRepo::map_row`] reads
+/// positionally, so aliasing `contact_count` off `follower_count` still decodes
+/// correctly today. It would not survive a by-name reader, so uniqueness here is
+/// a convention the tests cannot enforce.
+macro_rules! user_columns {
+    ($p:literal) => {
+        concat!(
+            $p,
+            "pubkey, ",
+            $p,
+            "npub, ",
+            $p,
+            "name, ",
+            $p,
+            "display_name, ",
+            $p,
+            "about, ",
+            $p,
+            "picture, ",
+            $p,
+            "banner, ",
+            $p,
+            "nip05, ",
+            $p,
+            "lud16, ",
+            $p,
+            "created_at, ",
+            $p,
+            "updated_at, ",
+            $p,
+            "metadata_json, ",
+            $p,
+            "contact_pubkeys, ",
+            $p,
+            "relay_list, ",
+            $p,
+            "follower_count, ",
+            "CASE WHEN json_valid(contact_pubkeys) ",
+            "THEN json_array_length(contact_pubkeys) ELSE 0 END AS contact_count"
+        )
+    };
+}
+
 /// The projection [`UserRepo::map_row`] decodes. Shared by the connection-level
 /// and transaction-level reads so the two cannot drift on column order — a
 /// mismatch here is a silent field shift, not a compile error.
-const USER_SELECT_SQL: &str = "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE pubkey = ?1";
+const USER_SELECT_SQL: &str = concat!(
+    "SELECT ",
+    user_columns!(""),
+    " FROM users WHERE pubkey = ?1"
+);
+
+/// Batch read behind the profile/contact FFI surfaces. The `IN (SELECT LOWER(…))`
+/// subquery is what makes the returned keys already lowercase.
+const USER_ROWS_FOR_PUBKEYS_SQL: &str = concat!(
+    "SELECT ",
+    user_columns!(""),
+    " FROM users WHERE pubkey IN (SELECT LOWER(value) FROM json_each(?1))"
+);
+
+/// FTS5 name/about search. The join alias prefix is why the projection is a
+/// macro parameter rather than a second hand-maintained list.
+const USER_SEARCH_SQL: &str = concat!(
+    "SELECT ",
+    user_columns!("u."),
+    " FROM users_fts f JOIN users u ON u.rowid = f.rowid ",
+    "WHERE users_fts MATCH ?1 ORDER BY rank LIMIT ?2"
+);
 
 pub struct UserRepo<'a> {
     db: &'a Database,
@@ -119,7 +202,7 @@ impl<'a> UserRepo<'a> {
         let json = serde_json::to_string(&norm_pubkeys).unwrap_or_else(|_| "[]".to_string());
         crate::query::query_fold(
             &conn,
-            "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE pubkey IN (SELECT LOWER(value) FROM json_each(?1))",
+            USER_ROWS_FOR_PUBKEYS_SQL,
             params![json.as_str()],
             std::collections::HashMap::with_capacity(pubkeys.len()),
             |mut map, row| {
@@ -383,16 +466,7 @@ impl<'a> UserRepo<'a> {
         }
         let limit = crate::repos::clamp_limit(limit);
         let conn = self.db.conn()?;
-        crate::query::query(
-            &conn,
-            "SELECT u.pubkey, u.npub, u.name, u.display_name, u.about, u.picture, u.banner, \
-             u.nip05, u.lud16, u.created_at, u.updated_at, u.metadata_json, u.contact_pubkeys, \
-             u.relay_list, u.follower_count \
-             FROM users_fts f JOIN users u ON u.rowid = f.rowid \
-             WHERE users_fts MATCH ?1 ORDER BY rank LIMIT ?2",
-            params![fts, limit],
-            Self::map_row,
-        )
+        crate::query::query(&conn, USER_SEARCH_SQL, params![fts, limit], Self::map_row)
     }
 
     /// FTS5 MATCH expression with per-term prefix matching. Only
@@ -449,6 +523,7 @@ impl<'a> UserRepo<'a> {
             contact_pubkeys: row.get(12)?,
             relay_list: row.get(13)?,
             follower_count: row.get(14)?,
+            contact_count: row.get(15)?,
         })
     }
 }
@@ -470,4 +545,11 @@ pub struct UserRow {
     pub contact_pubkeys: String,
     pub relay_list: String,
     pub follower_count: i64,
+    /// Length of the [`Self::contact_pubkeys`] JSON array.
+    ///
+    /// **Not a column.** The database derives it in the SELECT projection via
+    /// `json_array_length` — see [`user_columns!`] — so a caller reporting a
+    /// follow count never materializes a `String` per contact. Write paths
+    /// leave this 0: it is not in the INSERT list and cannot be persisted.
+    pub contact_count: i32,
 }

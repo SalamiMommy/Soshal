@@ -63,9 +63,12 @@ fn row_to_profile(row: &UserRow) -> ProfileInfo {
     // NOTE: contact_pubkeys holds the row owner's own contacts, so the
     // "does *me* follow this profile" flag can't be derived from this row —
     // it is computed in `identity_get_profile` from the viewer's contacts.
-    p.following = serde_json::from_str::<Vec<String>>(&row.contact_pubkeys)
-        .map(|f| f.len() as i32)
-        .unwrap_or(0);
+    //
+    // The count comes from the SELECT projection's `json_array_length` rather
+    // than `serde_json::from_str::<Vec<String>>(..)`: this fn runs once per
+    // requested pubkey, so a 200-entry profile grid used to allocate every
+    // contact's `String` — 200 x N allocations — to produce 200 integers.
+    p.following = row.contact_count;
     p
 }
 
@@ -202,6 +205,7 @@ pub fn identity_store_profile(profile: String) -> Result<bool, String> {
                 .map(|e| e.relay_list.clone())
                 .unwrap_or_else(|| String::from("[]")),
             follower_count: existing.as_ref().map(|e| e.follower_count).unwrap_or(0),
+            contact_count: 0,
         };
         repo.upsert(&row)?;
         Ok(true)
@@ -573,6 +577,7 @@ fn empty_user_row(pubkey: &str) -> UserRow {
         contact_pubkeys: String::new(),
         relay_list: String::from("[]"),
         follower_count: 0,
+        contact_count: 0,
     }
 }
 
@@ -989,6 +994,12 @@ mod tests {
 
     #[test]
     fn test_row_to_profile_follow_state() {
+        // The count no longer comes from `contact_pubkeys` — the SELECT
+        // projection derives it with `json_array_length` (see `user_columns!`
+        // in db-core). So this test pins the *wiring*, not the derivation: the
+        // reported count follows `contact_count` and is independent of the
+        // blob. Re-deriving it here from the blob would be the regression this
+        // item removed, so the two are deliberately set to different values.
         let pk = "a".repeat(64);
         let row = UserRow {
             pubkey: pk,
@@ -1006,15 +1017,62 @@ mod tests {
             contact_pubkeys: serde_json::json!(["b".repeat(64), "c".repeat(64)]).to_string(),
             relay_list: "[]".into(),
             follower_count: 0,
+            contact_count: 2,
         };
         let p = row_to_profile(&row);
         assert_eq!(p.following, 2);
         assert!(!p.is_following);
-        let bad = UserRow {
+
+        // Same blob, different derived count: the profile must follow the
+        // count, so a reintroduced parse would show up as 2 here.
+        let skewed = UserRow {
+            contact_count: 9,
+            ..row.clone()
+        };
+        assert_eq!(row_to_profile(&skewed).following, 9);
+
+        // A malformed blob is the projection's problem (`json_valid` → 0), not
+        // this fn's. A row that reached here with a count keeps it.
+        let counted_bad_blob = UserRow {
             contact_pubkeys: "not-json".into(),
+            contact_count: 0,
             ..row
         };
-        assert_eq!(row_to_profile(&bad).following, 0);
+        assert_eq!(row_to_profile(&counted_bad_blob).following, 0);
+    }
+
+    #[test]
+    fn test_profiles_batch_reports_the_derived_contact_count() {
+        // End-to-end over the real database: the count survives the FFI JSON
+        // round trip, not just the struct field. A 5 000-contact list is the
+        // shape that made the old parse expensive.
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        let _p = crate::ffi::db::tmp_db("identity-follow-count", "identity");
+        let me = "1".repeat(64);
+        let other = "2".repeat(64);
+        let contacts_json = serde_json::json!((0..5000)
+            .map(|i| format!("{i:064x}"))
+            .collect::<Vec<String>>())
+        .to_string();
+        // The INSERT must succeed: if it silently no-ops, the row is missing
+        // and the 5 000 count assertion below would pass for the wrong reason
+        // (an unknown pubkey reports 0).
+        crate::ffi::db::db_execute_raw_test(format!(
+            "INSERT INTO users (pubkey, npub, contact_pubkeys) VALUES \
+             ('{other}', 'npub1other', '{}')",
+            contacts_json.replace('\'', "''")
+        ))
+        .unwrap();
+
+        let profiles = identity_get_profiles_batch(vec![me.clone(), other.clone()]).unwrap();
+        let arr: serde_json::Value = serde_json::from_str(&profiles).unwrap();
+        let rows = arr.as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        // Request order preserved: unknown pubkey first, stored row second.
+        assert_eq!(rows[0]["pubkey"], serde_json::json!(me));
+        assert_eq!(rows[0]["following"], serde_json::json!(0));
+        assert_eq!(rows[1]["pubkey"], serde_json::json!(other));
+        assert_eq!(rows[1]["following"], serde_json::json!(5000));
     }
 
     #[test]

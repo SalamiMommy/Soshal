@@ -35,6 +35,7 @@ fn insert_test_user(db: &Database, pubkey: &str) {
         contact_pubkeys: "[]".into(),
         relay_list: "[]".into(),
         follower_count: 0,
+        contact_count: 0,
     };
     repo.upsert(&user).unwrap();
 }
@@ -727,6 +728,7 @@ fn user_upsert_in_and_get_by_pubkey_in() {
         contact_pubkeys: r#"["a","b","c"]"#.into(),
         relay_list: "[]".into(),
         follower_count: 0,
+        contact_count: 0,
     };
     let conn = db.conn().unwrap();
 
@@ -818,6 +820,7 @@ fn user_bump_follower_count_and_upsert_batch() {
         contact_pubkeys: "[]".into(),
         relay_list: "[]".into(),
         follower_count: 0,
+        contact_count: 0,
     };
     repo.upsert(&alice).unwrap();
     repo.bump_follower_count("alice", 3).unwrap();
