@@ -52,7 +52,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 nostr = { version = "0.45.1", features = ["os-rng", "nip04", "nip47", "nip44"] }
 nostr-sdk = { version = "0.45.1" }
 hex = "0.4"
-base64 = "0.22"
+base64 = "0.23"
 sha2 = "0.10"
 hmac = "0.12"
 regex = "1"
