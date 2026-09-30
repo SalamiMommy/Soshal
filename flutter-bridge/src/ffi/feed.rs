@@ -313,6 +313,14 @@ static MODERATION_FILTERS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// work on a mostly-clean page at 63 extra classifications.
 const MODERATION_WINDOW: usize = 64;
 
+/// Miss count at which [`classify_contents`] hands its work to rayon.
+///
+/// A miss is a full `check_with_custom_words` pass — regex tables plus the text
+/// NN — so once a batch is wide enough the pool pays for itself. Below it the
+/// serial map is strictly cheaper. Matches the `PARALLEL_FRAME_THRESHOLD`
+/// discipline in `moderation-core::video_nn`.
+const PARALLEL_MISS_THRESHOLD: usize = 4;
+
 fn moderation_cache() -> &'static Mutex<super::util::TtlCache<String, bool>> {
     MODERATION_CACHE
         .get_or_init(|| Mutex::new(super::util::TtlCache::new(i64::MAX, MODERATION_CACHE_CAP)))
@@ -330,6 +338,27 @@ fn sync_moderation_filters(filters: &[String]) {
     if crate::ffi::util::lock(&MODERATION_FILTERS).as_slice() != filters {
         *crate::ffi::util::lock(&MODERATION_FILTERS) = filters.to_vec();
         crate::ffi::util::lock(moderation_cache()).clear();
+    }
+}
+
+/// Run the classifier over the cache-miss indices of a batch.
+///
+/// Rayon costs more than it saves on a handful of misses: entering the pool
+/// means two cross-thread handoffs plus a collect into a fresh `Vec`. The
+/// single-body publish path ([`is_content_clean`]) always lands here with one
+/// miss, so it was paying all of that for one string scan.
+///
+/// Both arms run the same closure over the same indices and collect in the
+/// same order, so the result is identical either way — only the dispatch
+/// differs. Split out so the gate itself is directly testable.
+fn classify_misses(contents: &[&str], filters: &[String], misses: &[usize]) -> Vec<bool> {
+    let classify = |&i: &usize| {
+        soshal_moderation_core::check::check_with_custom_words(contents[i], filters).passed
+    };
+    if misses.len() >= PARALLEL_MISS_THRESHOLD {
+        misses.par_iter().map(classify).collect()
+    } else {
+        misses.iter().map(classify).collect()
     }
 }
 
@@ -356,12 +385,7 @@ fn classify_contents(contents: &[&str], filters: &[String]) -> Vec<bool> {
         .filter_map(|(i, v)| v.is_none().then_some(i))
         .collect();
     if !misses.is_empty() {
-        let computed: Vec<bool> = misses
-            .par_iter()
-            .map(|&i| {
-                soshal_moderation_core::check::check_with_custom_words(contents[i], filters).passed
-            })
-            .collect();
+        let computed = classify_misses(contents, filters, &misses);
         let mut cache = crate::ffi::util::lock(moderation_cache());
         for (&i, &passed) in misses.iter().zip(computed.iter()) {
             cache.insert(contents[i].to_string(), passed, now);
@@ -1680,6 +1704,86 @@ mod tests {
         let res = feed_delete_post(ev_id).await;
         assert!(res.is_ok(), "error: {:?}", res);
         crate::signer_lock().unwrap();
+    }
+
+    /// The serial and parallel arms of [`classify_misses`] must be
+    /// indistinguishable: the rayon gate changes *dispatch*, not results.
+    /// Exercised on both sides of `PARALLEL_MISS_THRESHOLD`, and with a
+    /// non-contiguous miss set — the real risk in this pattern is the index
+    /// mapping, not the order per se, since `misses` is a sparse subset of
+    /// `contents`.
+    #[test]
+    fn classify_misses_agrees_with_a_plain_serial_map() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+
+        // Ten bodies, alternating clean / custom-word-filtered, plus a
+        // windowed warm cache so some indices are genuine hits.
+        let bodies: Vec<String> = (0..10)
+            .map(|i| {
+                if i % 2 == 0 {
+                    uniq(&format!("gate-ok-{i}"), 0)
+                } else {
+                    format!("{} zzzzgateblockedzzz", uniq(&format!("gate-bad-{i}"), 0))
+                }
+            })
+            .collect();
+        let contents: Vec<&str> = bodies.iter().map(|s| s.as_str()).collect();
+        let gate_filters = vec!["zzzzgateblockedzzz".to_string()];
+
+        // A serial oracle, written independently of the production dispatch.
+        let oracle = |misses: &[usize]| -> Vec<bool> {
+            misses
+                .iter()
+                .map(|&i| {
+                    soshal_moderation_core::check::check_with_custom_words(
+                        contents[i],
+                        &gate_filters,
+                    )
+                    .passed
+                })
+                .collect()
+        };
+
+        for n in 0..=contents.len() {
+            // Dense prefixes, then every even/odd split, then a sparse set.
+            let mut cases: Vec<Vec<usize>> = (0..=n).map(|k| (0..k).collect()).collect();
+            cases.push((0..contents.len()).step_by(2).collect());
+            cases.push((0..contents.len()).filter(|i| i % 3 == 0).collect());
+            for misses in cases {
+                assert_eq!(
+                    classify_misses(&contents, &gate_filters, &misses),
+                    oracle(&misses),
+                    "arms diverged for {n} misses {misses:?}"
+                );
+            }
+        }
+        const { assert!(PARALLEL_MISS_THRESHOLD >= 2) };
+    }
+
+    /// A single body is the publish path ([`is_content_clean`]) and always
+    /// lands on the serial arm. Pins that it agrees with the batch path, and
+    /// therefore that the cache write-back on the serial arm is wired up.
+    #[test]
+    fn is_content_clean_matches_the_batch_path() {
+        let _g = crate::ffi::util::lock(&crate::ffi::test_lock::DB_TEST_LOCK);
+        crate::ffi::util::lock(moderation_cache()).clear();
+        let filters: Vec<String> = vec![];
+        let bodies = [
+            uniq("pub-ok", 0),
+            format!("{} zzzzpubblockedzzzz", uniq("pub-bad", 0)),
+            uniq("pub-ok-2", 0),
+        ];
+        for body in &bodies {
+            let one = is_content_clean(body, &filters);
+            let batch = classify_contents(&[body.as_str()], &filters);
+            assert_eq!(one, batch[0], "publish path diverged for {body:?}");
+        }
+        // And a filtered publish really is rejected through the serial arm.
+        let word = "zzzzpubblockedzzzz";
+        assert!(
+            !is_content_clean(&format!("{word} {bodies:?}"), &[word.to_string()]),
+            "custom word must flag through the serial arm"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

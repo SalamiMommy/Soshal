@@ -850,7 +850,9 @@ pub(crate) fn classify_text_with_verdicts(
     // Trained-NN blend: scores are max(rule-derived, neural). The NN lifts
     // classes the heuristic tables miss (novel obfuscations, phrasings) while
     // rule hits keep their exact behavior. NN-only uplifts record a reason.
-    let nn = crate::nn::nn_scores(trimmed);
+    // `variants` is this caller's own normalized set for `trimmed`, so the
+    // NN reuses it instead of deriving a second identical one.
+    let nn = crate::nn::nn_scores_with_variants(trimmed, variants);
     const NN_CUTOFFS: [f32; 5] = [0.55, 0.45, 0.50, 0.50, 0.55]; // spam,csam,gore,bigotry,harassment
     let nn_arr = nn.as_array();
     let mut blended = [p_spam, p_csam, p_gore, p_bigotry, p_harassment];
