@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:soshal_flutter/frb_generated.dart';
 import 'error_log.dart';
+import '../utils/offthread.dart';
 import '../utils/service_guard.dart';
 
 /// How often the scheduled-publish timer scans for due drafts (secs).
@@ -47,16 +48,10 @@ class ScheduledService extends ChangeNotifier
       }, notifyOnSuccess: false);
 
   /// List scheduled drafts for a pubkey, soonest first.
-  Future<List<ScheduledPost>> list(String pubkey) => guard(() {
-        final json = RustLib.instance.api.crateFfiScheduledScheduledList(
-          pubkey: pubkey,
-        );
-        final decoded = jsonDecode(json);
-        final items = decoded as List<dynamic>;
-        _drafts = List<ScheduledPost>.generate(
-          items.length,
-          (i) => ScheduledPost.fromJson(items[i] as Map<String, dynamic>),
-          growable: true,
+  Future<List<ScheduledPost>> list(String pubkey) => guard(() async {
+        _drafts = await runOffThreadCompute(
+          _parseScheduled,
+          RustLib.instance.api.crateFfiScheduledScheduledList(pubkey: pubkey),
         );
         return _drafts;
       });
@@ -195,4 +190,18 @@ class ScheduledPost {
     }
     return [];
   }
+}
+
+/// JSON → [ScheduledPost] list, top-level so [runOffThreadCompute] can run it
+/// on a background isolate.
+List<ScheduledPost> _parseScheduled(String json) {
+  final items = jsonDecode(json) as List<dynamic>;
+  return List<ScheduledPost>.generate(
+    items.length,
+    (i) => ScheduledPost.fromJson(items[i] as Map<String, dynamic>),
+    // Redundant with `List.generate`'s default, and kept anyway: `delete` and
+    // `publishDue` both mutate this list in place, and dropping the argument
+    // cannot be caught by a test because it changes nothing.
+    growable: true,
+  );
 }

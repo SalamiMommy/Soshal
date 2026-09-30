@@ -30,8 +30,7 @@ void main() {
       final notif = NotificationService();
       var notified = 0;
       notif.addListener(() => notified++);
-      final items =
-          List.generate(120, (i) => notifJson('n-$i', 'reaction'));
+      final items = List.generate(120, (i) => notifJson('n-$i', 'reaction'));
       api.stubString(
         'crateFfiNotificationsNotificationsFetch',
         '[${items.join(',')}]',
@@ -48,9 +47,7 @@ void main() {
       expect(notif.notifications.first.actionUrl, 'soshal://n/n-0');
       expect(notified, 2);
 
-      final inv = api
-          .callsOf('crateFfiNotificationsNotificationsFetch')
-          .single;
+      final inv = api.callsOf('crateFfiNotificationsNotificationsFetch').single;
       expect(api.namedArg(inv, 'userPubkey'), 'me');
       expect(api.namedArg(inv, 'limit'), 80);
       expect(api.namedArg(inv, 'offset'), 0);
@@ -74,13 +71,10 @@ void main() {
       final typed = await notif.fetchByType('me', 'follow', 10);
       expect(typed.single.notificationType, 'follow');
 
-      var inv = api
-          .callsOf('crateFfiNotificationsNotificationsFetchUnread')
-          .single;
+      var inv =
+          api.callsOf('crateFfiNotificationsNotificationsFetchUnread').single;
       expect(api.namedArg(inv, 'limit'), 50);
-      inv = api
-          .callsOf('crateFfiNotificationsNotificationsFetchByType')
-          .single;
+      inv = api.callsOf('crateFfiNotificationsNotificationsFetchByType').single;
       expect(api.namedArg(inv, 'notificationType'), 'follow');
       expect(api.namedArg(inv, 'limit'), 10);
     });
@@ -118,9 +112,8 @@ void main() {
 
       expect(await notif.markAllRead('me'), isTrue);
       expect(notif.unreadCount, 0);
-      final inv = api
-          .callsOf('crateFfiNotificationsNotificationsMarkAllRead')
-          .single;
+      final inv =
+          api.callsOf('crateFfiNotificationsNotificationsMarkAllRead').single;
       expect(api.namedArg(inv, 'userPubkey'), 'me');
     });
 
@@ -135,9 +128,8 @@ void main() {
 
       expect(await notif.deleteNotification('n-1'), isTrue);
       expect(notif.notifications.single.id, 'n-2');
-      final inv = api
-          .callsOf('crateFfiNotificationsNotificationsDelete')
-          .single;
+      final inv =
+          api.callsOf('crateFfiNotificationsNotificationsDelete').single;
       expect(api.namedArg(inv, 'notificationId'), 'n-1');
     });
 
@@ -185,7 +177,8 @@ void main() {
       expect(emissions[0].single.notificationType, 'mention');
     });
 
-    test('subscribeToNotifications updates notifications and unreadCount live', () async {
+    test('subscribeToNotifications updates notifications and unreadCount live',
+        () async {
       final notif = NotificationService();
       final controller = StreamController<String>();
       addTearDown(controller.close);
@@ -251,66 +244,115 @@ void main() {
 
       final variants = <String, AppNotification>{
         'id': AppNotification(
-            id: 'other', notificationType: base.notificationType,
-            fromPubkey: base.fromPubkey, fromName: base.fromName,
+            id: 'other',
+            notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey,
+            fromName: base.fromName,
             fromAvatar: base.fromAvatar,
-            contentPreview: base.contentPreview, eventId: base.eventId,
-            createdAt: base.createdAt, read: base.read, actionUrl: base.actionUrl),
+            contentPreview: base.contentPreview,
+            eventId: base.eventId,
+            createdAt: base.createdAt,
+            read: base.read,
+            actionUrl: base.actionUrl),
         'notificationType': AppNotification(
-            id: base.id, notificationType: 'other',
-            fromPubkey: base.fromPubkey, fromName: base.fromName,
+            id: base.id,
+            notificationType: 'other',
+            fromPubkey: base.fromPubkey,
+            fromName: base.fromName,
             fromAvatar: base.fromAvatar,
-            contentPreview: base.contentPreview, eventId: base.eventId,
-            createdAt: base.createdAt, read: base.read, actionUrl: base.actionUrl),
+            contentPreview: base.contentPreview,
+            eventId: base.eventId,
+            createdAt: base.createdAt,
+            read: base.read,
+            actionUrl: base.actionUrl),
         'fromPubkey': AppNotification(
-            id: base.id, notificationType: base.notificationType,
-            fromPubkey: 'other', fromName: base.fromName,
+            id: base.id,
+            notificationType: base.notificationType,
+            fromPubkey: 'other',
+            fromName: base.fromName,
             fromAvatar: base.fromAvatar,
-            contentPreview: base.contentPreview, eventId: base.eventId,
-            createdAt: base.createdAt, read: base.read, actionUrl: base.actionUrl),
+            contentPreview: base.contentPreview,
+            eventId: base.eventId,
+            createdAt: base.createdAt,
+            read: base.read,
+            actionUrl: base.actionUrl),
         'fromName': AppNotification(
-            id: base.id, notificationType: base.notificationType,
-            fromPubkey: base.fromPubkey, fromName: 'other',
+            id: base.id,
+            notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey,
+            fromName: 'other',
             fromAvatar: base.fromAvatar,
-            contentPreview: base.contentPreview, eventId: base.eventId,
-            createdAt: base.createdAt, read: base.read, actionUrl: base.actionUrl),
+            contentPreview: base.contentPreview,
+            eventId: base.eventId,
+            createdAt: base.createdAt,
+            read: base.read,
+            actionUrl: base.actionUrl),
         'fromAvatar': AppNotification(
-            id: base.id, notificationType: base.notificationType,
-            fromPubkey: base.fromPubkey, fromName: base.fromName,
-            fromAvatar: 'other', contentPreview: base.contentPreview,
-            eventId: base.eventId, createdAt: base.createdAt, read: base.read,
+            id: base.id,
+            notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey,
+            fromName: base.fromName,
+            fromAvatar: 'other',
+            contentPreview: base.contentPreview,
+            eventId: base.eventId,
+            createdAt: base.createdAt,
+            read: base.read,
             actionUrl: base.actionUrl),
         'contentPreview': AppNotification(
-            id: base.id, notificationType: base.notificationType,
-            fromPubkey: base.fromPubkey, fromName: base.fromName,
-            fromAvatar: base.fromAvatar, contentPreview: 'other',
-            eventId: base.eventId, createdAt: base.createdAt, read: base.read,
+            id: base.id,
+            notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey,
+            fromName: base.fromName,
+            fromAvatar: base.fromAvatar,
+            contentPreview: 'other',
+            eventId: base.eventId,
+            createdAt: base.createdAt,
+            read: base.read,
             actionUrl: base.actionUrl),
         'eventId': AppNotification(
-            id: base.id, notificationType: base.notificationType,
-            fromPubkey: base.fromPubkey, fromName: base.fromName,
+            id: base.id,
+            notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey,
+            fromName: base.fromName,
             fromAvatar: base.fromAvatar,
-            contentPreview: base.contentPreview, eventId: 'other',
-            createdAt: base.createdAt, read: base.read, actionUrl: base.actionUrl),
+            contentPreview: base.contentPreview,
+            eventId: 'other',
+            createdAt: base.createdAt,
+            read: base.read,
+            actionUrl: base.actionUrl),
         'createdAt': AppNotification(
-            id: base.id, notificationType: base.notificationType,
-            fromPubkey: base.fromPubkey, fromName: base.fromName,
+            id: base.id,
+            notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey,
+            fromName: base.fromName,
             fromAvatar: base.fromAvatar,
-            contentPreview: base.contentPreview, eventId: base.eventId,
-            createdAt: 1, read: base.read, actionUrl: base.actionUrl),
+            contentPreview: base.contentPreview,
+            eventId: base.eventId,
+            createdAt: 1,
+            read: base.read,
+            actionUrl: base.actionUrl),
         'read': AppNotification(
-            id: base.id, notificationType: base.notificationType,
-            fromPubkey: base.fromPubkey, fromName: base.fromName,
+            id: base.id,
+            notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey,
+            fromName: base.fromName,
             fromAvatar: base.fromAvatar,
-            contentPreview: base.contentPreview, eventId: base.eventId,
-            createdAt: base.createdAt, read: !base.read,
+            contentPreview: base.contentPreview,
+            eventId: base.eventId,
+            createdAt: base.createdAt,
+            read: !base.read,
             actionUrl: base.actionUrl),
         'actionUrl': AppNotification(
-            id: base.id, notificationType: base.notificationType,
-            fromPubkey: base.fromPubkey, fromName: base.fromName,
+            id: base.id,
+            notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey,
+            fromName: base.fromName,
             fromAvatar: base.fromAvatar,
-            contentPreview: base.contentPreview, eventId: base.eventId,
-            createdAt: base.createdAt, read: base.read, actionUrl: 'other'),
+            contentPreview: base.contentPreview,
+            eventId: base.eventId,
+            createdAt: base.createdAt,
+            read: base.read,
+            actionUrl: 'other'),
       };
 
       for (final entry in variants.entries) {
@@ -325,8 +367,8 @@ void main() {
       final notif = NotificationService();
       final controller = StreamController<String>();
       addTearDown(controller.close);
-      api.stub('crateFfiNotificationsNotificationsWatch',
-          (_) => controller.stream);
+      api.stub(
+          'crateFfiNotificationsNotificationsWatch', (_) => controller.stream);
 
       var notified = 0;
       notif.addListener(() => notified++);
@@ -357,8 +399,8 @@ void main() {
       final notif = NotificationService();
       final controller = StreamController<String>();
       addTearDown(controller.close);
-      api.stub('crateFfiNotificationsNotificationsWatch',
-          (_) => controller.stream);
+      api.stub(
+          'crateFfiNotificationsNotificationsWatch', (_) => controller.stream);
 
       var notified = 0;
       notif.addListener(() => notified++);
@@ -394,8 +436,8 @@ void main() {
       final notif = NotificationService();
       final controller = StreamController<String>();
       addTearDown(controller.close);
-      api.stub('crateFfiNotificationsNotificationsWatch',
-          (_) => controller.stream);
+      api.stub(
+          'crateFfiNotificationsNotificationsWatch', (_) => controller.stream);
 
       var notified = 0;
       notif.addListener(() => notified++);
@@ -406,7 +448,8 @@ void main() {
         ..add('[${notifJson('b', 'reply')}, ${notifJson('a', 'like')}]');
       await pumpEventQueue();
       expect(notified, 2,
-          reason: 'position is content here -- the list is ordered newest-first');
+          reason:
+              'position is content here -- the list is ordered newest-first');
 
       controller.add('[${notifJson('a', 'like')}]');
       await pumpEventQueue();

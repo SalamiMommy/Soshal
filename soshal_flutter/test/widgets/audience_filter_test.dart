@@ -75,8 +75,7 @@ void main() {
     expect(find.byIcon(Icons.groups_outlined), findsOneWidget);
   });
 
-  testWidgets('AudienceFilterDropdown selects Friends option',
-      (tester) async {
+  testWidgets('AudienceFilterDropdown selects Friends option', (tester) async {
     AudienceFilter selected = AudienceFilter.all;
 
     await tester.pumpWidget(

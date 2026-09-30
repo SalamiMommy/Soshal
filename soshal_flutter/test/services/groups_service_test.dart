@@ -206,7 +206,8 @@ void main() {
       expect(api.namedArg(inv, 'password'), 'secretPassword123');
     });
 
-    test('join and leave pass groupId and pubkey and optional password', () async {
+    test('join and leave pass groupId and pubkey and optional password',
+        () async {
       final groups = GroupsService();
       api.stubBool('crateFfiGroupsGroupsJoin', true);
       api.stubBool('crateFfiGroupsGroupsLeave', true);
@@ -292,6 +293,181 @@ void main() {
       expect(api.namedArg(roleInv, 'groupId'), 'g-1');
     });
 
+    // --- 6.9: the detail bundle decodes off the UI isolate -------------------
+    //
+    // `_parseDetailBundle` is the one decode in this service that genuinely
+    // needs the off-thread path: the member list is one entry per member, so a
+    // large group decodes to thousands of objects on every open.
+
+    String bundleJson({int members = 2, int roles = 1, int rooms = 1}) =>
+        jsonEncode({
+          'group': {
+            'id': 'g-1',
+            'name': 'Nostr Devs',
+            'description': 'builders',
+            'picture': '',
+            'owner': 'pk-1',
+            'members': members,
+            'is_member': true,
+            'role': 'owner',
+            'created_at': 1700000000,
+          },
+          'members': List.generate(members, (i) => 'pk-$i'),
+          'memberRoles': [
+            for (var i = 0; i < members; i++) {'pubkey': 'pk-$i', 'role': 'Mod'}
+          ],
+          'roles': [
+            for (var i = 0; i < roles; i++)
+              {
+                'id': 'r-$i',
+                'group_id': 'g-1',
+                'name': 'Role $i',
+                'color': '#e94560',
+                'position': i,
+                'permissions': '["canKick"]',
+                'created_at': 1700000000,
+              }
+          ],
+          'rooms': [
+            for (var i = 0; i < rooms; i++)
+              {
+                'id': 'room-$i',
+                'group_id': 'g-1',
+                'name': 'Room $i',
+                'topic': '',
+                'emoji': '',
+                'color': '',
+                'position': i,
+                'created_by': 'pk-1',
+              }
+          ],
+          'voiceChannels': [
+            {
+              'id': 'vc-1',
+              'group_id': 'g-1',
+              'name': 'Voice 1',
+            }
+          ],
+        });
+
+    test('loadDetailBundle populates all six facets from one call', () async {
+      final groups = GroupsService();
+      api.stubString(
+          'crateFfiGroupsGroupsGetDetailBundle', bundleJson(members: 3));
+
+      await groups.loadDetailBundle('g-1');
+
+      expect(groups.current!.name, 'Nostr Devs');
+      expect(groups.members, ['pk-0', 'pk-1', 'pk-2']);
+      expect(groups.memberRoles.map((m) => m.pubkey), ['pk-0', 'pk-1', 'pk-2']);
+      expect(groups.roles.single.name, 'Role 0');
+      expect(groups.rooms.single.name, 'Room 0');
+      expect(groups.voiceChannels.single.name, 'Voice 1');
+
+      final inv = api.callsOf('crateFfiGroupsGroupsGetDetailBundle').single;
+      expect(api.namedArg(inv, 'groupId'), 'g-1');
+    });
+
+    test('loadDetailBundle assigns every facet, not just the first', () async {
+      // A mis-wired field in the record assignment is silent: the parse is
+      // correct but one facet lands on the wrong property. Six assertions, one
+      // per facet, with a count that would catch a dropped assignment.
+      final groups = GroupsService();
+      api.stubString('crateFfiGroupsGroupsGetDetailBundle',
+          bundleJson(members: 5, roles: 3, rooms: 4));
+
+      await groups.loadDetailBundle('g-1');
+
+      expect(groups.members, hasLength(5));
+      expect(groups.memberRoles, hasLength(5));
+      expect(groups.roles, hasLength(3));
+      expect(groups.rooms, hasLength(4));
+      expect(groups.voiceChannels, hasLength(1));
+      expect(groups.current, isNotNull);
+    });
+
+    test('loadDetailBundle notifies once, after the parse settles', () async {
+      final groups = GroupsService();
+      var notified = 0;
+      groups.addListener(() => notified++);
+      api.stubString('crateFfiGroupsGroupsGetDetailBundle', bundleJson());
+
+      await groups.loadDetailBundle('g-1');
+
+      // The body is async now (it awaits the decode), so `guard` takes its
+      // `r.then` path and the deferred notify lands a microtask later than it
+      // did when the body was synchronous. It still fires exactly once.
+      expect(notified, 0,
+          reason: 'documents the timing shift from a sync to an async body');
+      await flushMicrotasks();
+      expect(notified, 1);
+    });
+
+    test('loadDetailBundle records a parse failure and rethrows', () async {
+      final groups = GroupsService();
+      // A well-formed JSON object that is not a bundle: the parse throws where
+      // it used to throw, and the service's error skeleton still runs.
+      api.stubString('crateFfiGroupsGroupsGetDetailBundle', '{"nope":1}');
+
+      await expectLater(groups.loadDetailBundle('g-1'), throwsA(anything));
+      expect(groups.lastError, isNotNull);
+      expect(groups.current, isNull);
+    });
+
+    test('loadDetailBundle a 5000-member group parses every member', () async {
+      final groups = GroupsService();
+      api.stubString(
+          'crateFfiGroupsGroupsGetDetailBundle', bundleJson(members: 5000));
+
+      await groups.loadDetailBundle('g-1');
+
+      expect(groups.members, hasLength(5000));
+      expect(groups.memberRoles, hasLength(5000));
+      expect(groups.members.last, 'pk-4999');
+      expect(groups.memberRoles.last.pubkey, 'pk-4999');
+    });
+
+    test('fetchRoles fetches rooms and voice channels into their fields',
+        () async {
+      final groups = GroupsService();
+      api.stubString(
+          'crateFfiGroupsGroupsRoomsList',
+          jsonEncode([
+            {
+              'id': 'room-1',
+              'group_id': 'g-1',
+              'name': 'General',
+              'topic': '',
+              'emoji': '',
+              'color': '',
+              'position': 0,
+              'created_by': 'pk-1',
+            }
+          ]));
+      api.stubString(
+          'crateFfiGroupsGroupsVoiceChannelsList',
+          jsonEncode([
+            {'id': 'vc-1', 'group_id': 'g-1', 'name': 'Lounge'}
+          ]));
+      api.stubString(
+          'crateFfiGroupsGroupsMembersWithRoles',
+          jsonEncode([
+            {'pubkey': 'pk-9', 'role': 'Mod'}
+          ]));
+
+      final rooms = await groups.fetchRooms('g-1');
+      final voices = await groups.fetchVoiceChannels('g-1');
+      final memberRoles = await groups.fetchMembersWithRoles('g-1');
+
+      expect(rooms.single.name, 'General');
+      expect(voices.single.name, 'Lounge');
+      expect(memberRoles.single.pubkey, 'pk-9');
+      // The parsed lists land on the service fields, not just the return value.
+      expect(groups.rooms.single.id, 'room-1');
+      expect(groups.voiceChannels.single.id, 'vc-1');
+      expect(groups.memberRoles.single.role, 'Mod');
+    });
+
     test('fetchGroups error sets lastError and rethrows', () async {
       final groups = GroupsService();
       api.stub('crateFfiGroupsGroupsFetchGroups',
@@ -303,8 +479,8 @@ void main() {
 
     test('create error sets lastError and rethrows', () async {
       final groups = GroupsService();
-      api.stub('crateFfiGroupsGroupsCreate',
-          (_) => throw Exception('create boom'));
+      api.stub(
+          'crateFfiGroupsGroupsCreate', (_) => throw Exception('create boom'));
 
       await expectLater(
         groups.create('g-9', 'n', 'd', '', 'pk-me'),
@@ -397,7 +573,8 @@ void main() {
       final tallies = groups.roomReactionTallies('m-1');
       expect(tallies['👍']!.count, 7, reason: '3 + 4 must not collapse to 4');
       expect(tallies['👍']!.reacted, isTrue,
-          reason: 'the flag is or-ed, so a later unreacted entry cannot clear it');
+          reason:
+              'the flag is or-ed, so a later unreacted entry cannot clear it');
       expect(tallies['❤️']!.count, 1);
       expect(tallies.containsKey('🔥'), isFalse,
           reason: 'a different message must not leak into this tally');
@@ -452,8 +629,7 @@ void main() {
         ]),
       );
       // Hold on to the list the bridge hand-back produced.
-      final fetched =
-          await groups.fetchRoomReactions('g-1', 'room-alpha');
+      final fetched = await groups.fetchRoomReactions('g-1', 'room-alpha');
 
       // Mutating the source list after the fact must not reach the index. If the
       // index aliased it, a later rebuild would pick up the injected entry and
@@ -577,7 +753,8 @@ void main() {
       expect(api.namedArg(inv, 'pubkey'), 'pk-me');
     });
 
-    test('watchGroups and subscribeToGroups stream updates live from bridge', () async {
+    test('watchGroups and subscribeToGroups stream updates live from bridge',
+        () async {
       final groups = GroupsService();
       final controller = StreamController<String>.broadcast();
       addTearDown(controller.close);
@@ -610,4 +787,3 @@ void main() {
     });
   });
 }
-

@@ -35,21 +35,23 @@ void main() {
 
     test('fetchNearby parses list and passes coords', () async {
       final events = EventsService();
-      final evts = List.generate(3, (i) => {
-            'id': 'ev-$i',
-            'creator_pubkey': 'pk-$i',
-            'title': 'event $i',
-            'description': '',
-            'location': '',
-            'latitude': 52.5 + i,
-            'longitude': 13.4 + i,
-            'start_time': 1700000000 + i,
-            'end_time': 1700003600 + i,
-            'image': '',
-            'attendees': i,
-            'rsvp_status': i == 0 ? 'going' : '',
-            'created_at': 1699990000,
-          });
+      final evts = List.generate(
+          3,
+          (i) => {
+                'id': 'ev-$i',
+                'creator_pubkey': 'pk-$i',
+                'title': 'event $i',
+                'description': '',
+                'location': '',
+                'latitude': 52.5 + i,
+                'longitude': 13.4 + i,
+                'start_time': 1700000000 + i,
+                'end_time': 1700003600 + i,
+                'image': '',
+                'attendees': i,
+                'rsvp_status': i == 0 ? 'going' : '',
+                'created_at': 1699990000,
+              });
       api.stubString('crateFfiEventsEventsFetchNearby', jsonEncode(evts));
 
       final result = await events.fetchNearby(
@@ -78,8 +80,7 @@ void main() {
 
       final result = await events.fetchUserEvents('pk-me', limit: 5);
       expect(result, isEmpty);
-      final inv =
-          api.callsOf('crateFfiEventsEventsFetchUserEvents').single;
+      final inv = api.callsOf('crateFfiEventsEventsFetchUserEvents').single;
       expect(api.namedArg(inv, 'userPubkey'), 'pk-me');
       expect(api.namedArg(inv, 'limit'), 5);
     });
@@ -152,8 +153,7 @@ void main() {
 
       final attendees = await events.getAttendees('ev-1');
       expect(attendees, ['pk-1', 'pk-2']);
-      expect(events.attendees, attendees,
-          reason: 'attendees getter updated');
+      expect(events.attendees, attendees, reason: 'attendees getter updated');
       final inv = api.callsOf('crateFfiEventsEventsGetAttendees').single;
       expect(api.namedArg(inv, 'eventId'), 'ev-1');
     });
@@ -193,8 +193,8 @@ void main() {
 
     test('create error sets lastError and rethrows', () async {
       final events = EventsService();
-      api.stub('crateFfiEventsEventsCreate',
-          (_) => throw Exception('create boom'));
+      api.stub(
+          'crateFfiEventsEventsCreate', (_) => throw Exception('create boom'));
 
       await expectLater(
         events.create('pk-me', 't', 'd', '', 0, 0, 1, 2, ''),

@@ -51,8 +51,7 @@ void main() {
       final crypto = CryptoService();
 
       expect(crypto.nip44Encrypt('secret', 'pk-2'), 'wire-payload');
-      final inv =
-          api.callsOf('crateFfiSignerSignerNip44Encrypt').single;
+      final inv = api.callsOf('crateFfiSignerSignerNip44Encrypt').single;
       expect(api.namedArg(inv, 'plaintext'), 'secret');
       expect(api.namedArg(inv, 'recipientPubkey'), 'pk-2');
     });
@@ -62,8 +61,7 @@ void main() {
       final crypto = CryptoService();
 
       expect(crypto.nip44Decrypt('wire-payload', 'pk-1'), 'plain');
-      final inv =
-          api.callsOf('crateFfiSignerSignerNip44Decrypt').single;
+      final inv = api.callsOf('crateFfiSignerSignerNip44Decrypt').single;
       expect(api.namedArg(inv, 'payload'), 'wire-payload');
       expect(api.namedArg(inv, 'senderPubkey'), 'pk-1');
     });
@@ -73,8 +71,7 @@ void main() {
       final crypto = CryptoService();
 
       expect(crypto.applyThreadAffinity(true), isTrue);
-      final inv =
-          api.callsOf('crateFfiUtilUtilApplyThreadAffinity').single;
+      final inv = api.callsOf('crateFfiUtilUtilApplyThreadAffinity').single;
       expect(api.namedArg(inv, 'targetPerformance'), isTrue);
     });
 
@@ -89,8 +86,7 @@ void main() {
       expect(api.namedArg(inv, 'message'), utf8.encode('msg'));
     });
 
-    test('hkdfExpand forwards len as BigInt, empty salt/info, default 32',
-        () {
+    test('hkdfExpand forwards len as BigInt, empty salt/info, default 32', () {
       api.stubString('crateFfiCryptoCryptoHkdfExpand', 'e0e1');
       final crypto = CryptoService();
 
@@ -125,8 +121,7 @@ void main() {
     });
 
     test('pqcKemKeygen returns keypair json', () async {
-      api.stubString(
-          'crateFfiCryptoCryptoPqcKemKeygen', '{"pk":"a","sk":"b"}');
+      api.stubString('crateFfiCryptoCryptoPqcKemKeygen', '{"pk":"a","sk":"b"}');
       final crypto = CryptoService();
 
       expect(await crypto.pqcKemKeygen(), '{"pk":"a","sk":"b"}');
@@ -153,8 +148,8 @@ void main() {
 
     test('frostGenerateJuryKeys forwards threshold/participants/pubkey',
         () async {
-      api.stubString('crateFfiCryptoCryptoFrostGenerateJuryKeys',
-          '[{"share":"s1"}]');
+      api.stubString(
+          'crateFfiCryptoCryptoFrostGenerateJuryKeys', '[{"share":"s1"}]');
       final crypto = CryptoService();
 
       expect(
@@ -171,8 +166,7 @@ void main() {
 
     test('frostAggregateSignature forwards shares/threshold/pubkey/message',
         () async {
-      api.stubString(
-          'crateFfiCryptoCryptoFrostAggregateSignature', 'sig-hex');
+      api.stubString('crateFfiCryptoCryptoFrostAggregateSignature', 'sig-hex');
       final crypto = CryptoService();
 
       expect(
@@ -183,9 +177,8 @@ void main() {
             messageHex: 'dead'),
         'sig-hex',
       );
-      final inv = api
-          .callsOf('crateFfiCryptoCryptoFrostAggregateSignature')
-          .single;
+      final inv =
+          api.callsOf('crateFfiCryptoCryptoFrostAggregateSignature').single;
       expect(api.namedArg(inv, 'sharesJson'), '[{"s":"a"}]');
       expect(api.namedArg(inv, 'threshold'), 2);
       expect(api.namedArg(inv, 'groupPubkey'), 'gp');
@@ -202,8 +195,7 @@ void main() {
             targetIndex: 7, dimension: 1024, clientPubkey: 'cp'),
         'query-json',
       );
-      final inv =
-          api.callsOf('crateFfiCryptoCryptoPirGenerateQuery').single;
+      final inv = api.callsOf('crateFfiCryptoCryptoPirGenerateQuery').single;
       expect(api.namedArg(inv, 'targetIndex'), BigInt.from(7));
       expect(api.namedArg(inv, 'dimension'), BigInt.from(1024));
       expect(api.namedArg(inv, 'clientPubkey'), 'cp');
@@ -214,12 +206,11 @@ void main() {
       final crypto = CryptoService();
 
       expect(
-        await crypto.pirEvaluateQuery(
-            queryJson: 'q', recordHexList: ['aa', 'bb']),
+        await crypto
+            .pirEvaluateQuery(queryJson: 'q', recordHexList: ['aa', 'bb']),
         'row-json',
       );
-      final inv =
-          api.callsOf('crateFfiCryptoCryptoPirEvaluateQuery').single;
+      final inv = api.callsOf('crateFfiCryptoCryptoPirEvaluateQuery').single;
       expect(api.namedArg(inv, 'queryJson'), 'q');
       expect(api.namedArg(inv, 'recordHexList'), ['aa', 'bb']);
     });
@@ -274,8 +265,7 @@ void main() {
           (_) => Future.error(Exception('encaps fail')));
       final crypto = CryptoService();
 
-      await expectLater(
-          () => crypto.pqcKemEncaps('pk'), throwsException);
+      await expectLater(() => crypto.pqcKemEncaps('pk'), throwsException);
       expect(crypto.lastError, isNull);
     });
 
@@ -297,8 +287,7 @@ void main() {
       final crypto = CryptoService();
 
       await expectLater(
-        () => crypto.pirEvaluateQuery(
-            queryJson: 'q', recordHexList: ['aa']),
+        () => crypto.pirEvaluateQuery(queryJson: 'q', recordHexList: ['aa']),
         throwsException,
       );
     });

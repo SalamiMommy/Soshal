@@ -18,8 +18,7 @@ void main() {
     api.calls.clear();
   });
 
-  const sessionJson =
-      '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
+  const sessionJson = '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
       '"npub":"npub1abc","last_used":0,"relay_list":[]}]}';
 
   const listingJson =
@@ -139,8 +138,7 @@ void main() {
     await tester.enterText(
         find
             .descendant(
-                of: find.byType(AlertDialog),
-                matching: find.byType(TextField))
+                of: find.byType(AlertDialog), matching: find.byType(TextField))
             .at(0),
         'Broken');
     await tester.tap(find.widgetWithText(FilledButton, 'Post'));
@@ -150,8 +148,7 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
   });
 
-  testWidgets('buy creates order and escrow with listing args',
-      (tester) async {
+  testWidgets('buy creates order and escrow with listing args', (tester) async {
     api.stubString(
         'crateFfiMarketplaceMarketplaceFetchListings', '[$listingJson]');
     api.stubString('crateFfiMarketplaceMarketplaceCreateOrder', 'o1');
@@ -202,23 +199,18 @@ void main() {
     await tester.pumpAndSettle();
 
     final dialog = find.byType(AlertDialog);
-    expect(
-        find.descendant(of: dialog, matching: find.text('Vintage Guitar')),
+    expect(find.descendant(of: dialog, matching: find.text('Vintage Guitar')),
         findsOneWidget);
     expect(
-        find.descendant(
-            of: dialog, matching: find.textContaining('250 sats')),
+        find.descendant(of: dialog, matching: find.textContaining('250 sats')),
         findsWidgets);
     expect(
         find.descendant(of: dialog, matching: find.textContaining('Seller:')),
         findsOneWidget);
     expect(
-        find.descendant(
-            of: dialog, matching: find.text('Open Escrow Panel')),
+        find.descendant(of: dialog, matching: find.text('Open Escrow Panel')),
         findsOneWidget);
-    expect(
-        find.descendant(
-            of: dialog, matching: find.text('4.5 · 0 reviews')),
+    expect(find.descendant(of: dialog, matching: find.text('4.5 · 0 reviews')),
         findsOneWidget);
 
     await tester.ensureVisible(find.text('Open Escrow Panel'));
@@ -298,13 +290,13 @@ void main() {
     await tester.tap(find.text('electronics'));
     await tester.pumpAndSettle();
     expect(api.callCount('crateFfiMarketplaceMarketplaceGetByCategory'), 1);
-    final inv = api.callsOf('crateFfiMarketplaceMarketplaceGetByCategory').single;
+    final inv =
+        api.callsOf('crateFfiMarketplaceMarketplaceGetByCategory').single;
     expect(api.namedArg(inv, 'category'), 'electronics');
   });
 
   testWidgets('search submits query to bridge', (tester) async {
-    api.stubString(
-        'crateFfiMarketplaceMarketplaceSearch', '[$listingJson]');
+    api.stubString('crateFfiMarketplaceMarketplaceSearch', '[$listingJson]');
 
     await pumpScreen(tester);
 

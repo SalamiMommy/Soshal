@@ -22,10 +22,10 @@ void main() {
       api.stubString(
         'crateFfiAuditAuditList',
         '[{"id":"a1","group_id":"g1","actor_pubkey":"pk-1",'
-        '"action":"group.kick","target_pubkey":"pk-2","details":"bye",'
-        '"created_at":1700000001},'
-        '{"id":"a2","actor_pubkey":"pk-1","action":"login",'
-        '"created_at":1700000000}]',
+            '"action":"group.kick","target_pubkey":"pk-2","details":"bye",'
+            '"created_at":1700000001},'
+            '{"id":"a2","actor_pubkey":"pk-1","action":"login",'
+            '"created_at":1700000000}]',
       );
 
       final rows = await audit.list(limit: 50, actor: 'pk-1');

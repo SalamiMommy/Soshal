@@ -80,7 +80,8 @@ void main() {
   });
 
   testWidgets('profile screen with pubkey loads author posts', (tester) async {
-    const pk = '1122334455667788990011223344556677889900112233445566778899001122';
+    const pk =
+        '1122334455667788990011223344556677889900112233445566778899001122';
     api.stubString('crateFfiDbDbGetSetting', '');
     api.stubString('crateFfiIdentityIdentityGetProfile',
         '{"pubkey":"$pk","name":"alice","display_name":"Alice D","about":"Hello world","picture":"","banner":"","nip05":"","nip05_valid":false,"created_at":0,"followers":0,"following":0,"is_following":false,"wot_status":"trusted"}');

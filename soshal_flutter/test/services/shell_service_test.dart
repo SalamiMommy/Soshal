@@ -107,8 +107,7 @@ void main() {
       expect(api.callCount('crateFfiPinPinHas'), 1);
     });
 
-    test('initialize swallows FFI errors, stays usable and retries',
-        () async {
+    test('initialize swallows FFI errors, stays usable and retries', () async {
       final shell = ShellService();
       api.stub('crateFfiDbDbGetSetting', (_) => throw Exception('db down'));
 
@@ -179,22 +178,27 @@ void main() {
       expect(notified, 1);
     });
 
-    test('pollCallSignals evicts oldest seen calls and bounds history', () async {
+    test('pollCallSignals evicts oldest seen calls and bounds history',
+        () async {
       final shell = ShellService();
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
       for (var i = 0; i < 205; i++) {
-        api.stubString('crateFfiCallsCallsFetchSignals', jsonEncode([
-          {'kind': 20001, 'created_at': now, 'call_id': 'call_$i'},
-        ]));
+        api.stubString(
+            'crateFfiCallsCallsFetchSignals',
+            jsonEncode([
+              {'kind': 20001, 'created_at': now, 'call_id': 'call_$i'},
+            ]));
         await shell.pollCallSignals('mypk');
       }
       expect(shell.incomingCall?['call_id'], 'call_204');
 
       // Now call_0 was evicted from seen list (capacity 200), so if call_0 arrives again it is accepted
-      api.stubString('crateFfiCallsCallsFetchSignals', jsonEncode([
-        {'kind': 20001, 'created_at': now, 'call_id': 'call_0'},
-      ]));
+      api.stubString(
+          'crateFfiCallsCallsFetchSignals',
+          jsonEncode([
+            {'kind': 20001, 'created_at': now, 'call_id': 'call_0'},
+          ]));
       await shell.pollCallSignals('mypk');
       expect(shell.incomingCall?['call_id'], 'call_0');
     });
@@ -224,9 +228,11 @@ void main() {
     test('resetForAccountSwitch clears incoming call and seen calls', () async {
       final shell = ShellService();
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      api.stubString('crateFfiCallsCallsFetchSignals', jsonEncode([
-        {'kind': 20001, 'created_at': now, 'call_id': 'call_1'},
-      ]));
+      api.stubString(
+          'crateFfiCallsCallsFetchSignals',
+          jsonEncode([
+            {'kind': 20001, 'created_at': now, 'call_id': 'call_1'},
+          ]));
       await shell.pollCallSignals('mypk');
       expect(shell.incomingCall, isNotNull);
 

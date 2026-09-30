@@ -19,8 +19,7 @@ void main() {
     api.calls.clear();
   });
 
-  const sessionJson =
-      '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
+  const sessionJson = '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
       '"npub":"npub1abc","last_used":0,"relay_list":[]}]}';
 
   const ownProfileJson =
@@ -28,8 +27,7 @@ void main() {
       '"bio":"","images":[],"interests":["hiking"],'
       '"compatibility_score":0,"last_seen":0}';
 
-  const cardJson =
-      '[{"pubkey":"pkX","name":"Alice","age":25,"location":"NYC",'
+  const cardJson = '[{"pubkey":"pkX","name":"Alice","age":25,"location":"NYC",'
       '"bio":"hello there","images":[],"interests":["hiking","art"],'
       '"compatibility_score":0,"last_seen":0}]';
 
@@ -53,8 +51,7 @@ void main() {
         ),
         GoRoute(
           path: '/inbox/:pk',
-          builder: (_, __) =>
-              const Scaffold(body: Text('inbox placeholder')),
+          builder: (_, __) => const Scaffold(body: Text('inbox placeholder')),
         ),
       ],
     );

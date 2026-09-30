@@ -41,7 +41,7 @@ void main() {
       api.stubString(
         'crateFfiBookmarksBookmarksList',
         '[{"id":"bm-1","pubkey":"pk-1","event_id":"ev-1",'
-        '"created_at":1700000001}]',
+            '"created_at":1700000001}]',
       );
 
       final rows = await bookmarks.list('pk-1', limit: 50, offset: 10);
@@ -51,6 +51,11 @@ void main() {
       expect(rows.single.createdAt, 1700000001);
       expect(bookmarks.bookmarks.single.eventId, 'ev-1');
       expect(bookmarks.lastError, isNull);
+      // `list` passes `onNotify: notifyDeferred` and now has an *async* body,
+      // so `guard` takes its `r.then` path and the notify lands a microtask
+      // after this resumption instead of before it. A sync body called
+      // `onNotify()` synchronously. Same convention as the messaging tests.
+      await flushMicrotasks();
       expect(notified, 1);
 
       final inv = api.callsOf('crateFfiBookmarksBookmarksList').single;

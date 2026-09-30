@@ -43,8 +43,7 @@ void main() {
     api.calls.clear();
   });
 
-  const sessionJson =
-      '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
+  const sessionJson = '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
       '"npub":"npub1abc","last_used":0,'
       '"relay_list":["wss://relay.example.com"]}]}';
 
@@ -90,8 +89,7 @@ void main() {
     expect(api.callCount('crateFfiIdentityIdentityGetProfile'), 1);
   });
 
-  testWidgets('edit profile screen keeps form on load failure',
-      (tester) async {
+  testWidgets('edit profile screen keeps form on load failure', (tester) async {
     api.stub('crateFfiIdentityIdentityGetProfile', (_) {
       throw Exception('relay down');
     });
@@ -109,7 +107,8 @@ void main() {
     expect(find.text('People you may know'), findsOneWidget);
     expect(find.text('Add friend'), findsOneWidget);
     expect(
-      find.text('No suggestions yet — friend discovery arrives with the backend.'),
+      find.text(
+          'No suggestions yet — friend discovery arrives with the backend.'),
       findsOneWidget,
     );
   });
@@ -123,7 +122,8 @@ void main() {
     expect(find.text('Refresh from relays'), findsOneWidget);
   });
 
-  testWidgets('search screen renders search bar and trending sections', (tester) async {
+  testWidgets('search screen renders search bar and trending sections',
+      (tester) async {
     api.stubString('crateFfiDbDbGetTrendingHashtags', '[]');
     api.stubString('crateFfiSearchSearchTrendingHashtags', '[]');
     api.stubString('crateFfiSearchSearchTrendingProfiles', '[]');

@@ -10,10 +10,7 @@ import '../helpers/test_env.dart';
 
 late FakeApi api;
 
-/// Drain DeferredNotify microtasks (services now notify via
-/// scheduleMicrotask, so listeners fire one microtask after the action).
-Future<void> flushMicrotasks() => Future<void>.value();
-
+/// `flushMicrotasks` comes from `helpers/test_env.dart`.
 
 void main() {
   final env = bootstrapTestEnv('test-messaging');
@@ -25,6 +22,71 @@ void main() {
   });
 
   group('MessagingService', () {
+    test('fetchPendingEphemeral parses every field of every row', () async {
+      // The parser moved behind `runOffThreadCompute`, so this is what pins it
+      // actually building `EphemeralMedia` objects: a `cast<EphemeralMedia>()`
+      // over the raw decoded list returns a list of the right *type* and throws
+      // only when a field is read.
+      final msg = MessagingService();
+      api.stubString(
+        'crateFfiEphemeralEphemeralListPending',
+        '[{"id":"em-1","message_id":"dm-1","conversation_id":"c-1",'
+            '"conversation_type":"dm","media_url":"https://x/m.jpg",'
+            '"media_type":"image","sender_pubkey":"pk-1",'
+            '"recipient_pubkey":"pk-2","max_views":3,"current_views":1,'
+            '"state":"pending","expires_at":1700000500,"created_at":1700000000,'
+            '"viewed_at":0},'
+            '{"id":"em-2","message_id":"dm-2","conversation_id":"c-2",'
+            '"conversation_type":"dm","media_url":"https://x/n.png",'
+            '"media_type":"image","sender_pubkey":"pk-2",'
+            '"recipient_pubkey":"pk-1","max_views":1,"current_views":0,'
+            '"state":"pending","expires_at":1700000600,"created_at":1700000100,'
+            '"viewed_at":0}]',
+      );
+
+      final rows = await msg.fetchPendingEphemeral('pk-1');
+
+      expect(rows, hasLength(2));
+      expect(rows[0].id, 'em-1');
+      expect(rows[0].messageId, 'dm-1');
+      expect(rows[0].conversationId, 'c-1');
+      expect(rows[0].mediaUrl, 'https://x/m.jpg');
+      expect(rows[0].senderPubkey, 'pk-1');
+      expect(rows[0].maxViews, 3);
+      expect(rows[0].currentViews, 1);
+      expect(rows[0].state, 'pending');
+      expect(rows[0].expiresAt, 1700000500);
+      expect(rows[1].id, 'em-2');
+      expect(rows[1].recipientPubkey, 'pk-1');
+      // The service exposes an unmodifiable view over the same rows.
+      expect(msg.pendingEphemeral, hasLength(2));
+      expect(msg.pendingEphemeral.first.id, 'em-1');
+      expect(() => msg.pendingEphemeral.add(rows[0]), throwsUnsupportedError);
+
+      final inv = api.callsOf('crateFfiEphemeralEphemeralListPending').single;
+      expect(api.namedArg(inv, 'pubkey'), 'pk-1');
+    });
+
+    test('fetchPendingEphemeral replaces, not appends, a second fetch',
+        () async {
+      final msg = MessagingService();
+      api.stubString(
+        'crateFfiEphemeralEphemeralListPending',
+        '[{"id":"em-1","message_id":"dm-1","conversation_id":"c-1",'
+            '"conversation_type":"dm","media_url":"u","media_type":"image",'
+            '"sender_pubkey":"pk-1","recipient_pubkey":"pk-2","max_views":1,'
+            '"current_views":0,"state":"pending","expires_at":1,'
+            '"created_at":1,"viewed_at":0}]',
+      );
+
+      await msg.fetchPendingEphemeral('pk-1');
+      expect(msg.pendingEphemeral, hasLength(1));
+
+      await msg.fetchPendingEphemeral('pk-1');
+      expect(msg.pendingEphemeral, hasLength(1),
+          reason: 'the field is cleared before the new rows land');
+    });
+
     test('insertLiveDm adds message to conversation', () async {
       final msg = MessagingService();
       var notified = 0;
@@ -232,8 +294,10 @@ void main() {
       final msg = MessagingService();
       final controller = StreamController<List<DirectMessageDto>>.broadcast();
       addTearDown(controller.close);
-      api.stubStream('crateFfiMessagingMessagingWatchDmsTyped', controller.stream);
-      api.stubValue('crateFfiMessagingMessagingFetchDmsTyped', <DirectMessageDto>[]);
+      api.stubStream(
+          'crateFfiMessagingMessagingWatchDmsTyped', controller.stream);
+      api.stubValue(
+          'crateFfiMessagingMessagingFetchDmsTyped', <DirectMessageDto>[]);
 
       await msg.fetchDMs('peer1');
 
@@ -308,7 +372,8 @@ void main() {
       expect(api.namedArg(inv, 'recipientPubkey'), 'recipient_pk');
     });
 
-    test('sendDM to a fresh recipient at cache capacity never crashes', () async {
+    test('sendDM to a fresh recipient at cache capacity never crashes',
+        () async {
       final msg = MessagingService();
       api.stubString('crateFfiMessagingMessagingSendDm', 'eventid123');
 
@@ -406,7 +471,8 @@ void main() {
       expect(pending.isEmpty, true);
     });
 
-    test('watchDMs parses incoming json stream into list of DirectMessage', () async {
+    test('watchDMs parses incoming json stream into list of DirectMessage',
+        () async {
       final msg = MessagingService();
       final controller = StreamController<String>();
       addTearDown(controller.close);
@@ -439,7 +505,9 @@ void main() {
       expect(emissions[1][0].id, 'dm_r2');
     });
 
-    test('subscribeToConversation updates conversations map and notifies listeners on stream events', () async {
+    test(
+        'subscribeToConversation updates conversations map and notifies listeners on stream events',
+        () async {
       final msg = MessagingService();
       final controller = StreamController<String>();
       addTearDown(controller.close);
@@ -458,7 +526,8 @@ void main() {
       await flushMicrotasks();
 
       expect(msg.conversations['peer_reactive_2'], isNotNull);
-      expect(msg.conversations['peer_reactive_2']!.first.content, 'stream hello');
+      expect(
+          msg.conversations['peer_reactive_2']!.first.content, 'stream hello');
       expect(notified, greaterThanOrEqualTo(1));
 
       msg.resetForAccountSwitch();
@@ -468,12 +537,14 @@ void main() {
       expect(msg.conversations.isEmpty, true);
     });
 
-    test('watchConversations parses list of peer pubkeys from stream', () async {
+    test('watchConversations parses list of peer pubkeys from stream',
+        () async {
       final msg = MessagingService();
       final controller = StreamController<List<String>>();
       addTearDown(controller.close);
 
-      api.stub('crateFfiMessagingMessagingWatchConversations', (_) => controller.stream);
+      api.stub('crateFfiMessagingMessagingWatchConversations',
+          (_) => controller.stream);
 
       final stream = msg.watchConversations('me');
       final emissions = <List<String>>[];
@@ -487,12 +558,14 @@ void main() {
       expect(emissions[0], ['peer_a', 'peer_b']);
     });
 
-    test('watchDMs handles native DirectMessageDto typed streams directly', () async {
+    test('watchDMs handles native DirectMessageDto typed streams directly',
+        () async {
       final msg = MessagingService();
       final controller = StreamController<List<DirectMessageDto>>();
       addTearDown(controller.close);
 
-      api.stubStream('crateFfiMessagingMessagingWatchDmsTyped', controller.stream);
+      api.stubStream(
+          'crateFfiMessagingMessagingWatchDmsTyped', controller.stream);
 
       final stream = msg.watchDMs('peer_typed');
       final emissions = <List<DirectMessage>>[];
@@ -524,7 +597,8 @@ void main() {
       expect(msg.conversations['peer_typed']?.length, 1);
     });
 
-    test('fetchDMs handles native DirectMessageDto typed results directly', () async {
+    test('fetchDMs handles native DirectMessageDto typed results directly',
+        () async {
       final msg = MessagingService();
       api.stubValue('crateFfiMessagingMessagingFetchDmsTyped', [
         DirectMessageDto(
@@ -553,7 +627,8 @@ void main() {
       final controller = StreamController<String>();
       addTearDown(controller.close);
 
-      api.stub('crateFfiIdentityIdentityWatchProfile', (_) => controller.stream);
+      api.stub(
+          'crateFfiIdentityIdentityWatchProfile', (_) => controller.stream);
 
       final stream = identity.watchProfile('pk_alice');
       final emissions = <ProfileInfo>[];
@@ -585,12 +660,15 @@ void main() {
       expect(emissions[0].followers, 42);
     });
 
-    test('subscribeToProfile updates profiles cache and notifies listeners on stream updates', () async {
+    test(
+        'subscribeToProfile updates profiles cache and notifies listeners on stream updates',
+        () async {
       final identity = IdentityService();
       final controller = StreamController<String>();
       addTearDown(controller.close);
 
-      api.stub('crateFfiIdentityIdentityWatchProfile', (_) => controller.stream);
+      api.stub(
+          'crateFfiIdentityIdentityWatchProfile', (_) => controller.stream);
 
       var notified = 0;
       identity.addListener(() => notified++);
@@ -707,7 +785,8 @@ void main() {
       final out =
           await identity.getProfiles(['pk_a', '  ', 'pk_b', 'pk_a', '']);
 
-      final inv = api.callsOf('crateFfiIdentityIdentityGetProfilesBatch').single;
+      final inv =
+          api.callsOf('crateFfiIdentityIdentityGetProfilesBatch').single;
       expect(api.namedArg(inv, 'pubkeys'), ['pk_a', 'pk_b']);
       expect(out.map((p) => p.pubkey), ['pk_a', 'pk_b']);
     });
@@ -758,16 +837,15 @@ void main() {
       api.stub('crateFfiIdentityIdentityWatchProfile',
           (_) => const Stream<String>.empty());
       // Batch answers for pk_a only — pk_b has no stored row upstream.
-      api.stub('crateFfiIdentityIdentityGetProfilesBatch', (inv) =>
-          jsonEncode([jsonDecode(profileJson('pk_a'))]));
+      api.stub('crateFfiIdentityIdentityGetProfilesBatch',
+          (inv) => jsonEncode([jsonDecode(profileJson('pk_a'))]));
 
       final out = await identity.getProfiles(['pk_a', 'pk_b']);
 
       expect(out.map((p) => p.pubkey), ['pk_a']);
     });
 
-    test('getProfiles surfaces a bridge failure and returns nothing',
-        () async {
+    test('getProfiles surfaces a bridge failure and returns nothing', () async {
       final identity = IdentityService();
       api.stub('crateFfiIdentityIdentityWatchProfile',
           (_) => const Stream<String>.empty());

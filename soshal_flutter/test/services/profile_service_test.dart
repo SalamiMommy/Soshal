@@ -28,8 +28,7 @@ void main() {
       expect(api.namedArg(inv, 'pubkey'), 'pk-1');
     });
 
-    test('getCustomProfileNodes returns empty string when nothing stored',
-        () {
+    test('getCustomProfileNodes returns empty string when nothing stored', () {
       api.stubString('crateFfiDbDbGetCustomProfileNodes', '');
 
       final service = ProfileService();
@@ -67,8 +66,7 @@ void main() {
       api.stubBool('crateFfiDbDbSaveCustomProfile', false);
 
       final service = ProfileService();
-      final result =
-          service.saveCustomProfile(pubkey: 'pk-1', profileJson: '');
+      final result = service.saveCustomProfile(pubkey: 'pk-1', profileJson: '');
 
       expect(result, isFalse);
       final inv = api.callsOf('crateFfiDbDbSaveCustomProfile').single;
@@ -119,7 +117,7 @@ void main() {
       api.stubString(
         'crateFfiContentContentCustomProfileNodeTypes',
         '[{"type":"theme","label":"Theme","icon":"🎨"},'
-        '{"type":"container","label":"Container","icon":"📦"}]',
+            '{"type":"container","label":"Container","icon":"📦"}]',
       );
 
       final service = ProfileService();
@@ -142,8 +140,7 @@ void main() {
     });
 
     test('defaultNode forwards type and index to Rust', () {
-      const nodeJson =
-          '{"id":"widget_1","type":"text_block","styles":{},'
+      const nodeJson = '{"id":"widget_1","type":"text_block","styles":{},'
           '"position":{"row":0,"column":0,"order":3},'
           '"properties":{"content":"","title":"About Me"}}';
       api.stubString(
@@ -155,9 +152,8 @@ void main() {
       final json = service.defaultNode(type: 'text_block', index: 3);
 
       expect(json, nodeJson);
-      final inv = api
-          .callsOf('crateFfiContentContentCustomProfileDefaultNode')
-          .single;
+      final inv =
+          api.callsOf('crateFfiContentContentCustomProfileDefaultNode').single;
       expect(api.namedArg(inv, 'nodeType'), 'text_block');
       expect(api.namedArg(inv, 'index'), BigInt.from(3));
     });
@@ -185,9 +181,8 @@ void main() {
       final result = service.validateProfile('{"nodes":[]}');
 
       expect(result, canonical);
-      final inv = api
-          .callsOf('crateFfiContentContentCustomProfileValidate')
-          .single;
+      final inv =
+          api.callsOf('crateFfiContentContentCustomProfileValidate').single;
       expect(api.namedArg(inv, 'profileJson'), '{"nodes":[]}');
     });
 
@@ -228,8 +223,7 @@ void main() {
       expect(node.properties, isEmpty);
     });
 
-    test('SanitizedStyles fromJson coerces numbers and copyWith overrides',
-        () {
+    test('SanitizedStyles fromJson coerces numbers and copyWith overrides', () {
       final styles = SanitizedStyles.fromJson(const {
         'padding': 12.5,
         'fontSize': '14',

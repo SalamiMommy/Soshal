@@ -34,20 +34,15 @@ class BookmarksService extends ChangeNotifier
   /// List bookmarks for a pubkey, newest first.
   Future<List<BookmarkRow>> list(String pubkey,
           {int limit = 100, int offset = 0}) =>
-      guard(() {
-        final json = RustLib.instance.api.crateFfiBookmarksBookmarksList(
-          pubkey: pubkey,
-          limit: limit,
-          offset: offset,
+      guard(() async {
+        _bookmarks = await runOffThreadCompute(
+          _parseBookmarks,
+          RustLib.instance.api.crateFfiBookmarksBookmarksList(
+            pubkey: pubkey,
+            limit: limit,
+            offset: offset,
+          ),
         );
-        final decoded = jsonDecode(json);
-        _bookmarks = decoded is List
-            ? List<BookmarkRow>.generate(
-                decoded.length,
-                (i) => BookmarkRow.fromJson(decoded[i] as Map<String, dynamic>),
-                growable: true,
-              )
-            : <BookmarkRow>[];
         return _bookmarks;
       }, onNotify: notifyDeferred);
 
@@ -84,6 +79,19 @@ class BookmarksService extends ChangeNotifier
       return out;
     }
   }
+}
+
+/// JSON → [BookmarkRow] list, top-level so [runOffThreadCompute] can run it on
+/// a background isolate. A non-list payload decodes to an empty list, matching
+/// the check this replaced.
+List<BookmarkRow> _parseBookmarks(String json) {
+  final decoded = jsonDecode(json);
+  if (decoded is! List) return <BookmarkRow>[];
+  return List<BookmarkRow>.generate(
+    decoded.length,
+    (i) => BookmarkRow.fromJson(decoded[i] as Map<String, dynamic>),
+    growable: true,
+  );
 }
 
 /// JSON map of event id → post → [FeedPost] map, top-level so

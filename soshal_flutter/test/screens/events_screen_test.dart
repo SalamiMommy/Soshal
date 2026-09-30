@@ -49,8 +49,7 @@ void main() {
     api.calls.clear();
   });
 
-  const sessionJson =
-      '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
+  const sessionJson = '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
       '"npub":"npub1abc","last_used":0,"relay_list":[]}]}';
 
   const ownProfileJson =
@@ -58,8 +57,7 @@ void main() {
       '"bio":"","images":[],"interests":["hiking"],'
       '"compatibility_score":0,"last_seen":0}';
 
-  const eventJson =
-      '{"id":"ev1","creator_pubkey":"pk123","title":"Jazz Night",'
+  const eventJson = '{"id":"ev1","creator_pubkey":"pk123","title":"Jazz Night",'
       '"description":"live jazz","location":"","latitude":0,"longitude":0,'
       '"start_time":0,"end_time":0,"image":"","attendees":3,'
       '"rsvp_status":"","created_at":0}';
@@ -83,7 +81,8 @@ void main() {
     stubDefault('crateFfiEventsEventsFetchNearby', '[]');
     stubDefault('crateFfiEventsEventsScoreEvents', '{}');
     stubDefault('crateFfiIdentityIdentityFetchFollows', '[]');
-    if (!api.handlers.containsKey(Symbol('crateFfiSocialSocialFriendSuggestions'))) {
+    if (!api.handlers
+        .containsKey(Symbol('crateFfiSocialSocialFriendSuggestions'))) {
       api.stubListString('crateFfiSocialSocialFriendSuggestions', const []);
     }
     stubDefault('crateFfiDatingDatingGetOwnProfile', ownProfileJson);
@@ -155,8 +154,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('empty state shows no events yet with controls',
-      (tester) async {
+  testWidgets('empty state shows no events yet with controls', (tester) async {
     await pumpScreen(tester);
 
     await tester.tap(find.text('List'));
@@ -242,8 +240,7 @@ void main() {
     await tester.enterText(
         find
             .descendant(
-                of: find.byType(AlertDialog),
-                matching: find.byType(TextField))
+                of: find.byType(AlertDialog), matching: find.byType(TextField))
             .at(0),
         'Broken');
     await tester.tap(find.widgetWithText(FilledButton, 'Create'));
@@ -289,8 +286,8 @@ void main() {
     await pumpScreen(tester);
 
     final now = DateTime.now();
-    expect(find.text('${monthNames[now.month - 1]} ${now.year}'),
-        findsOneWidget);
+    expect(
+        find.text('${monthNames[now.month - 1]} ${now.year}'), findsOneWidget);
     expect(find.text('Sun'), findsOneWidget);
     expect(find.text('Mon'), findsOneWidget);
 
@@ -301,7 +298,8 @@ void main() {
 
   testWidgets('friends audience shows only friend-created events',
       (tester) async {
-    const mineJson = '{"id":"ev2","creator_pubkey":"friend1","title":"Friend Gig",'
+    const mineJson =
+        '{"id":"ev2","creator_pubkey":"friend1","title":"Friend Gig",'
         '"description":"","location":"","latitude":0,"longitude":0,'
         '"start_time":0,"end_time":0,"image":"","attendees":1,'
         '"rsvp_status":"","created_at":0}';
@@ -310,7 +308,8 @@ void main() {
         '"description":"","location":"","latitude":0,"longitude":0,'
         '"start_time":0,"end_time":0,"image":"","attendees":0,'
         '"rsvp_status":"","created_at":0}';
-    api.stubString('crateFfiEventsEventsFetchNearby', '[$mineJson,$strangerJson]');
+    api.stubString(
+        'crateFfiEventsEventsFetchNearby', '[$mineJson,$strangerJson]');
     api.stubString('crateFfiIdentityIdentityFetchFollows', '["friend1"]');
 
     await pumpScreen(tester);
@@ -329,8 +328,7 @@ void main() {
     expect(find.text('Stranger Meetup'), findsNothing);
   });
 
-  testWidgets('event tap opens detail and RSVP calls bridge',
-      (tester) async {
+  testWidgets('event tap opens detail and RSVP calls bridge', (tester) async {
     api.stubString('crateFfiEventsEventsFetchNearby', '[$eventJson]');
     api.stubString('crateFfiEventsEventsGetEvent', eventJson);
     api.stubString('crateFfiEventsEventsRemindersList', '[]');
@@ -414,8 +412,7 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
   });
 
-  testWidgets('add reminder dialog upserts reminder for event',
-      (tester) async {
+  testWidgets('add reminder dialog upserts reminder for event', (tester) async {
     api.stubString('crateFfiEventsEventsReminderUpsert', 'r1');
 
     await pumpDetail(tester);
@@ -439,7 +436,7 @@ void main() {
     api.stubString(
         'crateFfiEventsEventsRemindersList',
         '[{"id":"r1","event_id":"ev1","title":"Heads up","start_time":0,'
-        '"minutes_before":10,"created_at":0}]');
+            '"minutes_before":10,"created_at":0}]');
     api.stubBool('crateFfiEventsEventsReminderDelete', true);
 
     await pumpDetail(tester);

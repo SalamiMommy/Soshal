@@ -61,7 +61,8 @@ void main() {
     });
 
     test('rejects embedded credentials', () {
-      expect(SafeUrl.isSafeMediaUrl('https://user:pass@example.com/x'), isFalse);
+      expect(
+          SafeUrl.isSafeMediaUrl('https://user:pass@example.com/x'), isFalse);
     });
   });
 

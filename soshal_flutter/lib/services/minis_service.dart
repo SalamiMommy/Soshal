@@ -24,6 +24,7 @@ class MinisService extends ChangeNotifier
   bool get wasmRuntimeUnavailable => _wasmRuntimeUnavailable;
 
   List<MiniItem> _saved = [];
+
   /// Mirror of [_saved]'s ids, so [isSaved] is a hash lookup rather than a scan.
   ///
   /// This is a cache, not a source of truth: [_saved] is the list callers read

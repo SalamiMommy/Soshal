@@ -97,8 +97,7 @@ void main() {
       expect(p2p.downloads[id]?.state, 'running');
       expect(p2p.downloads[id]?.verifiedChunks, BigInt.zero);
 
-      final inv =
-          api.callsOf('crateFfiP2PP2PSwarmDownload').single;
+      final inv = api.callsOf('crateFfiP2PP2PSwarmDownload').single;
       expect(api.namedArg(inv, 'manifestJson'), '{"hash":"h1"}');
       expect(api.namedArg(inv, 'peersJson'), '["10.0.0.2:8001"]');
       expect(api.namedArg(inv, 'quicPortsJson'), '[null,9999]');
@@ -141,8 +140,9 @@ void main() {
       api.stub('crateFfiP2PP2PSwarmDownload', (_) => 'dl-1');
       api.stub(
         'crateFfiP2PP2PSwarmPoll',
-        (inv) =>
-            inv.namedArguments[Symbol('id')] == 'dl-1' ? status('running') : null,
+        (inv) => inv.namedArguments[Symbol('id')] == 'dl-1'
+            ? status('running')
+            : null,
       );
       api.stubBool('crateFfiP2PP2PSwarmCancel', true);
 
@@ -246,8 +246,7 @@ void main() {
         redundancyRatio: 1.5,
       );
       expect(manifest['symbols'], 3);
-      var inv =
-          api.callsOf('crateFfiP2PP2PEncodeFountainPayload').single;
+      var inv = api.callsOf('crateFfiP2PP2PEncodeFountainPayload').single;
       expect(api.namedArg(inv, 'data'), [1, 2, 3]);
       expect(api.namedArg(inv, 'redundancyRatio'), 1.5);
 
@@ -290,8 +289,8 @@ void main() {
     test('start error sets lastError and rethrows', () async {
       final p2p = P2pService();
       addTearDown(p2p.dispose);
-      api.stub('crateFfiP2PP2PLanServerStart',
-          (_) => throw Exception('lan down'));
+      api.stub(
+          'crateFfiP2PP2PLanServerStart', (_) => throw Exception('lan down'));
       await expectLater(p2p.start(), throwsException);
       expect(p2p.lastError, contains('lan down'));
     });
@@ -300,8 +299,8 @@ void main() {
         () async {
       final p2p = P2pService();
       addTearDown(p2p.dispose);
-      api.stub('crateFfiP2PP2PSwarmDownload',
-          (_) => throw Exception('dl boom'));
+      api.stub(
+          'crateFfiP2PP2PSwarmDownload', (_) => throw Exception('dl boom'));
       await expectLater(
         p2p.swarmDownload(
           manifestJson: 'm',

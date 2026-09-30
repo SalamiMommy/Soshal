@@ -28,8 +28,7 @@ void main() {
       expect(zap.nwcPubkey, 'npub1zapper');
     });
 
-    test('connect failure keeps disconnected state and clears error',
-        () async {
+    test('connect failure keeps disconnected state and clears error', () async {
       final zap = ZapService();
       api.stubBool('crateFfiZapZapConnectNwc', false);
 
@@ -38,8 +37,7 @@ void main() {
       expect(zap.lastError, isNull);
     });
 
-    test('disconnect transitions to disconnected and clears pubkey',
-        () async {
+    test('disconnect transitions to disconnected and clears pubkey', () async {
       final zap = ZapService();
       api.stubBool('crateFfiZapZapDisconnectNwc', true);
 
@@ -60,14 +58,14 @@ void main() {
       expect(zap.isConnected, isTrue);
     });
 
-    test('honest stub: connect throw surfaces error, no fake state',
-        () async {
+    test('honest stub: connect throw surfaces error, no fake state', () async {
       final zap = ZapService();
-      api.stub('crateFfiZapZapConnectNwc',
-          (_) => throw Exception('backend err'));
+      api.stub(
+          'crateFfiZapZapConnectNwc', (_) => throw Exception('backend err'));
       api.stubString('crateFfiZapZapGetNwcStatus', 'connected');
 
-      await expectLater(zap.connect('nostr+walletconnect://x'), throwsException);
+      await expectLater(
+          zap.connect('nostr+walletconnect://x'), throwsException);
       expect(zap.lastError, contains('backend err'));
       expect(zap.isConnected, isFalse,
           reason: 'never fabricate a connected state');
@@ -76,25 +74,23 @@ void main() {
     test('honest stub: fetchTotalMsat throw surfaces error, no fake total',
         () async {
       final zap = ZapService();
-      api.stub('crateFfiZapZapGetTotalMsat',
-          (_) => throw Exception('nwc down'));
+      api.stub(
+          'crateFfiZapZapGetTotalMsat', (_) => throw Exception('nwc down'));
 
       await expectLater(zap.fetchTotalMsat('ev-1'), throwsException);
       expect(zap.lastError, contains('nwc down'));
-      expect(zap.totalMsat, 0,
-          reason: 'never fabricate a zap total');
+      expect(zap.totalMsat, 0, reason: 'never fabricate a zap total');
     });
 
     test('honest stub: fetchReceipts throw surfaces error, no fake receipts',
         () async {
       final zap = ZapService();
-      api.stub('crateFfiZapZapFetchReceipts',
-          (_) => throw Exception('nwc down'));
+      api.stub(
+          'crateFfiZapZapFetchReceipts', (_) => throw Exception('nwc down'));
 
       await expectLater(zap.fetchReceipts('ev-1'), throwsException);
       expect(zap.lastError, contains('nwc down'));
-      expect(zap.receipts, isEmpty,
-          reason: 'never fabricate zap receipts');
+      expect(zap.receipts, isEmpty, reason: 'never fabricate zap receipts');
     });
 
     test('fetchTotalMsat returns parsed total and passes eventId', () async {
@@ -112,7 +108,7 @@ void main() {
       api.stubString(
         'crateFfiZapZapFetchReceipts',
         '[{"id":"r1","event_id":"ev-1","zapper_pubkey":"pk-1",'
-        '"amount_msat":1000,"created_at":1700000000}]',
+            '"amount_msat":1000,"created_at":1700000000}]',
       );
 
       final receipts = await zap.fetchReceipts('ev-1', limit: 5);
@@ -179,8 +175,7 @@ void main() {
       expect(api.callsOf('crateFfiZapZapGetTotalMsat').length, 1);
     });
 
-    test('batch is forgotten once settled, so later calls go direct',
-        () async {
+    test('batch is forgotten once settled, so later calls go direct', () async {
       final zap = ZapService();
       api.stubString('crateFfiZapZapFetchTotals', '{"ev-1":500}');
       api.stub('crateFfiZapZapGetTotalMsat', (_) => BigInt.from(77));

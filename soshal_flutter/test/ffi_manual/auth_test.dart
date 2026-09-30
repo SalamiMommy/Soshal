@@ -12,11 +12,13 @@ void main() {
     api.stubString('crateFfiAuthAuthGenerateKeypair', 'kp');
     api.stubString('crateFfiAuthAuthGenerateMnemonic', 'mn');
     api.stubBool('crateFfiAuthAuthValidateMnemonic', true);
-    api.stub('crateFfiAuthAuthRestoreFromMnemonic', (_) => Future.value('restored'));
+    api.stub(
+        'crateFfiAuthAuthRestoreFromMnemonic', (_) => Future.value('restored'));
     final kp = authGenerateKeypair();
     final mn = authGenerateMnemonic();
     final ok = authValidateMnemonic(mnemonic: 'm');
-    final restored = await authRestoreFromMnemonic(mnemonic: 'm', passphrase: 'p');
+    final restored =
+        await authRestoreFromMnemonic(mnemonic: 'm', passphrase: 'p');
     expect(kp, 'kp');
     expect(mn, 'mn');
     expect(ok, true);

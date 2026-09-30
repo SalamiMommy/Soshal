@@ -59,7 +59,8 @@ void main() {
     ));
   }
 
-  testWidgets('advanced screen renders sections and refresh runs', (tester) async {
+  testWidgets('advanced screen renders sections and refresh runs',
+      (tester) async {
     api.stubString('crateFfiNetworkNetworkGetSysDiagnostics', '{}');
     api.stubBool('crateFfiNetworkNetworkI2PStatus', true);
     api.stubBool('crateFfiNetworkNetworkFreenetStatus', false);

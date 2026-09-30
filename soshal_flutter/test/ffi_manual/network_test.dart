@@ -32,8 +32,12 @@ void main() {
   });
 
   test('networkFetchHttp3 returns HttpResponseDto', () async {
-    api.stub('crateFfiNetworkNetworkFetchHttp3', (_) => Future.value(HttpResponseDto(status: 200, body: Uint8List.fromList([1]))));
-    final res = await networkFetchHttp3(url: 'http://x', method: 'GET', headersJson: '[]');
+    api.stub(
+        'crateFfiNetworkNetworkFetchHttp3',
+        (_) => Future.value(
+            HttpResponseDto(status: 200, body: Uint8List.fromList([1]))));
+    final res = await networkFetchHttp3(
+        url: 'http://x', method: 'GET', headersJson: '[]');
     expect(res, isA<HttpResponseDto>());
     expect(res.status, 200);
     expect(api.callCount('crateFfiNetworkNetworkFetchHttp3'), 1);

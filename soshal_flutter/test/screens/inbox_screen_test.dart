@@ -13,9 +13,12 @@ import 'package:soshal_flutter/services/session_service.dart';
 
 import '../helpers/test_env.dart';
 
-const mePubkey = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const alicePubkey = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
-const bobPubkey = 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
+const mePubkey =
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const alicePubkey =
+    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const bobPubkey =
+    'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
 
 late FakeApi api;
 
@@ -75,8 +78,7 @@ Future<void> pumpInbox(
   await tester.pumpWidget(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-            create: (_) => messaging ?? MessagingService()),
+        ChangeNotifierProvider(create: (_) => messaging ?? MessagingService()),
         ChangeNotifierProvider(create: (_) => session),
         ChangeNotifierProvider(create: (_) => p2p),
         ChangeNotifierProvider(create: (_) => MediaService()),
@@ -148,8 +150,8 @@ void main() {
     api.handlers.clear();
     api.calls.clear();
     stubSession(api);
-    api.stub('crateFfiMessagingMessagingFetchConversations',
-        (_) => [alicePubkey]);
+    api.stub(
+        'crateFfiMessagingMessagingFetchConversations', (_) => [alicePubkey]);
     api.stubStringBuilder(
       'crateFfiMessagingMessagingFetchDms',
       (_) => jsonEncode([
@@ -171,8 +173,7 @@ void main() {
     await tester.tap(aliceTile);
     await tester.pumpAndSettle();
 
-    final inbox =
-        tester.widget<InboxScreen>(find.byType(InboxScreen));
+    final inbox = tester.widget<InboxScreen>(find.byType(InboxScreen));
     expect(inbox.otherPubkey, alicePubkey);
     expect(find.text('hey alice'), findsOneWidget);
   });
@@ -182,8 +183,7 @@ void main() {
     api.handlers.clear();
     api.calls.clear();
     stubSession(api);
-    api.stub('crateFfiMessagingMessagingFetchConversations',
-        (_) => <String>[]);
+    api.stub('crateFfiMessagingMessagingFetchConversations', (_) => <String>[]);
 
     final session = await seedSession();
     await pumpInbox(tester, session: session);
@@ -198,8 +198,8 @@ void main() {
     api.handlers.clear();
     api.calls.clear();
     stubSession(api);
-    api.stub('crateFfiMessagingMessagingFetchConversations',
-        (_) => [alicePubkey]);
+    api.stub(
+        'crateFfiMessagingMessagingFetchConversations', (_) => [alicePubkey]);
     api.stubStringBuilder(
       'crateFfiMessagingMessagingFetchDms',
       (_) => jsonEncode([

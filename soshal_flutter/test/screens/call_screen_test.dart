@@ -81,7 +81,7 @@ void main() {
     api.stubString(
       'crateFfiSessionSessionLoad',
       '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
-      '"npub":"npub1abc","last_used":0,"relay_list":[]}]}',
+          '"npub":"npub1abc","last_used":0,"relay_list":[]}]}',
     );
     api.stubString('crateFfiCallsCallsFetchSignals', '[]');
 

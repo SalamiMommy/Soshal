@@ -59,8 +59,8 @@ void main() {
   }
 
   testWidgets('moq viewer renders waiting state', (tester) async {
-    api.stubString('crateFfiStreamingStreamingMoqSubscribeStream',
-        '{"status":"ok"}');
+    api.stubString(
+        'crateFfiStreamingStreamingMoqSubscribeStream', '{"status":"ok"}');
     api.stubString('crateFfiP2PP2PMoqSubscribeFetch', '{"groups":[]}');
     await pump(
       tester,
@@ -73,7 +73,8 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(find.text('0 frames'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(TextButton, 'Leave'), warnIfMissed: false);
+    await tester.tap(find.widgetWithText(TextButton, 'Leave'),
+        warnIfMissed: false);
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 300));

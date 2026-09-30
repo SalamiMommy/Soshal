@@ -71,7 +71,8 @@ void main() {
 
       final kp = await auth.generateKeypair();
       expect(kp.publicKey, 'pk-hex');
-      expect(kp.toJson().containsKey('secret_key'), false); // secret never crosses FFI
+      expect(kp.toJson().containsKey('secret_key'),
+          false); // secret never crosses FFI
       expect(auth.currentKeypair?.publicKey, 'pk-hex');
       expect(notified, 1);
     });
@@ -110,16 +111,16 @@ void main() {
       api.stubString(
         'crateFfiSessionSessionLoad',
         '{"active_pubkey":"pk-a","accounts":['
-        '{"pubkey":"pk-a","npub":"npub1a","last_used":7,'
-        '"relay_list":["wss://relay.example"]}]}',
+            '{"pubkey":"pk-a","npub":"npub1a","last_used":7,'
+            '"relay_list":["wss://relay.example"]}]}',
       );
 
       final data = await session.loadSession();
       expect(data.activePubkey, 'pk-a');
       expect(session.activePubkey, 'pk-a');
       expect(session.getAccounts().length, 1);
-      expect(session.getAccounts().first.relayList.single,
-          'wss://relay.example');
+      expect(
+          session.getAccounts().first.relayList.single, 'wss://relay.example');
       expect(session.hasActiveSession(), isTrue);
       expect(notified, 1);
     });
@@ -145,7 +146,7 @@ void main() {
       api.stubString(
         'crateFfiSessionSessionLoad',
         '{"active_pubkey":"pk-1","accounts":['
-        '{"pubkey":"pk-1","npub":"npub1","last_used":1,"relay_list":[]}]}',
+            '{"pubkey":"pk-1","npub":"npub1","last_used":1,"relay_list":[]}]}',
       );
       api.stubBool('crateFfiSessionSessionSwitchAccount', true);
       await session.loadSession();
@@ -161,7 +162,7 @@ void main() {
       api.stubString(
         'crateFfiSessionSessionLoad',
         '{"active_pubkey":"pk-1","accounts":['
-        '{"pubkey":"pk-1","npub":"npub1","last_used":1,"relay_list":[]}]}',
+            '{"pubkey":"pk-1","npub":"npub1","last_used":1,"relay_list":[]}]}',
       );
       await session.loadSession();
       await session.removeAccount('pk-1');
@@ -188,43 +189,43 @@ void main() {
 
   group('FeedService', () {
     String postsJson(int n) {
-      final posts = List.generate(n, (i) => {
-            'event_id': 'ev-$i',
-            'pubkey': 'pk-$i',
-            'content': 'post $i',
-            'created_at': 1700000000 + i,
-            'reactions': i,
-            'replies': 0,
-            'reposts': 0,
-            'liked': false,
-          });
+      final posts = List.generate(
+          n,
+          (i) => {
+                'event_id': 'ev-$i',
+                'pubkey': 'pk-$i',
+                'content': 'post $i',
+                'created_at': 1700000000 + i,
+                'reactions': i,
+                'replies': 0,
+                'reposts': 0,
+                'liked': false,
+              });
       return jsonEncode(posts);
     }
 
     String postsJsonFrom(int n, int base) {
-      final posts = List.generate(n, (i) => {
-            'event_id': 'ev-${base + i}',
-            'pubkey': 'pk-${base + i}',
-            'content': 'post ${base + i}',
-            'created_at': 1700000000 + base + i,
-            'reactions': base + i,
-            'replies': 0,
-            'reposts': 0,
-            'liked': false,
-          });
+      final posts = List.generate(
+          n,
+          (i) => {
+                'event_id': 'ev-${base + i}',
+                'pubkey': 'pk-${base + i}',
+                'content': 'post ${base + i}',
+                'created_at': 1700000000 + base + i,
+                'reactions': base + i,
+                'replies': 0,
+                'reposts': 0,
+                'liked': false,
+              });
       return jsonEncode(posts);
     }
 
-    test('fetchFeed replaces on offset 0 and cap at 100 on paging',
-        () async {
+    test('fetchFeed replaces on offset 0 and cap at 100 on paging', () async {
       final feed = FeedService();
       api.stub('crateFfiFeedFeedFetchEvents', (inv) {
-        final options =
-            jsonDecode(api.namedArg(inv, 'optionsJson') as String)
-                as Map<String, dynamic>;
-        return options['offset'] == 0
-            ? postsJson(60)
-            : postsJsonFrom(60, 100);
+        final options = jsonDecode(api.namedArg(inv, 'optionsJson') as String)
+            as Map<String, dynamic>;
+        return options['offset'] == 0 ? postsJson(60) : postsJsonFrom(60, 100);
       });
 
       await feed.fetchFeed(limit: 60);
@@ -240,8 +241,8 @@ void main() {
 
     test('fetchFeed error sets lastError and rethrows', () async {
       final feed = FeedService();
-      api.stub('crateFfiFeedFeedFetchEvents',
-          (_) => throw Exception('feed down'));
+      api.stub(
+          'crateFfiFeedFeedFetchEvents', (_) => throw Exception('feed down'));
       await expectLater(feed.fetchFeed(), throwsException);
       expect(feed.lastError, contains('feed down'));
       expect(feed.isLoading, isFalse);
@@ -347,8 +348,7 @@ void main() {
       final conv = ms.conversations['peer-1']!;
       expect(conv.single.content, 'hi');
       expect(conv.single.isOwn, isTrue);
-      final inv =
-          api.callsOf('crateFfiMessagingMessagingSendDm').single;
+      final inv = api.callsOf('crateFfiMessagingMessagingSendDm').single;
       expect(api.namedArg(inv, 'recipientPubkey'), 'peer-1');
     });
 
@@ -357,7 +357,7 @@ void main() {
       api.stubString(
         'crateFfiMessagingMessagingFetchDms',
         '[{"id":"m1","sender":"peer-1","recipient":"me",'
-        '"content":"hello","created_at":5,"decrypted":true,"is_own":false}]',
+            '"content":"hello","created_at":5,"decrypted":true,"is_own":false}]',
       );
       final dms = await ms.fetchDMs('peer-1');
       expect(dms.single.content, 'hello');

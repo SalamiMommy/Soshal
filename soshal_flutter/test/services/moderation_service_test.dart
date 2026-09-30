@@ -20,12 +20,12 @@ void main() {
       final mod = ModerationService();
       var notified = 0;
       mod.addListener(() => notified++);
-      api.stubListString('crateFfiModerationModerationGetMuted',
-          const ['pk-m1', 'pk-m2']);
+      api.stubListString(
+          'crateFfiModerationModerationGetMuted', const ['pk-m1', 'pk-m2']);
       api.stubListString(
           'crateFfiModerationModerationGetBlocked', const ['pk-b1']);
-      api.stubListString('crateFfiModerationModerationGetWordFilters',
-          const ['spam', 'scam']);
+      api.stubListString(
+          'crateFfiModerationModerationGetWordFilters', const ['spam', 'scam']);
 
       await mod.load('pk-me');
       expect(mod.muted, ['pk-m1', 'pk-m2']);
@@ -123,12 +123,10 @@ void main() {
     test('setWordFilters encodes json and reloads lists', () async {
       final mod = ModerationService();
       api.stubBool('crateFfiModerationModerationSetWordFilters', true);
+      api.stubListString('crateFfiModerationModerationGetMuted', const []);
+      api.stubListString('crateFfiModerationModerationGetBlocked', const []);
       api.stubListString(
-          'crateFfiModerationModerationGetMuted', const []);
-      api.stubListString(
-          'crateFfiModerationModerationGetBlocked', const []);
-      api.stubListString('crateFfiModerationModerationGetWordFilters',
-          const ['spam', 'scam']);
+          'crateFfiModerationModerationGetWordFilters', const ['spam', 'scam']);
 
       expect(await mod.setWordFilters(['spam', 'scam']), isTrue);
       expect(mod.wordFilters, ['spam', 'scam']);
@@ -173,7 +171,8 @@ void main() {
         '{"is_flagged":true,"primary_category":"threat","confidence":0.88,"tier_evaluated":"Tier2Deep","tier1_result":{"is_flagged":false,"primary_category":null,"confidence":0.4,"scores":{"spam":0.0,"csam":0.0,"gore":0.0,"bigotry":0.0,"harassment":0.4},"detected_reasons":[],"evasion_score":0.0},"tier2_roberta_result":{"is_flagged":true,"primary_category":"threat","confidence":0.88,"scores":{"toxic":0.88,"severe_toxic":0.88,"obscene":0.1,"threat":0.88,"insult":0.2,"identity_hate":0.0,"spam":0.0,"csam":0.0,"gore":0.0},"token_count":8,"detected_signals":["roberta_semantic_threat"]},"detected_reasons":["roberta_semantic_threat"]}',
       );
 
-      final res = await mod.hybridClassifyText('i will hunt you down', forceDeepScan: true);
+      final res = await mod.hybridClassifyText('i will hunt you down',
+          forceDeepScan: true);
       expect(res.isFlagged, isTrue);
       expect(res.tierEvaluated, 'Tier2Deep');
       expect(res.primaryCategory, 'threat');
@@ -239,5 +238,3 @@ void main() {
     });
   });
 }
-
-

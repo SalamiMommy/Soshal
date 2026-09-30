@@ -25,6 +25,7 @@ class MusicService extends ChangeNotifier
   List<MusicTrack> get tracks => _tracks;
 
   List<MusicTrack> _savedTracks = [];
+
   /// Mirror of [_savedTracks]'s ids, so [isTrackSaved] is a hash lookup.
   ///
   /// Unlike the minis list, this one has only two writers — [resetForAccountSwitch]

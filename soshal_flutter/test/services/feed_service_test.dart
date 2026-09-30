@@ -67,19 +67,22 @@ void main() {
       final feed = FeedService();
 
       // Fetch 100 posts
-      final postList = List.generate(100, (i) => {
-            'id': 'p$i',
-            'pubkey': 'pk1',
-            'content': 'msg $i',
-            'created_at': 1000 + i,
-          });
+      final postList = List.generate(
+          100,
+          (i) => {
+                'id': 'p$i',
+                'pubkey': 'pk1',
+                'content': 'msg $i',
+                'created_at': 1000 + i,
+              });
       api.stubString('crateFfiFeedFeedFetchEvents', jsonEncode(postList));
       await feed.fetchFeed(offset: 0);
       expect(feed.posts.length, 100);
 
       // Fetch 20 more
-      final newPosts =
-          List.generate(20, (i) => {
+      final newPosts = List.generate(
+          20,
+          (i) => {
                 'id': 'new$i',
                 'pubkey': 'pk1',
                 'content': 'new $i',
@@ -119,7 +122,8 @@ void main() {
       expect(api.namedArg(inv, 'limit'), 10);
     });
 
-    test('fetchAuthorPosts fetches posts without modifying global feed', () async {
+    test('fetchAuthorPosts fetches posts without modifying global feed',
+        () async {
       final feed = FeedService();
       var notified = 0;
       feed.addListener(() => notified++);
@@ -312,10 +316,16 @@ void main() {
       api.stubString('crateFfiFeedFeedPublishTextNote', 'signed_event_json');
       api.stubString('crateFfiFeedFeedPublishReply', 'signed_reply_json');
 
-      final res1 = await feed.publishTextNote('hello', [['t', 'rust']], 'pk1');
+      final res1 = await feed.publishTextNote(
+          'hello',
+          [
+            ['t', 'rust']
+          ],
+          'pk1');
       expect(res1, 'signed_event_json');
 
-      final res2 = await feed.publishReply('reply text', 'root1', 'parent1', 'pk1');
+      final res2 =
+          await feed.publishReply('reply text', 'root1', 'parent1', 'pk1');
       expect(res2, 'signed_reply_json');
     });
 
@@ -333,7 +343,9 @@ void main() {
       expect(post.createdAt, 1000);
     });
 
-    test('aggregateChatReactions correctly aggregates reaction counts and liked status', () {
+    test(
+        'aggregateChatReactions correctly aggregates reaction counts and liked status',
+        () {
       final feed = FeedService();
       final posts = <FeedPost>[
         FeedPost(
@@ -427,7 +439,8 @@ void main() {
       expect(feed.posts.first.reactions, 6);
     });
 
-    test('watchFeed parses incoming json stream into list of FeedPost', () async {
+    test('watchFeed parses incoming json stream into list of FeedPost',
+        () async {
       final feed = FeedService();
       final controller = StreamController<String>();
       addTearDown(controller.close);
@@ -452,7 +465,9 @@ void main() {
       expect(emissions[0][0].liked, true);
     });
 
-    test('subscribeToFeed updates posts list and notifies listeners on stream updates', () async {
+    test(
+        'subscribeToFeed updates posts list and notifies listeners on stream updates',
+        () async {
       final feed = FeedService();
       final controller = StreamController<String>();
       addTearDown(controller.close);
@@ -505,7 +520,8 @@ void main() {
       expect(emissions[0][0].content, 'reply content');
     });
 
-    test('watchFeed handles native FeedPostDto typed streams directly', () async {
+    test('watchFeed handles native FeedPostDto typed streams directly',
+        () async {
       final feed = FeedService();
       final controller = StreamController<List<FeedPostDto>>();
       addTearDown(controller.close);
@@ -556,7 +572,8 @@ void main() {
       expect(post.media?.size, 1024);
     });
 
-    test('fetchFeed handles native FeedPostDto typed results directly', () async {
+    test('fetchFeed handles native FeedPostDto typed results directly',
+        () async {
       final feed = FeedService();
       api.stubValue('crateFfiFeedFeedFetchEventsTyped', [
         FeedPostDto(
@@ -582,4 +599,3 @@ void main() {
     });
   });
 }
-

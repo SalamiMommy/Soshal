@@ -35,3 +35,13 @@ class FakePathProvider extends PathProviderPlatform
   PathProviderPlatform.instance = FakePathProvider(tmpRoot);
   return (api, tmpRoot);
 }
+
+/// Drain the microtask queue.
+///
+/// Needed after `await`ing a `guard` method whose body is **async**: `guard`
+/// takes its `r.then` path, so an `onNotify: notifyDeferred` notify is queued
+/// one microtask after the caller's own resumption. A method with a
+/// synchronous body calls `onNotify()` before returning and needs no flush.
+/// Assert the count *and* that the value is already correct at resumption --
+/// a flush alone would let a notify that never fires pass.
+Future<void> flushMicrotasks() => Future<void>.value();

@@ -14,7 +14,8 @@ void main() {
   final env = bootstrapTestEnv('signer-lock-test');
   api = env.$1;
 
-  testWidgets('SignerLockScreen displays Unlock Profile and no recovery phrase field',
+  testWidgets(
+      'SignerLockScreen displays Unlock Profile and no recovery phrase field',
       (tester) async {
     api.handlers.clear();
     const sessionJson = '''{
@@ -55,7 +56,8 @@ void main() {
     expect(api.callCount('crateFfiSignerSignerUnlockFromKeyring'), 1);
   });
 
-  testWidgets('SignerLockScreen shows Unlock Profile even when shell has PIN and supports key dialog',
+  testWidgets(
+      'SignerLockScreen shows Unlock Profile even when shell has PIN and supports key dialog',
       (tester) async {
     api.handlers.clear();
     const sessionJson = '''{

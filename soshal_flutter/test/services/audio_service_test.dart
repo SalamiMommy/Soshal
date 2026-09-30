@@ -28,8 +28,7 @@ void main() {
       expect(peaks.length, 3, reason: 'bucket count');
       expect(peaks[0], closeTo(0.1, 1e-6));
       expect(peaks[2], closeTo(0.9, 1e-6));
-      final inv =
-          api.callsOf('crateFfiStorageStorageGetAudioPeaks').single;
+      final inv = api.callsOf('crateFfiStorageStorageGetAudioPeaks').single;
       expect(api.namedArg(inv, 'path'), '/voice/a.m4a');
     });
 
@@ -51,8 +50,7 @@ void main() {
 
       final encoded = await audio.encodeVoice(pcm);
       expect(encoded, [0x01, 0x02, 0x03]);
-      final inv =
-          api.callsOf('crateFfiStorageStorageEncodeVoicePcm').single;
+      final inv = api.callsOf('crateFfiStorageStorageEncodeVoicePcm').single;
       expect(api.namedArg(inv, 'pcm'), pcm);
     });
 
@@ -74,8 +72,7 @@ void main() {
 
       final decoded = audio.decodeVoice(payload);
       expect(decoded, [7, 8, 9]);
-      final inv =
-          api.callsOf('crateFfiStorageStorageDecodeVoiceStream').single;
+      final inv = api.callsOf('crateFfiStorageStorageDecodeVoiceStream').single;
       expect(api.namedArg(inv, 'payload'), payload);
     });
 
@@ -99,8 +96,7 @@ void main() {
       final payload = Uint8List.fromList([0x01]);
 
       expect(audio.durationSecs(payload), 2.5);
-      final inv =
-          api.callsOf('crateFfiStorageStorageVoiceDurationSecs').single;
+      final inv = api.callsOf('crateFfiStorageStorageVoiceDurationSecs').single;
       expect(api.namedArg(inv, 'payload'), payload);
     });
 

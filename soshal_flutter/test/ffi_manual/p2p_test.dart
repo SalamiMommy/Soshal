@@ -23,12 +23,20 @@ void main() {
   });
 
   test('p2PQuicFetchChunk and p2PEncode/Decode fountain', () async {
-    api.stub('crateFfiP2PP2PQuicFetchChunk', (_) => Uint8List.fromList([1,2,3]));
+    api.stub(
+        'crateFfiP2PP2PQuicFetchChunk', (_) => Uint8List.fromList([1, 2, 3]));
     api.stubString('crateFfiP2PP2PEncodeFountainPayload', 'manifest');
-    api.stub('crateFfiP2PP2PDecodeFountainPayload', (_) => Uint8List.fromList([9,9]));
-    final chunk = await p2PQuicFetchChunk(addr: '10.0.0.1', hash: 'h', offset: BigInt.from(0), length: BigInt.from(10));
-    final manifest = p2PEncodeFountainPayload(data: [1,2,3], redundancyRatio: 0.5);
-    final decoded = p2PDecodeFountainPayload(manifestJson: 'm', packetsB64Json: '[]');
+    api.stub('crateFfiP2PP2PDecodeFountainPayload',
+        (_) => Uint8List.fromList([9, 9]));
+    final chunk = await p2PQuicFetchChunk(
+        addr: '10.0.0.1',
+        hash: 'h',
+        offset: BigInt.from(0),
+        length: BigInt.from(10));
+    final manifest =
+        p2PEncodeFountainPayload(data: [1, 2, 3], redundancyRatio: 0.5);
+    final decoded =
+        p2PDecodeFountainPayload(manifestJson: 'm', packetsB64Json: '[]');
     expect(chunk, isA<Uint8List>());
     expect(manifest, 'manifest');
     expect(decoded, isA<Uint8List>());

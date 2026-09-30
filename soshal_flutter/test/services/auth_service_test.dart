@@ -60,8 +60,7 @@ void main() {
     });
 
     test('generateMnemonic returns phrase', () async {
-      const phrase =
-          'abandon abandon abandon abandon abandon abandon abandon '
+      const phrase = 'abandon abandon abandon abandon abandon abandon abandon '
           'abandon abandon abandon abandon about';
       api.stubString('crateFfiAuthAuthGenerateMnemonic', phrase);
 
@@ -88,8 +87,7 @@ void main() {
       api.stubBool('crateFfiAuthAuthValidateMnemonic', true);
 
       final auth = AuthService();
-      const phrase =
-          'abandon abandon abandon abandon abandon abandon abandon '
+      const phrase = 'abandon abandon abandon abandon abandon abandon abandon '
           'abandon abandon abandon abandon about';
       final result = await auth.validateMnemonic(phrase);
 
@@ -113,11 +111,11 @@ void main() {
       var notified = 0;
       auth.addListener(() => notified++);
 
-      const phrase =
-          'abandon abandon abandon abandon abandon abandon abandon '
+      const phrase = 'abandon abandon abandon abandon abandon abandon abandon '
           'abandon abandon abandon abandon about';
       const passphrase = '';
-      const keypairJson = '{"public_key":"restored_pk","secret_key":"restored_sk"}';
+      const keypairJson =
+          '{"public_key":"restored_pk","secret_key":"restored_sk"}';
       api.stub('crateFfiAuthAuthRestoreFromMnemonic',
           (_) => Future.value(keypairJson));
 

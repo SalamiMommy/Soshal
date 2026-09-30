@@ -18,8 +18,7 @@ void main() {
   });
 
   group('MediaService', () {
-    test('uploadMedia stubs FFI, parses manifest, passes filePath',
-        () async {
+    test('uploadMedia stubs FFI, parses manifest, passes filePath', () async {
       final media = MediaService();
       api.stubString('crateFfiMediaMediaGetMimeType', 'video/mp4');
       api.stubString(
@@ -44,14 +43,11 @@ void main() {
         'max': 4194304,
       });
       expect(media.lastError, isNull);
-      final inv =
-          api.callsOf('crateFfiMediaMediaUploadBlobFile').single;
+      final inv = api.callsOf('crateFfiMediaMediaUploadBlobFile').single;
       expect(api.namedArg(inv, 'filePath'), file.path);
-      final mimeInv =
-          api.callsOf('crateFfiMediaMediaGetMimeType').single;
+      final mimeInv = api.callsOf('crateFfiMediaMediaGetMimeType').single;
       expect(api.namedArg(mimeInv, 'filePath'), file.path);
-      final chunkInv =
-          api.callsOf('crateFfiMediaMediaChunkingForMime').single;
+      final chunkInv = api.callsOf('crateFfiMediaMediaChunkingForMime').single;
       expect(api.namedArg(chunkInv, 'mime'), 'video/mp4');
     });
 
@@ -225,13 +221,11 @@ void main() {
       expect(media.lastError, isNull,
           reason: 'getLocalUrl throws without setting lastError');
 
-      api.stub('crateFfiMediaMediaStartLocalServer',
-          (_) => BigInt.from(8765));
+      api.stub('crateFfiMediaMediaStartLocalServer', (_) => BigInt.from(8765));
       final port = await media.startLocalServer();
       expect(port, 8765);
       expect(media.localServerPort, 8765);
-      expect(media.getLocalUrl('h-abc'),
-          'http://127.0.0.1:8765/blob/h-abc');
+      expect(media.getLocalUrl('h-abc'), 'http://127.0.0.1:8765/blob/h-abc');
 
       api.stub('crateFfiMediaMediaStopLocalServer', (_) => true);
       await media.stopLocalServer();
@@ -266,8 +260,7 @@ void main() {
       expect(media.lastError, contains('store full'));
     });
 
-    test('fetchBlobFromLan swarms fallback and surfaces all-fail',
-        () async {
+    test('fetchBlobFromLan swarms fallback and surfaces all-fail', () async {
       final media = MediaService();
       api.stubStringBuilder(
         'crateFfiP2PP2PFetchBlobFromPeer',
@@ -307,10 +300,7 @@ void main() {
           'h-abc',
           peers: [
             P2pPeerDto(
-                pubkey: 'pk-1',
-                ip: '10.0.0.1',
-                port: 4000,
-                quicPort: null),
+                pubkey: 'pk-1', ip: '10.0.0.1', port: 4000, quicPort: null),
           ],
           outPath: '/tmp/out.bin',
         ),

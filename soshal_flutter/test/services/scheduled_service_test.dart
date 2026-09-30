@@ -42,10 +42,10 @@ void main() {
       api.stubString(
         'crateFfiScheduledScheduledList',
         '[{"id":"d-1","pubkey":"pk-1","content":"later",'
-        '"kind":1,"created_at":1700000001,"tags_json":"[]",'
-        '"mentioned_pubkeys":["pk-2"],"mentioned_hashtags":["#x"],'
-        '"sync_status":"pending","is_deleted":false,'
-        '"scheduled_at":1700000100,"is_freenet_native":false}]',
+            '"kind":1,"created_at":1700000001,"tags_json":"[]",'
+            '"mentioned_pubkeys":["pk-2"],"mentioned_hashtags":["#x"],'
+            '"sync_status":"pending","is_deleted":false,'
+            '"scheduled_at":1700000100,"is_freenet_native":false}]',
       );
 
       final drafts = await scheduled.list('pk-1');
@@ -64,6 +64,34 @@ void main() {
 
       final inv = api.callsOf('crateFfiScheduledScheduledList').single;
       expect(api.namedArg(inv, 'pubkey'), 'pk-1');
+    });
+
+    test('a listed draft set stays mutable, so delete can remove from it',
+        () async {
+      // The parse builds the list with `growable: true` because `delete` and
+      // the publish sweep both mutate `_drafts` in place. A fixed-length list
+      // parses identically and reads identically -- the difference only shows
+      // up on the *next* mutation, which is why listing alone cannot catch it.
+      final scheduled = ScheduledService();
+      api.stubString(
+        'crateFfiScheduledScheduledList',
+        '[{"id":"d-1","pubkey":"pk-1","content":"a","kind":1,'
+            '"created_at":1,"tags_json":"[]","mentioned_pubkeys":[],'
+            '"mentioned_hashtags":[],"sync_status":"pending","is_deleted":false,'
+            '"scheduled_at":1700000100,"is_freenet_native":false},'
+            '{"id":"d-2","pubkey":"pk-1","content":"b","kind":1,'
+            '"created_at":2,"tags_json":"[]","mentioned_pubkeys":[],'
+            '"mentioned_hashtags":[],"sync_status":"pending","is_deleted":false,'
+            '"scheduled_at":1700000200,"is_freenet_native":false}]',
+      );
+      api.stubBool('crateFfiScheduledScheduledDelete', true);
+
+      await scheduled.list('pk-1');
+      expect(scheduled.drafts, hasLength(2));
+
+      final ok = await scheduled.delete('d-1');
+      expect(ok, isTrue);
+      expect(scheduled.drafts.map((d) => d.id), ['d-2']);
     });
 
     test('list with empty result clears drafts', () async {
@@ -103,8 +131,7 @@ void main() {
           (_) => throw Exception('db locked'));
 
       await expectLater(
-          scheduled.create(
-              pubkey: 'pk-1', content: 'x', scheduledAt: 1),
+          scheduled.create(pubkey: 'pk-1', content: 'x', scheduledAt: 1),
           throwsException);
       expect(scheduled.lastError, contains('db locked'));
       expect(notified, 1);

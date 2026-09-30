@@ -10,10 +10,14 @@ void main() {
   final api = env.$1;
 
   test('mediaDecodeImageRgba and upload/fetch/load/mime/clear/cache', () async {
-    api.stub('crateFfiMediaMediaDecodeImageRgba', (_) => Future.value(DecodedImageRgbaDto(width: 1, height: 1, pixels: Uint8List.fromList([1]))));
+    api.stub(
+        'crateFfiMediaMediaDecodeImageRgba',
+        (_) => Future.value(DecodedImageRgbaDto(
+            width: 1, height: 1, pixels: Uint8List.fromList([1]))));
     api.stub('crateFfiMediaMediaUpload', (_) => Future.value('id'));
     api.stub('crateFfiMediaMediaFetch', (_) => Future.value('/tmp/x'));
-    api.stub('crateFfiMediaMediaLoadLocal', (_) => Future.value(Uint8List.fromList([1,2,3])));
+    api.stub('crateFfiMediaMediaLoadLocal',
+        (_) => Future.value(Uint8List.fromList([1, 2, 3])));
     api.stub('crateFfiMediaMediaGetMimeType', (_) => Future.value('image/png'));
     api.stub('crateFfiMediaMediaClearCache', (_) => Future.value('cleared'));
     api.stub('crateFfiMediaMediaUploadBlob', (_) => Future.value('blobid'));

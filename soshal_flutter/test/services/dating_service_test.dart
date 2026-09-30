@@ -32,7 +32,7 @@ void main() {
       api.stubString(
         'crateFfiDatingDatingFetchProfiles',
         '[${cardJson('pk-a', 'Alice', score: 0.9)},'
-        '${cardJson('pk-b', 'Bob', score: 0.7)}]',
+            '${cardJson('pk-b', 'Bob', score: 0.7)}]',
       );
 
       final cards = await dating.fetchProfiles('me', limit: 25);
@@ -43,8 +43,7 @@ void main() {
       expect(dating.cards.last.pubkey, 'pk-b');
       expect(notified, 1);
 
-      final inv =
-          api.callsOf('crateFfiDatingDatingFetchProfiles').single;
+      final inv = api.callsOf('crateFfiDatingDatingFetchProfiles').single;
       expect(api.namedArg(inv, 'userPubkey'), 'me');
       expect(api.namedArg(inv, 'limit'), 25);
     });
@@ -74,8 +73,7 @@ void main() {
       expect(cards.single.name, 'Cara');
       expect(dating.cards.single.pubkey, 'pk-c');
 
-      final inv =
-          api.callsOf('crateFfiDatingDatingFilterProfiles').single;
+      final inv = api.callsOf('crateFfiDatingDatingFilterProfiles').single;
       expect(api.namedArg(inv, 'minAge'), 25);
       expect(api.namedArg(inv, 'maxAge'), 35);
       expect(api.namedArg(inv, 'locationRadiusKm'), 10);
@@ -87,8 +85,8 @@ void main() {
       expect(api.namedArg(inv, 'relationshipIntent'), 'serious');
       expect(api.namedArg(inv, 'politics'), 'liberal');
       expect(api.namedArg(inv, 'education'), "bachelor's");
-      expect(api.namedArg(inv, 'interestsJson'),
-          jsonEncode(['music', 'hiking']));
+      expect(
+          api.namedArg(inv, 'interestsJson'), jsonEncode(['music', 'hiking']));
     });
 
     test('calculateScore returns double and passes targetPubkey', () async {
@@ -96,8 +94,7 @@ void main() {
       api.stub('crateFfiDatingDatingCalculateScore', (_) => 87.5);
 
       expect(await dating.calculateScore('me', 'pk-a'), 87.5);
-      final inv =
-          api.callsOf('crateFfiDatingDatingCalculateScore').single;
+      final inv = api.callsOf('crateFfiDatingDatingCalculateScore').single;
       expect(api.namedArg(inv, 'targetPubkey'), 'pk-a');
       expect(api.namedArg(inv, 'preferencesJson'), '{}');
       expect(dating.lastError, isNull);
@@ -178,8 +175,7 @@ void main() {
       expect(id, 'ev-1');
       expect(dating.ownProfile?.name, 'Me');
 
-      final inv =
-          api.callsOf('crateFfiDatingDatingCreateProfile').single;
+      final inv = api.callsOf('crateFfiDatingDatingCreateProfile').single;
       expect(api.namedArg(inv, 'name'), 'Me');
       expect(api.namedArg(inv, 'age'), 30);
       expect(api.namedArg(inv, 'location'), '52.52,13.40');
@@ -206,8 +202,7 @@ void main() {
       api.stubBool('crateFfiDatingDatingDeleteProfile', true);
       expect(await dating.deleteProfile('me'), isTrue);
       expect(dating.ownProfile, isNull);
-      final inv =
-          api.callsOf('crateFfiDatingDatingDeleteProfile').single;
+      final inv = api.callsOf('crateFfiDatingDatingDeleteProfile').single;
       expect(api.namedArg(inv, 'userPubkey'), 'me');
     });
 
@@ -216,7 +211,7 @@ void main() {
       api.stubString(
         'crateFfiDatingDatingGetStats',
         '{"profile_views":12,"likes_received":5,"superlike_received":1,'
-        '"matches":3,"profile_complete":true,"photo_count":4}',
+            '"matches":3,"profile_complete":true,"photo_count":4}',
       );
 
       final stats = await dating.getStats('me');
@@ -241,14 +236,16 @@ void main() {
 
     test('unmatch swallows errors and returns false', () async {
       final dating = DatingService();
-      api.stub('crateFfiDatingDatingUnmatch',
-          (_) => throw Exception('no store'));
+      api.stub(
+          'crateFfiDatingDatingUnmatch', (_) => throw Exception('no store'));
 
       expect(await dating.unmatch('me', 'pk-a'), isFalse);
       expect(dating.lastError, contains('no store'));
     });
 
-    test('watchProfiles and subscribeToProfiles stream updates live from bridge', () async {
+    test(
+        'watchProfiles and subscribeToProfiles stream updates live from bridge',
+        () async {
       final dating = DatingService();
       final controller = StreamController<String>.broadcast();
       addTearDown(controller.close);
@@ -261,7 +258,8 @@ void main() {
 
       dating.subscribeToProfiles('me');
 
-      final profilePayload = '[${cardJson('pk-live', 'Live User', score: 0.95)}]';
+      final profilePayload =
+          '[${cardJson('pk-live', 'Live User', score: 0.95)}]';
 
       controller.add(profilePayload);
       await pumpEventQueue();
@@ -279,4 +277,3 @@ void main() {
     });
   });
 }
-

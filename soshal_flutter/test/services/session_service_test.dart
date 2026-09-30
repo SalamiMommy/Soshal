@@ -138,7 +138,8 @@ void main() {
       expect(notified, 2);
     });
 
-    test('addAccount adds but does not activate if account already active', () async {
+    test('addAccount adds but does not activate if account already active',
+        () async {
       final session = SessionService();
       const sessionJson = '''{
         "active_pubkey": "pk1",
@@ -379,7 +380,8 @@ void main() {
       expect(active.npub, 'npub1');
     });
 
-    test('lastUsedAccount returns account with highest lastUsed timestamp', () async {
+    test('lastUsedAccount returns account with highest lastUsed timestamp',
+        () async {
       final session = SessionService();
       const sessionJson = '''{
         "active_pubkey": "pk1",
@@ -396,7 +398,9 @@ void main() {
       expect(session.lastUsedAccount?.pubkey, 'pk2');
     });
 
-    test('loadSession defaults activePubkey to lastUsedAccount when active_pubkey is null', () async {
+    test(
+        'loadSession defaults activePubkey to lastUsedAccount when active_pubkey is null',
+        () async {
       final session = SessionService();
       const sessionJson = '''{
         "active_pubkey": null,
@@ -429,8 +433,8 @@ void main() {
     });
 
     test('SessionAccount.toJson emits snake_case', () {
-      final acc =
-          SessionAccount(pubkey: 'pk', npub: 'n', lastUsed: 1000, relayList: []);
+      final acc = SessionAccount(
+          pubkey: 'pk', npub: 'n', lastUsed: 1000, relayList: []);
       final json = acc.toJson();
       expect(json['pubkey'], 'pk');
       expect(json['npub'], 'n');
@@ -442,8 +446,18 @@ void main() {
       const json = {
         'active_pubkey': 'pk1',
         'accounts': [
-          {'pubkey': 'pk1', 'npub': 'npub1', 'last_used': 1000, 'relay_list': []},
-          {'pubkey': 'pk2', 'npub': 'npub2', 'last_used': 2000, 'relay_list': []}
+          {
+            'pubkey': 'pk1',
+            'npub': 'npub1',
+            'last_used': 1000,
+            'relay_list': []
+          },
+          {
+            'pubkey': 'pk2',
+            'npub': 'npub2',
+            'last_used': 2000,
+            'relay_list': []
+          }
         ]
       };
       final data = SessionData.fromJson(json);
@@ -544,8 +558,10 @@ void main() {
     test('reset clears turso service on account switch', () async {
       final session = SessionService();
       final turso = TursoService();
-      api.stubString('crateFfiTursoDbTursoConfigure', 'Turso database credentials saved');
-      api.stubString('crateFfiTursoDbTursoStatus', '{"configured":true,"status":"idle"}');
+      api.stubString(
+          'crateFfiTursoDbTursoConfigure', 'Turso database credentials saved');
+      api.stubString(
+          'crateFfiTursoDbTursoStatus', '{"configured":true,"status":"idle"}');
       await turso.configure(url: 'https://example.turso.io', authToken: 'tok');
       expect(turso.isConfigured, isTrue);
       expect(turso.url, 'https://example.turso.io');
@@ -574,7 +590,8 @@ void main() {
       final session = SessionService();
       final shell = ShellService();
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      api.stubString('crateFfiCallsCallsFetchSignals', '[{"kind":20001,"created_at":$now,"call_id":"c1"}]');
+      api.stubString('crateFfiCallsCallsFetchSignals',
+          '[{"kind":20001,"created_at":$now,"call_id":"c1"}]');
       await shell.pollCallSignals('mypk');
       expect(shell.incomingCall, isNotNull);
 

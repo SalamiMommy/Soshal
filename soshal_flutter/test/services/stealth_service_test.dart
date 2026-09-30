@@ -28,8 +28,7 @@ void main() {
 
     test('load parses newline-separated pubkeys and trims blanks', () async {
       final stealth = StealthService();
-      api.stubString(
-          'crateFfiDbDbGetSetting', '\npk-1\n pk-2 \n\npk-3\n');
+      api.stubString('crateFfiDbDbGetSetting', '\npk-1\n pk-2 \n\npk-3\n');
 
       expect(await stealth.load(), ['pk-1', 'pk-2', 'pk-3']);
       expect(stealth.whitelist, ['pk-1', 'pk-2', 'pk-3']);
@@ -67,8 +66,7 @@ void main() {
 
     test('load FFI throw sets lastError and rethrows', () async {
       final stealth = StealthService();
-      api.stub(
-          'crateFfiDbDbGetSetting', (_) => throw Exception('db down'));
+      api.stub('crateFfiDbDbGetSetting', (_) => throw Exception('db down'));
 
       await expectLater(stealth.load(), throwsException);
       expect(stealth.lastError, contains('db down'));
@@ -76,8 +74,7 @@ void main() {
 
     test('save FFI throw sets lastError and rethrows', () async {
       final stealth = StealthService();
-      api.stub(
-          'crateFfiDbDbSetSetting', (_) => throw Exception('no write'));
+      api.stub('crateFfiDbDbSetSetting', (_) => throw Exception('no write'));
 
       await expectLater(stealth.save(['pk-1']), throwsException);
       expect(stealth.lastError, contains('no write'));

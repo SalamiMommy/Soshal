@@ -25,13 +25,11 @@ void main() {
     api.stubString('crateFfiDbDbGetSetting', 'false');
   });
 
-  const twoAccountsJson =
-      '{"active_pubkey":"pk123","accounts":['
+  const twoAccountsJson = '{"active_pubkey":"pk123","accounts":['
       '{"pubkey":"pk123","npub":"npub1abc","last_used":0,"relay_list":[]},'
       '{"pubkey":"pk456","npub":"npub1xyz","last_used":1,"relay_list":[]}]}';
 
-  const oneAccountJson =
-      '{"active_pubkey":"pk123","accounts":['
+  const oneAccountJson = '{"active_pubkey":"pk123","accounts":['
       '{"pubkey":"pk123","npub":"npub1abc","last_used":0,"relay_list":[]}]}';
 
   Future<void> pumpScreen(
@@ -191,7 +189,7 @@ void main() {
     api.stubString(
       'crateFfiSessionSessionListAccounts',
       '[{"pubkey":"pk123","npub":"npub1abc","last_used":0,"relay_list":[]},'
-      '{"pubkey":"pk456","npub":"npub1xyz","last_used":1,"relay_list":[]}]',
+          '{"pubkey":"pk456","npub":"npub1xyz","last_used":1,"relay_list":[]}]',
     );
 
     await pumpScreen(tester, sessionJson: twoAccountsJson);

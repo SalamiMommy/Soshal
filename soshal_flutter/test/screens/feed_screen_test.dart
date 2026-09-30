@@ -32,8 +32,7 @@ class FakeZapService extends ZapService {
   Future<int> fetchTotalMsat(String eventId) async => 0;
 }
 
-const _layoutJson =
-    '[{"id":"ev-1","height_px":220,"media_height_px":0},'
+const _layoutJson = '[{"id":"ev-1","height_px":220,"media_height_px":0},'
     '{"id":"ev-2","height_px":220,"media_height_px":0}]';
 
 const _twoPostsJson =
@@ -104,7 +103,7 @@ void main() {
     // replacing the pumped tree between tests unmounts a deactivated element
     // and trips this known assert during tree finalization. Swallow only that
     // exact teardown error — everything else still fails the test.
-        FlutterError.onError = (details) {
+    FlutterError.onError = (details) {
       if (details.exceptionAsString().contains('deactivated widget')) return;
       FlutterError.presentError(details);
     };

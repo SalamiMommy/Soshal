@@ -59,7 +59,8 @@ void main() {
 
     test('generateEmbedding sends text and returns embedding', () async {
       const embedding = '[0.1, 0.2, 0.3, 0.4, 0.5]';
-      api.stubString('crateFfiAnalyticsAnalyticsSlmGenerateEmbedding', embedding);
+      api.stubString(
+          'crateFfiAnalyticsAnalyticsSlmGenerateEmbedding', embedding);
 
       final analytics = AnalyticsService();
       var notified = 0;
@@ -71,13 +72,15 @@ void main() {
       expect(result, embedding);
       expect(notified, 1);
 
-      final inv = api.callsOf('crateFfiAnalyticsAnalyticsSlmGenerateEmbedding').single;
+      final inv =
+          api.callsOf('crateFfiAnalyticsAnalyticsSlmGenerateEmbedding').single;
       expect(api.namedArg(inv, 'text'), text);
     });
 
     test('generateEmbedding clears previous error', () async {
       const embedding = '[]';
-      api.stubString('crateFfiAnalyticsAnalyticsSlmGenerateEmbedding', embedding);
+      api.stubString(
+          'crateFfiAnalyticsAnalyticsSlmGenerateEmbedding', embedding);
 
       final analytics = AnalyticsService();
       analytics.setLastError(Exception('old'), StackTrace.current);
@@ -102,7 +105,8 @@ void main() {
 
     test('classifyPost sends text and returns classification', () async {
       const classification = '{"sentiment": "positive", "spam": false}';
-      api.stubString('crateFfiAnalyticsAnalyticsSlmClassifyPost', classification);
+      api.stubString(
+          'crateFfiAnalyticsAnalyticsSlmClassifyPost', classification);
 
       final analytics = AnalyticsService();
       var notified = 0;
@@ -114,13 +118,15 @@ void main() {
       expect(result, classification);
       expect(notified, 1);
 
-      final inv = api.callsOf('crateFfiAnalyticsAnalyticsSlmClassifyPost').single;
+      final inv =
+          api.callsOf('crateFfiAnalyticsAnalyticsSlmClassifyPost').single;
       expect(api.namedArg(inv, 'text'), text);
     });
 
     test('classifyPost clears previous error', () async {
       const classification = '{}';
-      api.stubString('crateFfiAnalyticsAnalyticsSlmClassifyPost', classification);
+      api.stubString(
+          'crateFfiAnalyticsAnalyticsSlmClassifyPost', classification);
 
       final analytics = AnalyticsService();
       analytics.setLastError(Exception('old'), StackTrace.current);

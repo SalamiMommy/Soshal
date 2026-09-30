@@ -18,8 +18,7 @@ void main() {
     api.calls.clear();
   });
 
-  const sessionJson =
-      '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
+  const sessionJson = '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
       '"npub":"npub1abc","last_used":0,"relay_list":[]}]}';
 
   const notifJson =
@@ -128,11 +127,11 @@ void main() {
     api.stubString(
       'crateFfiNotificationsNotificationsFetchUnread',
       '[{"id":"n3","notification_type":"like","from_pubkey":"pkx",'
-      '"from_name":"Alice","from_avatar":"","content_preview":"liked your post",'
-      '"read":false,"created_at":0,"action_url":""},'
-      '{"id":"n2","notification_type":"follow","from_pubkey":"pky",'
-      '"from_name":"Bob","from_avatar":"","content_preview":"followed you",'
-      '"read":true,"created_at":0,"action_url":""}]',
+          '"from_name":"Alice","from_avatar":"","content_preview":"liked your post",'
+          '"read":false,"created_at":0,"action_url":""},'
+          '{"id":"n2","notification_type":"follow","from_pubkey":"pky",'
+          '"from_name":"Bob","from_avatar":"","content_preview":"followed you",'
+          '"read":true,"created_at":0,"action_url":""}]',
     );
 
     await pumpScreen(tester);
@@ -174,7 +173,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.callCount('crateFfiNotificationsNotificationsMarkRead'), 1);
-    final inv = api.callsOf('crateFfiNotificationsNotificationsMarkRead').single;
+    final inv =
+        api.callsOf('crateFfiNotificationsNotificationsMarkRead').single;
     expect(api.namedArg(inv, 'notificationId'), 'n1');
     expect(find.text('3 unread'), findsNothing);
     expect(find.byIcon(Icons.circle), findsNothing);

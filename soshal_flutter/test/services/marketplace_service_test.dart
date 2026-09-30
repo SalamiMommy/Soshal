@@ -51,8 +51,7 @@ void main() {
   });
 
   group('MarketplaceService', () {
-    test('fetchListings parses, caps at 100, forwards limit/offset',
-        () async {
+    test('fetchListings parses, caps at 100, forwards limit/offset', () async {
       final mp = MarketplaceService();
       api.stub(
         'crateFfiMarketplaceMarketplaceFetchListings',
@@ -75,8 +74,7 @@ void main() {
       expect(api.namedArg(inv, 'offset'), 0);
     });
 
-    test('search, byCategory, trending, sellerListings forward args',
-        () async {
+    test('search, byCategory, trending, sellerListings forward args', () async {
       final mp = MarketplaceService();
       final one = jsonEncode([listingJson('l-1')]);
       api.stubString('crateFfiMarketplaceMarketplaceSearch', one);
@@ -85,8 +83,7 @@ void main() {
       api.stubString('crateFfiMarketplaceMarketplaceFetchSellerListings', one);
 
       await mp.search('gadgets', limit: 20);
-      var inv =
-          api.callsOf('crateFfiMarketplaceMarketplaceSearch').single;
+      var inv = api.callsOf('crateFfiMarketplaceMarketplaceSearch').single;
       expect(api.namedArg(inv, 'query'), 'gadgets');
       expect(api.namedArg(inv, 'limit'), 20);
 
@@ -156,15 +153,13 @@ void main() {
         await mp.updateListing('l-1', 'pk-seller', 'New', 'Newdesc', 8000),
         isTrue,
       );
-      var inv = api
-          .callsOf('crateFfiMarketplaceMarketplaceUpdateListing')
-          .single;
+      var inv =
+          api.callsOf('crateFfiMarketplaceMarketplaceUpdateListing').single;
       expect(api.namedArg(inv, 'listingId'), 'l-1');
       expect(api.namedArg(inv, 'price'), BigInt.from(8000));
 
       expect(await mp.deleteListing('l-1', 'pk-seller'), isTrue);
-      inv =
-          api.callsOf('crateFfiMarketplaceMarketplaceDeleteListing').single;
+      inv = api.callsOf('crateFfiMarketplaceMarketplaceDeleteListing').single;
       expect(api.namedArg(inv, 'listingId'), 'l-1');
       expect(api.namedArg(inv, 'sellerPubkey'), 'pk-seller');
     });
@@ -185,8 +180,7 @@ void main() {
         await mp.createOrder('l-1', 'pk-buyer', 'pk-seller'),
         'ord-1',
       );
-      var inv =
-          api.callsOf('crateFfiMarketplaceMarketplaceCreateOrder').single;
+      var inv = api.callsOf('crateFfiMarketplaceMarketplaceCreateOrder').single;
       expect(api.namedArg(inv, 'listingId'), 'l-1');
       expect(api.namedArg(inv, 'buyerPubkey'), 'pk-buyer');
 
@@ -302,13 +296,13 @@ void main() {
         optionsJson: '["a","b"]',
       );
       expect(created?['id'], 'poll-1');
-      var inv =
-          api.callsOf('crateFfiMarketplaceMarketplacePollCreate').single;
+      var inv = api.callsOf('crateFfiMarketplaceMarketplacePollCreate').single;
       expect(api.namedArg(inv, 'userPubkey'), 'pk-u');
       expect(api.namedArg(inv, 'expiresInHours'), 168);
 
       expect(
-        await mp.pollVote(pollId: 'poll-1', voterPubkey: 'pk-v', optionIndex: 1),
+        await mp.pollVote(
+            pollId: 'poll-1', voterPubkey: 'pk-v', optionIndex: 1),
         isTrue,
       );
       inv = api.callsOf('crateFfiMarketplaceMarketplacePollVote').single;
@@ -329,8 +323,7 @@ void main() {
       expect(mp.listings, isEmpty);
     });
 
-    test('create error sets lastError and rethrows; review swallows',
-        () async {
+    test('create error sets lastError and rethrows; review swallows', () async {
       final mp = MarketplaceService();
       api.stub('crateFfiMarketplaceMarketplaceCreateListing',
           (_) => throw Exception('create boom'));
@@ -350,12 +343,15 @@ void main() {
       expect(mp.lastError, contains('review boom'));
     });
 
-    test('watchListings and subscribeToListings stream updates live from bridge', () async {
+    test(
+        'watchListings and subscribeToListings stream updates live from bridge',
+        () async {
       final mp = MarketplaceService();
       final controller = StreamController<String>.broadcast();
       addTearDown(controller.close);
 
-      api.stub('crateFfiMarketplaceMarketplaceWatchListings', (_) => controller.stream);
+      api.stub('crateFfiMarketplaceMarketplaceWatchListings',
+          (_) => controller.stream);
 
       final emissions = <List<ListingInfo>>[];
       final sub = mp.watchListings().listen(emissions.add);

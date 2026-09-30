@@ -31,16 +31,14 @@ void main() {
 
     test('publish failure sets lastError and rethrows', () async {
       final vouch = VouchService();
-      api.stub('crateFfiVouchVouchPublish',
-          (_) => throw Exception('sign failed'));
+      api.stub(
+          'crateFfiVouchVouchPublish', (_) => throw Exception('sign failed'));
 
-      await expectLater(
-          vouch.publish('pk-target', 'x'), throwsException);
+      await expectLater(vouch.publish('pk-target', 'x'), throwsException);
       expect(vouch.lastError, contains('sign failed'));
     });
 
-    test('fetch parses verified vouches, updates list and notifies',
-        () async {
+    test('fetch parses verified vouches, updates list and notifies', () async {
       final vouch = VouchService();
       var notified = 0;
       vouch.addListener(() => notified++);
@@ -66,8 +64,10 @@ void main() {
 
     test('fetch with empty list clears vouches', () async {
       final vouch = VouchService();
-      api.stub('crateFfiVouchVouchFetch',
-          (_) async => '[{"id":"v-1","pubkey":"pk","content":"c","created_at":1}]');
+      api.stub(
+          'crateFfiVouchVouchFetch',
+          (_) async =>
+              '[{"id":"v-1","pubkey":"pk","content":"c","created_at":1}]');
       await vouch.fetch('pk-target');
       expect(vouch.vouches, isNotEmpty);
 
@@ -79,8 +79,8 @@ void main() {
 
     test('fetch failure sets lastError and rethrows', () async {
       final vouch = VouchService();
-      api.stub('crateFfiVouchVouchFetch',
-          (_) => throw Exception('verify failed'));
+      api.stub(
+          'crateFfiVouchVouchFetch', (_) => throw Exception('verify failed'));
 
       await expectLater(vouch.fetch('pk-target'), throwsException);
       expect(vouch.lastError, contains('verify failed'));

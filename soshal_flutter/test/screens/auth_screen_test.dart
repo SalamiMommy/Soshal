@@ -19,8 +19,7 @@ void main() {
   testWidgets('auth flow walks welcome -> generate -> confirm mnemonic',
       (tester) async {
     api.handlers.clear();
-    const phrase =
-        'abandon abandon abandon abandon abandon abandon abandon '
+    const phrase = 'abandon abandon abandon abandon abandon abandon abandon '
         'abandon abandon abandon abandon about';
     api.stubString('crateFfiAuthAuthGenerateMnemonic', phrase);
 
@@ -60,8 +59,7 @@ void main() {
     expect(api.callCount('crateFfiAuthAuthGenerateMnemonic'), 1);
   });
 
-  testWidgets('auth flow offers Import from friends\' cache',
-      (tester) async {
+  testWidgets('auth flow offers Import from friends\' cache', (tester) async {
     api.handlers.clear();
 
     final router = GoRouter(

@@ -528,8 +528,8 @@ class ModerationService extends ChangeNotifier
   Future<AiMediaVerdict> aiClassifyMedia(
           Uint8List imageBytes, String mimeType) =>
       guard(() async {
-        final json =
-            await RustLib.instance.api.crateFfiModerationModerationAiClassifyMedia(
+        final json = await RustLib.instance.api
+            .crateFfiModerationModerationAiClassifyMedia(
           imageBytes: imageBytes,
           mimeType: mimeType,
         );

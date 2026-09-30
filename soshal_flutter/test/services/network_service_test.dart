@@ -129,8 +129,8 @@ void main() {
     test('startI2pSession error rethrows and sets lastError', () async {
       final svc = NetworkService();
       addTearDown(svc.dispose);
-      api.stub('crateFfiNetworkI2PStartSession',
-          (_) => throw Exception('sam down'));
+      api.stub(
+          'crateFfiNetworkI2PStartSession', (_) => throw Exception('sam down'));
 
       await expectLater(svc.startI2pSession(), throwsException);
       expectLastError(svc, 'sam down');
@@ -208,7 +208,7 @@ void main() {
       api.stubString(
         'crateFfiRelayRelayNodeStatus',
         '{"running":true,"peers":{"reticulum":2},"published":1,'
-        '"received":4,"delivered":3}',
+            '"received":4,"delivered":3}',
       );
 
       expect(svc.stopMeshRelay(), isTrue);

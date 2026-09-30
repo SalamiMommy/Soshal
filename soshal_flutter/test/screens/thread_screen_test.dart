@@ -10,7 +10,8 @@ import 'package:soshal_flutter/services/session_service.dart';
 
 import '../helpers/test_env.dart';
 
-const mePubkey = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const mePubkey =
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const eventId = 'root-event-id';
 const rootPubkey = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
@@ -133,9 +134,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.callCount('crateFfiFeedFeedPublishReply'), 1);
-    final replyCall = api
-        .callsOf('crateFfiFeedFeedPublishReply')
-        .single;
+    final replyCall = api.callsOf('crateFfiFeedFeedPublishReply').single;
     expect(api.namedArg(replyCall, 'content'), 'nice reply');
     expect(api.namedArg(replyCall, 'rootEventId'), eventId);
     expect(api.namedArg(replyCall, 'replyToEventId'), eventId);
@@ -182,7 +181,8 @@ void main() {
     expect(api.callCount('crateFfiFeedFeedPublishReply'), 0);
   });
 
-  testWidgets('shows thread not found when fetch returns no posts', (tester) async {
+  testWidgets('shows thread not found when fetch returns no posts',
+      (tester) async {
     api.handlers.clear();
     api.calls.clear();
     stubSession(api);

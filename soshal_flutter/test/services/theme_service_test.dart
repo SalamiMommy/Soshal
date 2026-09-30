@@ -41,9 +41,8 @@ void main() {
       final calls = api.callsOf('crateFfiDbDbSetSetting');
       expect(calls.length, 2);
       expect(api.namedArg(calls[0], 'key'), 'theme_options');
-      final options =
-          jsonDecode(api.namedArg(calls[0], 'value') as String)
-              as Map<String, dynamic>;
+      final options = jsonDecode(api.namedArg(calls[0], 'value') as String)
+          as Map<String, dynamic>;
       expect(options['bgLevel'], 'dark');
       expect(options['accentHue'], 280.0);
       expect(options['fontSizeScale'], 1.2);
@@ -66,8 +65,11 @@ void main() {
       const options =
           '{"accentHue":280,"bgLevel":"deepest","customAccent":"#ff0000",'
           '"fontSizeScale":1.2,"fontFamily":"Serif"}';
-      api.stub('crateFfiDbDbGetSetting', (inv) =>
-          api.namedArg(inv, 'key') == 'theme_options' ? options : 'deepest');
+      api.stub(
+          'crateFfiDbDbGetSetting',
+          (inv) => api.namedArg(inv, 'key') == 'theme_options'
+              ? options
+              : 'deepest');
 
       await theme.load();
 

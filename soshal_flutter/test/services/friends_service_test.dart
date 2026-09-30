@@ -145,7 +145,8 @@ void main() {
       final out = await friends.fetchFollowsUnion(['a', 'b', 'c']);
 
       expect(out, ['u-3']);
-      final inv = api.callsOf('crateFfiIdentityIdentityFetchFollowsUnion').single;
+      final inv =
+          api.callsOf('crateFfiIdentityIdentityFetchFollowsUnion').single;
       expect(api.namedArg(inv, 'pubkeys'), ['a', 'b', 'c']);
     });
 
@@ -181,7 +182,8 @@ void main() {
       friends.addContact(profile('pk-friend', 'Alice'));
 
       // AudienceFilter.all matches anyone, even empty or stranger
-      expect(friends.matchesAudience('pk-stranger', AudienceFilter.all), isTrue);
+      expect(
+          friends.matchesAudience('pk-stranger', AudienceFilter.all), isTrue);
       expect(friends.matchesAudience(null, AudienceFilter.all), isTrue);
 
       // User's own pubkey always matches any filter
@@ -197,8 +199,8 @@ void main() {
       );
 
       // Friends filter matches friends only
-      expect(friends.matchesAudience('pk-friend', AudienceFilter.friends),
-          isTrue);
+      expect(
+          friends.matchesAudience('pk-friend', AudienceFilter.friends), isTrue);
       expect(friends.matchesAudience('pk-stranger', AudienceFilter.friends),
           isFalse);
       expect(friends.matchesAudience(null, AudienceFilter.friends), isFalse);
@@ -207,8 +209,10 @@ void main() {
       expect(
           friends.matchesAudience('pk-friend', AudienceFilter.friendsOfFriends),
           isTrue);
-      expect(friends.matchesAudience(
-          'pk-stranger', AudienceFilter.friendsOfFriends), isFalse);
+      expect(
+          friends.matchesAudience(
+              'pk-stranger', AudienceFilter.friendsOfFriends),
+          isFalse);
     });
 
     test('loadAudienceGraph and filterList filter items accurately', () async {
@@ -233,7 +237,8 @@ void main() {
       // The friends-of-friends traversal is one batched call carrying every
       // first-degree follow, not one `fetchFollows` per follow.
       expect(api.callCount('crateFfiIdentityIdentityFetchFollowsUnion'), 1);
-      final unionInv = api.callsOf('crateFfiIdentityIdentityFetchFollowsUnion').single;
+      final unionInv =
+          api.callsOf('crateFfiIdentityIdentityFetchFollowsUnion').single;
       expect(api.namedArg(unionInv, 'pubkeys'), ['pk-friend-1']);
       expect(api.callCount('crateFfiIdentityIdentityFetchFollows'), 1);
 
@@ -281,11 +286,12 @@ void main() {
     // `filterList`, a navigation that hit the cache still rebuilt twelve whole
     // subtrees. These pin the contract that replaced it.
 
-    void stubGraph({List<String> follows = const [], List<String> sugg = const []}) {
-      api.stub('crateFfiIdentityIdentityFetchFollows',
-          (_) => jsonEncode(follows));
-      api.stub('crateFfiIdentityIdentityFetchFollowsUnion',
-          (_) => jsonEncode(sugg));
+    void stubGraph(
+        {List<String> follows = const [], List<String> sugg = const []}) {
+      api.stub(
+          'crateFfiIdentityIdentityFetchFollows', (_) => jsonEncode(follows));
+      api.stub(
+          'crateFfiIdentityIdentityFetchFollowsUnion', (_) => jsonEncode(sugg));
       api.stubListString('crateFfiSocialSocialFriendSuggestions', sugg);
     }
 
@@ -341,10 +347,7 @@ void main() {
       await friends.fetchSuggestions();
 
       expect(handedOut.length, 3);
-      expect(
-          handedOut
-              .skip(1)
-              .every((l) => !identical(l, handedOut.first)),
+      expect(handedOut.skip(1).every((l) => !identical(l, handedOut.first)),
           isTrue,
           reason: 'guard against the stub going back to sharing one instance, '
               'which would make this test pass for the wrong reason');
@@ -423,15 +426,14 @@ void main() {
       final friends = FriendsService();
       final items = ['pk-a', 'pk-b', 'pk-c'];
 
-      expect(friends.filterList(items, AudienceFilter.friends, (p) => p),
-          isEmpty);
+      expect(
+          friends.filterList(items, AudienceFilter.friends, (p) => p), isEmpty);
       expect(
           friends.filterList(items, AudienceFilter.friendsOfFriends, (p) => p),
           isEmpty);
 
       friends.addContact(profile('pk-a', 'A'));
-      expect(
-          friends.filterList(items, AudienceFilter.friends, (p) => p),
+      expect(friends.filterList(items, AudienceFilter.friends, (p) => p),
           ['pk-a']);
       expect(
           friends.filterList(items, AudienceFilter.friendsOfFriends, (p) => p),
@@ -439,8 +441,8 @@ void main() {
           reason: 'a friend is also a friend-of-friend');
 
       friends.removeContact('pk-a');
-      expect(friends.filterList(items, AudienceFilter.friends, (p) => p),
-          isEmpty,
+      expect(
+          friends.filterList(items, AudienceFilter.friends, (p) => p), isEmpty,
           reason: 'the contact mirror must drop it, not just the contact list');
     });
 
@@ -452,8 +454,7 @@ void main() {
       expect(friends.contacts.where((c) => c.pubkey == 'pk-a'), hasLength(1));
 
       friends.removeContact('pk-a');
-      expect(
-          friends.filterList(['pk-a'], AudienceFilter.friends, (p) => p),
+      expect(friends.filterList(['pk-a'], AudienceFilter.friends, (p) => p),
           isEmpty);
       expect(friends.contacts, isEmpty);
     });
@@ -467,8 +468,7 @@ void main() {
 
       await friends.fetchSuggestions();
 
-      expect(
-          friends.filterList(['pk-s1'], AudienceFilter.friends, (p) => p),
+      expect(friends.filterList(['pk-s1'], AudienceFilter.friends, (p) => p),
           isEmpty,
           reason: 'a suggestion is not a friend');
       expect(
@@ -488,8 +488,7 @@ void main() {
           friends
               .filterList(['pk-s1'], AudienceFilter.friendsOfFriends, (p) => p),
           ['pk-s1']);
-      expect(
-          friends.filterList(['pk-a'], AudienceFilter.friends, (p) => p),
+      expect(friends.filterList(['pk-a'], AudienceFilter.friends, (p) => p),
           ['pk-a']);
 
       friends.resetForAccountSwitch();
@@ -516,11 +515,9 @@ void main() {
       final contactIds = friends.contacts.map((c) => c.pubkey).toSet();
       const probe = ['c1', 'c2', 's1', 's2', 'other'];
       for (final id in probe) {
-        final expected = contactIds.contains(id) ||
-            friends.suggestions.contains(id);
-        expect(
-            friends
-                .matchesAudience(id, AudienceFilter.friendsOfFriends),
+        final expected =
+            contactIds.contains(id) || friends.suggestions.contains(id);
+        expect(friends.matchesAudience(id, AudienceFilter.friendsOfFriends),
             expected,
             reason: 'membership mirrors disagree for $id');
       }

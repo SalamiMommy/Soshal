@@ -34,8 +34,7 @@ void main() {
       expect(mesh.rxPackets, 10);
       expect(mesh.txPackets, 4);
       expect(mesh.lastError, isNull);
-      final inv =
-          api.callsOf('crateFfiNetworkReticulumStartTransport').single;
+      final inv = api.callsOf('crateFfiNetworkReticulumStartTransport').single;
       expect(api.namedArg(inv, 'pubkey'), 'pk-1');
       expect(api.namedArg(inv, 'bindAddr'), '0.0.0.0:9999');
     });
@@ -67,8 +66,7 @@ void main() {
 
       await mesh.startTcpServer(port: 4321, maxConnections: 8);
 
-      final inv =
-          api.callsOf('crateFfiNetworkReticulumStartTcpServer').single;
+      final inv = api.callsOf('crateFfiNetworkReticulumStartTcpServer').single;
       expect(api.namedArg(inv, 'port'), 4321);
       expect(api.namedArg(inv, 'maxConnections'), BigInt.from(8));
     });
@@ -90,8 +88,7 @@ void main() {
     test('requestLink and addressFromPubkey return raw json', () async {
       final mesh = service();
       api.stubString('crateFfiNetworkReticulumRequestLink', 'link-ok');
-      api.stubString(
-          'crateFfiNetworkReticulumAddressFromPubkey', 'addr-hex-1');
+      api.stubString('crateFfiNetworkReticulumAddressFromPubkey', 'addr-hex-1');
 
       expect(await mesh.requestLink('abcd'), 'link-ok');
       expect(await mesh.addressFromPubkey(), 'addr-hex-1');
@@ -117,8 +114,7 @@ void main() {
       await mesh.announce('chat');
 
       expect(mesh.running, isTrue);
-      final inv =
-          api.callsOf('crateFfiNetworkReticulumCreateAnnounce').single;
+      final inv = api.callsOf('crateFfiNetworkReticulumCreateAnnounce').single;
       expect(api.namedArg(inv, 'aspect'), 'chat');
     });
 
@@ -141,12 +137,12 @@ void main() {
       await mesh.refreshStatus();
       expect(mesh.txPackets, 4);
 
-      api.stubString(
-          'crateFfiNetworkReticulumGetStatus', '{"running":false}');
+      api.stubString('crateFfiNetworkReticulumGetStatus', '{"running":false}');
       await mesh.refreshStatus();
 
       expect(mesh.running, isFalse);
-      expect(mesh.destinationHash, 'd-hash-1', reason: 'field absent keeps old');
+      expect(mesh.destinationHash, 'd-hash-1',
+          reason: 'field absent keeps old');
       expect(mesh.txPackets, 4);
     });
 
@@ -159,8 +155,7 @@ void main() {
       expect(mesh.lastError, contains('mesh down'));
     });
 
-    test('malformed status json lands in lastError without throwing',
-        () async {
+    test('malformed status json lands in lastError without throwing', () async {
       final mesh = service();
       api.stubString('crateFfiNetworkReticulumGetStatus', 'not-json');
 

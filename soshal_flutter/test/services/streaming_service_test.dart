@@ -86,8 +86,8 @@ void main() {
 
     test('group builders encode track metadata without FFI', () {
       final streaming = StreamingService();
-      final v = streaming.buildVideoGroup(
-          groupSeq: 1, timestampMs: 42, jpeg: [1, 2]);
+      final v =
+          streaming.buildVideoGroup(groupSeq: 1, timestampMs: 42, jpeg: [1, 2]);
       expect((v['objects'] as List).single['header']['track_id'], 0);
 
       final h = streaming.buildH264Group(
@@ -107,7 +107,8 @@ void main() {
     test('subscribeLiveFetch hex-decodes groups and decodes each in order',
         () async {
       final streaming = StreamingService();
-      api.stubString('crateFfiP2PP2PMoqSubscribeFetch', '{"groups":["0a0b","0c",""]}');
+      api.stubString(
+          'crateFfiP2PP2PMoqSubscribeFetch', '{"groups":["0a0b","0c",""]}');
       // `decodeMoqGroup` must stay on this isolate, so it goes through the
       // bridge — the per-frame call is what proves the split.
       api.stub('crateFfiP2PP2PMoqDecodeGroup', (inv) {

@@ -23,8 +23,7 @@ void main() {
     api.stubBool('crateFfiDbDbSetSetting', true);
   });
 
-  const sessionJson =
-      '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
+  const sessionJson = '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
       '"npub":"npub1abc","last_used":0,'
       '"relay_list":["wss://relay.example.com"]}]}';
 

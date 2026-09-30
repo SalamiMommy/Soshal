@@ -29,7 +29,8 @@ void main() {
       expect(find.byType(ShimmerStoryCircle), findsOneWidget);
     });
 
-    testWidgets('ShimmerNotificationTile renders without errors', (tester) async {
+    testWidgets('ShimmerNotificationTile renders without errors',
+        (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(

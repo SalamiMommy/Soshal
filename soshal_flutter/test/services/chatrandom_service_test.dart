@@ -31,7 +31,8 @@ void main() {
 
       expect(result, contains('interests'));
       expect(result, contains('media_type'));
-      final inv = api.callsOf('crateFfiChatrandomChatrandomAvailableContent').single;
+      final inv =
+          api.callsOf('crateFfiChatrandomChatrandomAvailableContent').single;
       expect(api.namedArg(inv, 'interests'), ['music', 'games']);
       expect(api.namedArg(inv, 'mediaType'), 'text');
       expect(api.namedArg(inv, 'mode'), 'voice');

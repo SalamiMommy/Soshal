@@ -23,12 +23,14 @@ void main() {
 
     test('initEncode returns false with required dimensions', () async {
       expect(await H264Codec.initEncode(width: 640, height: 480), isFalse);
-      expect(await H264Codec.initEncode(
-        width: 1280,
-        height: 720,
-        bitrate: 1000000,
-        fps: 30,
-      ), isFalse);
+      expect(
+          await H264Codec.initEncode(
+            width: 1280,
+            height: 720,
+            bitrate: 1000000,
+            fps: 30,
+          ),
+          isFalse);
     });
 
     test('feedEncode returns empty for empty and non-empty frames', () async {

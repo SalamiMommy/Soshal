@@ -32,7 +32,7 @@ void main() {
       api.stubString(
           'crateFfiEbpfEbpfGetStats',
           '{"mode":"SocketFilterBpf","dropped_packets":12,'
-          '"passed_packets":200,"nanos_saved":3000,"blocked_peers_count":1}');
+              '"passed_packets":200,"nanos_saved":3000,"blocked_peers_count":1}');
 
       expect(await ebpf.blockIp('10.0.0.5'), isTrue);
 
@@ -71,7 +71,7 @@ void main() {
       api.stubString(
           'crateFfiEbpfEbpfGetStats',
           '{"mode":"rate-limit","dropped_packets":5,"passed_packets":10,'
-          '"nanos_saved":777,"blocked_peers_count":2}');
+              '"nanos_saved":777,"blocked_peers_count":2}');
 
       await ebpf.refreshStats();
 

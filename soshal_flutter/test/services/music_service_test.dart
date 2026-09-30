@@ -27,11 +27,11 @@ void main() {
       stubFutureString(
         'crateFfiMusicMusicFetch',
         '[{"id":"tr-1","pubkey":"pk-1","audioUrl":"ipfs://a",'
-        '"blobHash":"abababababababababababababababababababababababababababababababab",'
-        '"mediaSize":4096,'
-        '"title":"Night Drive","thumbnail":"ipfs://t",'
-        '"hashtags":["synth","chill"],"d":"d-1",'
-        '"audience":"public","createdAt":1700000001}]',
+            '"blobHash":"abababababababababababababababababababababababababababababababab",'
+            '"mediaSize":4096,'
+            '"title":"Night Drive","thumbnail":"ipfs://t",'
+            '"hashtags":["synth","chill"],"d":"d-1",'
+            '"audience":"public","createdAt":1700000001}]',
       );
 
       final tracks = await music.fetchTracks(limit: 5);
@@ -39,7 +39,8 @@ void main() {
       expect(track.id, 'tr-1');
       expect(track.pubkey, 'pk-1');
       expect(track.audioUrl, 'ipfs://a');
-      expect(track.blobHash, 'abababababababababababababababababababababababababababababababab');
+      expect(track.blobHash,
+          'abababababababababababababababababababababababababababababababab');
       expect(track.mediaSize, 4096);
       expect(track.title, 'Night Drive');
       expect(track.hashtags, ['synth', 'chill']);
@@ -122,7 +123,7 @@ void main() {
       stubFutureString(
         'crateFfiMusicMusicComments',
         '[{"id":"c-1","pubkey":"pk-9","textOverlay":"fire track",'
-        '"createdAt":1700000002}]',
+            '"createdAt":1700000002}]',
       );
 
       final comments =
@@ -139,15 +140,14 @@ void main() {
       final music = MusicService();
       var notified = 0;
       music.addListener(() => notified++);
-      api.stub('crateFfiMusicMusicFetch',
-          (_) => throw Exception('relay down'));
+      api.stub('crateFfiMusicMusicFetch', (_) => throw Exception('relay down'));
 
       await expectLater(music.fetchTracks(), throwsException);
       expect(music.lastError, contains('relay down'));
       expect(notified, 1);
 
-      api.stub('crateFfiMusicMusicPublish',
-          (_) => throw Exception('sign failed'));
+      api.stub(
+          'crateFfiMusicMusicPublish', (_) => throw Exception('sign failed'));
       await expectLater(
           music.publishTrack(mediaSource: '/tmp/x.mp3'), throwsException);
       expect(music.lastError, contains('sign failed'));
@@ -218,8 +218,7 @@ void main() {
 /// here, since the mirror keys on it.
 String _trackJson(List<String> ids) {
   return '[${ids.map((id) => '{"id":"$id","pubkey":"pk-1",'
-          '"audioUrl":"blob://x","blobHash":"h","mediaSize":1,'
-          '"title":"t","thumbnail":"","hashtags":[],"d":"",'
-          '"audience":"public","createdAt":1700000000}')
-      .join(',')}]';
+      '"audioUrl":"blob://x","blobHash":"h","mediaSize":1,'
+      '"title":"t","thumbnail":"","hashtags":[],"d":"",'
+      '"audience":"public","createdAt":1700000000}').join(',')}]';
 }

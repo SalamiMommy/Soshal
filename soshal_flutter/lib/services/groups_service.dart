@@ -26,6 +26,7 @@ class GroupsService extends ChangeNotifier
   List<GroupThreadReply> _replies = [];
   final Map<String, List<ThreadReaction>> _reactionsByThread = {};
   final Map<String, List<RoomReaction>> _reactionsByRoom = {};
+
   /// Index of [_reactionsByRoom] by message id, maintained by
   /// [_reindexRoomReactions]. A room can hold many messages, and the summaries
   /// are stored per room, so without this every rendered message row scanned
@@ -250,32 +251,25 @@ class GroupsService extends ChangeNotifier
   /// All six underlying facets are `#[frb(sync)]`, so awaiting them one after
   /// another blocks the UI isolate six times over and re-enters Rust six
   /// times — `Future.wait` cannot overlap them, since a sync fn has already
-  /// run by the time its `Future` is created. Threads and messages stay on
-  /// their own calls: the message list is unbounded (folding it in would move
-  /// a large `jsonDecode` onto the UI isolate) and threads runs its own
-  /// access-control checks whose empty-result paths must keep their
-  /// semantics.
-  Future<void> loadDetailBundle(String groupId) => guard(() {
-        final bundle = jsonDecode(
+  /// run by the time its `Future` is created. The bundle is then decoded by
+  /// [_parseDetailBundle] off the UI isolate, which matters because a
+  /// 5 000-member group decodes to thousands of objects on every open.
+  /// Threads and messages stay on their own calls: the message list is
+  /// unbounded and threads runs its own access-control checks whose
+  /// empty-result paths must keep their semantics.
+  Future<void> loadDetailBundle(String groupId) => guard(() async {
+        final bundle = await runOffThreadCompute(
+          _parseDetailBundle,
           RustLib.instance.api.crateFfiGroupsGroupsGetDetailBundle(
             groupId: groupId,
           ),
-        ) as Map<String, dynamic>;
-        _current =
-            SoshalGroup.fromJson(bundle['group'] as Map<String, dynamic>);
-        _members = (bundle['members'] as List<dynamic>).cast<String>();
-        _memberRoles = (bundle['memberRoles'] as List<dynamic>)
-            .map((e) => GroupMemberWithRole.fromJson(e as Map<String, dynamic>))
-            .toList();
-        _roles = (bundle['roles'] as List<dynamic>)
-            .map((e) => GroupRole.fromJson(e as Map<String, dynamic>))
-            .toList();
-        _rooms = (bundle['rooms'] as List<dynamic>)
-            .map((e) => GroupRoom.fromJson(e as Map<String, dynamic>))
-            .toList();
-        _voiceChannels = (bundle['voiceChannels'] as List<dynamic>)
-            .map((e) => GroupVoiceChannel.fromJson(e as Map<String, dynamic>))
-            .toList();
+        );
+        _current = bundle.group;
+        _members = bundle.members;
+        _memberRoles = bundle.memberRoles;
+        _roles = bundle.roles;
+        _rooms = bundle.rooms;
+        _voiceChannels = bundle.voiceChannels;
       }, onNotify: notifyDeferred);
 
   Future<bool> join(String groupId, String userPubkey, {String? password}) =>
@@ -397,13 +391,11 @@ class GroupsService extends ChangeNotifier
         return ok;
       }, onNotify: notifyDeferred);
 
-  Future<List<GroupRole>> fetchRoles(String groupId) => guard(() {
-        final json = RustLib.instance.api.crateFfiGroupsGroupsRolesList(
-          groupId: groupId,
+  Future<List<GroupRole>> fetchRoles(String groupId) => guard(() async {
+        _roles = await runOffThreadCompute(
+          _parseGroupRoles,
+          RustLib.instance.api.crateFfiGroupsGroupsRolesList(groupId: groupId),
         );
-        _roles = (jsonDecode(json) as List<dynamic>)
-            .map((e) => GroupRole.fromJson(e as Map<String, dynamic>))
-            .toList();
         return _roles;
       }, onNotify: notifyDeferred);
 
@@ -441,23 +433,21 @@ class GroupsService extends ChangeNotifier
 
   /// Members with their assigned role ids ({pubkey, role} rows).
   Future<List<GroupMemberWithRole>> fetchMembersWithRoles(String groupId) =>
-      guard(() {
-        final json = RustLib.instance.api.crateFfiGroupsGroupsMembersWithRoles(
-          groupId: groupId,
+      guard(() async {
+        _memberRoles = await runOffThreadCompute(
+          _parseMemberRoles,
+          RustLib.instance.api.crateFfiGroupsGroupsMembersWithRoles(
+            groupId: groupId,
+          ),
         );
-        _memberRoles = (jsonDecode(json) as List<dynamic>)
-            .map((e) => GroupMemberWithRole.fromJson(e as Map<String, dynamic>))
-            .toList();
         return _memberRoles;
       }, onNotify: notifyDeferred);
 
-  Future<List<GroupRoom>> fetchRooms(String groupId) => guard(() {
-        final json = RustLib.instance.api.crateFfiGroupsGroupsRoomsList(
-          groupId: groupId,
+  Future<List<GroupRoom>> fetchRooms(String groupId) => guard(() async {
+        _rooms = await runOffThreadCompute(
+          _parseGroupRooms,
+          RustLib.instance.api.crateFfiGroupsGroupsRoomsList(groupId: groupId),
         );
-        _rooms = (jsonDecode(json) as List<dynamic>)
-            .map((e) => GroupRoom.fromJson(e as Map<String, dynamic>))
-            .toList();
         return _rooms;
       }, onNotify: notifyDeferred);
 
@@ -676,13 +666,13 @@ class GroupsService extends ChangeNotifier
       }, onNotify: notifyDeferred);
 
   Future<List<GroupVoiceChannel>> fetchVoiceChannels(String groupId) =>
-      guard(() {
-        final json = RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsList(
-          groupId: groupId,
+      guard(() async {
+        _voiceChannels = await runOffThreadCompute(
+          _parseVoiceChannels,
+          RustLib.instance.api.crateFfiGroupsGroupsVoiceChannelsList(
+            groupId: groupId,
+          ),
         );
-        _voiceChannels = (jsonDecode(json) as List<dynamic>)
-            .map((e) => GroupVoiceChannel.fromJson(e as Map<String, dynamic>))
-            .toList();
         return _voiceChannels;
       }, onNotify: notifyDeferred);
 
@@ -965,6 +955,66 @@ List<GroupMessage> _parseGroupMessages(String json) {
       .map((e) => GroupMessage.fromJson(e as Map<String, dynamic>))
       .toList();
 }
+
+/// The six facets of a group detail bundle, decoded in one pass.
+///
+/// A record rather than a class: it is a pure return value from a pure function,
+/// it crosses the isolate boundary as a single message, and it has no behavior
+/// that could drift out of sync with the fields it names.
+typedef _GroupDetailBundle = ({
+  SoshalGroup group,
+  List<String> members,
+  List<GroupMemberWithRole> memberRoles,
+  List<GroupRole> roles,
+  List<GroupRoom> rooms,
+  List<GroupVoiceChannel> voiceChannels,
+});
+
+/// JSON → every group-detail facet, top-level so [runOffThreadCompute] can
+/// decode it off the UI isolate.
+///
+/// This is the one decode in this service that genuinely needs the off-thread
+/// path: the member list alone is one entry per member, so a large group
+/// decodes to thousands of objects every time it is opened.
+_GroupDetailBundle _parseDetailBundle(String json) {
+  final bundle = jsonDecode(json) as Map<String, dynamic>;
+  return (
+    group: SoshalGroup.fromJson(bundle['group'] as Map<String, dynamic>),
+    members: (bundle['members'] as List<dynamic>).cast<String>(),
+    memberRoles: (bundle['memberRoles'] as List<dynamic>)
+        .map((e) => GroupMemberWithRole.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    roles: (bundle['roles'] as List<dynamic>)
+        .map((e) => GroupRole.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    rooms: (bundle['rooms'] as List<dynamic>)
+        .map((e) => GroupRoom.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    voiceChannels: (bundle['voiceChannels'] as List<dynamic>)
+        .map((e) => GroupVoiceChannel.fromJson(e as Map<String, dynamic>))
+        .toList(),
+  );
+}
+
+List<GroupRole> _parseGroupRoles(String json) =>
+    (jsonDecode(json) as List<dynamic>)
+        .map((e) => GroupRole.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+List<GroupMemberWithRole> _parseMemberRoles(String json) =>
+    (jsonDecode(json) as List<dynamic>)
+        .map((e) => GroupMemberWithRole.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+List<GroupRoom> _parseGroupRooms(String json) =>
+    (jsonDecode(json) as List<dynamic>)
+        .map((e) => GroupRoom.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+List<GroupVoiceChannel> _parseVoiceChannels(String json) =>
+    (jsonDecode(json) as List<dynamic>)
+        .map((e) => GroupVoiceChannel.fromJson(e as Map<String, dynamic>))
+        .toList();
 
 /// A themed chatroom row.
 class GroupRoom {

@@ -107,8 +107,7 @@ class FriendsService extends ChangeNotifier
 
   /// Load friend suggestions from the bridge (pubkey list from the social
   /// contact graph). Empty when nothing to suggest yet.
-  Future<List<String>> fetchSuggestions() =>
-      guard(_fetchSuggestionsUnguarded);
+  Future<List<String>> fetchSuggestions() => guard(_fetchSuggestionsUnguarded);
 
   /// Body of [fetchSuggestions], without the [guard] wrapper.
   ///
@@ -173,9 +172,7 @@ class FriendsService extends ChangeNotifier
     final raw = RustLib.instance.api
         .crateFfiIdentityIdentityFetchFollowsUnion(pubkeys: pubkeys);
     final decoded = jsonDecode(raw);
-    return decoded is List
-        ? decoded.whereType<String>().toList()
-        : <String>[];
+    return decoded is List ? decoded.whereType<String>().toList() : <String>[];
   }
 
   /// Add a profile to the in-memory contact list.

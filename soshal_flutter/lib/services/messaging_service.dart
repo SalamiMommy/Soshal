@@ -510,14 +510,15 @@ class MessagingService extends ChangeNotifier
   /// Fetch pending disappearing media addressed to [pubkey] (the active
   /// account). Sync FFI returning a JSON array.
   Future<List<EphemeralMedia>> fetchPendingEphemeral(String pubkey) =>
-      guard(() {
-        final json = RustLib.instance.api
-            .crateFfiEphemeralEphemeralListPending(pubkey: pubkey);
-        final list = jsonDecode(json) as List<dynamic>;
+      guard(() async {
+        final list = await runOffThreadCompute(
+          _parseEphemeralList,
+          RustLib.instance.api
+              .crateFfiEphemeralEphemeralListPending(pubkey: pubkey),
+        );
         _pendingEphemeral
           ..clear()
-          ..addAll(list
-              .map((e) => EphemeralMedia.fromJson(e as Map<String, dynamic>)));
+          ..addAll(list);
         _cachedPendingEphemeral = List.unmodifiable(_pendingEphemeral);
         return pendingEphemeral;
       }, onNotify: notifyDeferred);
@@ -1165,6 +1166,15 @@ class EphemeralMedia {
       viewedAt: json.intOf('viewed_at'),
     );
   }
+}
+
+/// JSON → [EphemeralMedia] list, top-level so [runOffThreadCompute] can decode
+/// it off the UI isolate.
+List<EphemeralMedia> _parseEphemeralList(String json) {
+  final list = jsonDecode(json) as List<dynamic>;
+  return list
+      .map((e) => EphemeralMedia.fromJson(e as Map<String, dynamic>))
+      .toList();
 }
 
 /// JSON → [ProfileInfo] list, top-level so [runOffThread] can decode on a

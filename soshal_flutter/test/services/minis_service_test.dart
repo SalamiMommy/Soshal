@@ -21,10 +21,10 @@ void main() {
       api.stubString(
         'crateFfiMinisMinisFetch',
         '[{"id":"m-1","pubkey":"pk-1","videoUrl":"blob://'
-        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",'
-        '"blobHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",'
-        '"mediaSize":2048,"textOverlay":"first","thumbnail":"","audience":"public",'
-        '"createdAt":1700000001}]',
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",'
+            '"blobHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",'
+            '"mediaSize":2048,"textOverlay":"first","thumbnail":"","audience":"public",'
+            '"createdAt":1700000001}]',
       );
 
       final result = minis.fetchMinis();
@@ -95,8 +95,8 @@ void main() {
 
     test('errors set lastError; fetchMinis rethrows, plugins degrade', () {
       final minis = MinisService();
-      api.stub('crateFfiMinisMinisFetch',
-          (_) => throw Exception('registry down'));
+      api.stub(
+          'crateFfiMinisMinisFetch', (_) => throw Exception('registry down'));
       expect(() => minis.fetchMinis(), throwsException);
       expect(minis.lastError, contains('registry down'));
 
@@ -142,7 +142,8 @@ void main() {
       expect(minis.lastError, isNull);
     });
 
-    test('watchMinis and subscribeToMinis stream updates live from bridge', () async {
+    test('watchMinis and subscribeToMinis stream updates live from bridge',
+        () async {
       final minis = MinisService();
       final controller = StreamController<String>.broadcast();
       addTearDown(controller.close);
@@ -176,7 +177,8 @@ void main() {
       expect(minis.minis.isEmpty, isTrue);
     });
 
-    test('watchMinis forwards source and parse errors to subscribers', () async {
+    test('watchMinis forwards source and parse errors to subscribers',
+        () async {
       final minis = MinisService();
       final controller = StreamController<String>.broadcast();
       addTearDown(controller.close);
@@ -184,9 +186,9 @@ void main() {
 
       final errors = <Object>[];
       final sub = minis.watchMinis().listen(
-        (_) {},
-        onError: errors.add,
-      );
+            (_) {},
+            onError: errors.add,
+          );
       addTearDown(sub.cancel);
 
       // Source-side error.
@@ -337,8 +339,7 @@ void main() {
 /// are the only part that matters here.
 String _savedJson(List<String> ids) {
   return '[${ids.map((id) => '{"id":"$id","pubkey":"pk-1",'
-          '"videoUrl":"blob://x","blobHash":"h","mediaSize":1,'
-          '"textOverlay":"","thumbnail":"","audience":"public",'
-          '"createdAt":1700000000}')
-      .join(',')}]';
+      '"videoUrl":"blob://x","blobHash":"h","mediaSize":1,'
+      '"textOverlay":"","thumbnail":"","audience":"public",'
+      '"createdAt":1700000000}').join(',')}]';
 }

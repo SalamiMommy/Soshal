@@ -88,8 +88,7 @@ void main() {
       controller.add('not json');
       await pumpEventQueue();
 
-      final reacted =
-          feed.posts.firstWhere((p) => p.eventId == 'ev-2');
+      final reacted = feed.posts.firstWhere((p) => p.eventId == 'ev-2');
       expect(reacted.reactions, 0);
       expect(sync.lastError, isNotNull);
       await controller.close();
@@ -144,13 +143,14 @@ void main() {
       final res = await sync.reconcileFeedWithPeer('root-hash');
 
       expect(res['branches'], ['b1']);
-      final inv = api.callsOf('crateFfiNetworkNetworkReconcileProllyTree').single;
+      final inv =
+          api.callsOf('crateFfiNetworkNetworkReconcileProllyTree').single;
       expect(api.namedArg(inv, 'remoteRootHash'), 'root-hash');
       // The encode moved off the UI isolate, so the payload must still be the
       // exact [eventId, content] pair list it was before. `feed.posts` is not
       // insertion-ordered, so compare as an unordered set of pairs.
       final kv = (jsonDecode(api.namedArg(inv, 'localKvJson') as String)
-          as List<dynamic>)
+              as List<dynamic>)
           .map((e) => (e as List<dynamic>).cast<String>())
           .toList();
       expect(kv.toSet(), {

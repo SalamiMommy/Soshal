@@ -24,8 +24,7 @@ void main() {
     api.stubBool('crateFfiDbDbSetSetting', true);
   });
 
-  const sessionJson =
-      '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
+  const sessionJson = '{"active_pubkey":"pk123","accounts":[{"pubkey":"pk123",'
       '"npub":"npub1abc","last_used":0,'
       '"relay_list":["wss://relay.example.com"]}]}';
 
@@ -183,7 +182,8 @@ void main() {
     expect(api.callCount('crateFfiIdentityIdentityPublishRelayList'), 1);
     final inv = api.callsOf('crateFfiIdentityIdentityPublishRelayList').single;
     final urls = api.namedArg(inv, 'relayUrls') as List<String>;
-    expect(urls, containsAll(['wss://relay.example.com', 'wss://new.example.com']));
+    expect(urls,
+        containsAll(['wss://relay.example.com', 'wss://new.example.com']));
   });
 
   testWidgets('delete relay persists and publishes remaining list',

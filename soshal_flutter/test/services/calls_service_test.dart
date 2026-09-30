@@ -62,11 +62,10 @@ void main() {
       final calls = CallsService();
       api.stub(
         'crateFfiCallsCallsFetchSignals',
-        (_) async =>
-            '[{"id":"s1","pubkey":"peer-1",'
-        '"content":"{\\"call_id\\":\\"c-1\\",\\"type\\":\\"answer\\",'
-        '\\"media_type\\":\\"video\\"}","created_at":1700000000,"kind":20002,'
-        '"p_tags":["peer-1","peer-2"]}]',
+        (_) async => '[{"id":"s1","pubkey":"peer-1",'
+            '"content":"{\\"call_id\\":\\"c-1\\",\\"type\\":\\"answer\\",'
+            '\\"media_type\\":\\"video\\"}","created_at":1700000000,"kind":20002,'
+            '"p_tags":["peer-1","peer-2"]}]',
       );
 
       final signals = await calls.fetchSignals('me');
@@ -100,7 +99,7 @@ void main() {
         'crateFfiCallsCallsFetchSignals',
         (_) async =>
             '[{"id":"s1","pubkey":"p","content":"{\\"call_id\\":\\"c\\",'
-        '\\"type\\":\\"offer\\"}","created_at":1,"kind":20001,"p_tags":[]}]',
+            '\\"type\\":\\"offer\\"}","created_at":1,"kind":20001,"p_tags":[]}]',
       );
       await calls.fetchSignals('me');
 
@@ -113,8 +112,7 @@ void main() {
 
     test('sanitizeSdp returns redacted sdp, error rethrows', () {
       final calls = CallsService();
-      api.stubString(
-          'crateFfiWebrtcWebrtcSanitizeSdp', 'v=0 redacted');
+      api.stubString('crateFfiWebrtcWebrtcSanitizeSdp', 'v=0 redacted');
       expect(calls.sanitizeSdp('v=0 192.168.1.5', forceRelay: true),
           'v=0 redacted');
       final inv = api.callsOf('crateFfiWebrtcWebrtcSanitizeSdp').single;
@@ -128,8 +126,7 @@ void main() {
 
     test('iceConfig returns config, forwards privacy level', () {
       final calls = CallsService();
-      api.stubString(
-          'crateFfiWebrtcWebrtcGetIceConfig', '{"iceServers":[]}');
+      api.stubString('crateFfiWebrtcWebrtcGetIceConfig', '{"iceServers":[]}');
       expect(calls.iceConfig('strict'), '{"iceServers":[]}');
       final inv = api.callsOf('crateFfiWebrtcWebrtcGetIceConfig').single;
       expect(api.namedArg(inv, 'privacyLevel'), 'strict');
@@ -174,14 +171,12 @@ void main() {
       await pumpEventQueue();
       final afterEnd = notifications;
       await Future<void>.delayed(const Duration(milliseconds: 1200));
-      expect(notifications, afterEnd,
-          reason: 'timer cancelled after endCall');
+      expect(notifications, afterEnd, reason: 'timer cancelled after endCall');
     });
 
     test('clearLastError clears lastError', () async {
       final calls = CallsService();
-      api.stub('crateFfiCallsCallsSendSignal',
-          (_) => throw Exception('boom'));
+      api.stub('crateFfiCallsCallsSendSignal', (_) => throw Exception('boom'));
       await expectLater(
         calls.sendSignal(
           signalType: 'end',

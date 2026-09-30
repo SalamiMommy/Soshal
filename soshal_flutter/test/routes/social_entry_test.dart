@@ -55,8 +55,7 @@ void main() {
     });
 
     test('fromJson truncates fractional created_at to int', () {
-      final entry =
-          SocialEntry.fromJson({'created_at': 1700000002.75});
+      final entry = SocialEntry.fromJson({'created_at': 1700000002.75});
 
       expect(entry.createdAt, 1700000002);
       expect(entry.id, '');

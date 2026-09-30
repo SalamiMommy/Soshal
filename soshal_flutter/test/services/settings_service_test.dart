@@ -98,7 +98,8 @@ void main() {
       expect(emissions, ['dark', 'light']);
     });
 
-    test('subscribeToSetting updates cached setting and notifies listeners', () async {
+    test('subscribeToSetting updates cached setting and notifies listeners',
+        () async {
       final settings = SettingsService();
       final controller = StreamController<String>();
       addTearDown(controller.close);

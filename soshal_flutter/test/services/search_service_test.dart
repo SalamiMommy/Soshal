@@ -23,7 +23,7 @@ void main() {
       api.stubString(
         'crateFfiSearchSearchPosts',
         '[{"event_id":"ev-1","pubkey":"pk-1","content":"hello world",'
-        '"created_at":1700000001}]',
+            '"created_at":1700000001}]',
       );
 
       final results = await search.searchPosts('hello', limit: 25);
@@ -46,7 +46,7 @@ void main() {
       api.stubString(
         'crateFfiSearchSearchProfiles',
         '[{"pubkey":"pk-9","name":"alice","about":"builder",'
-        '"created_at":1700000002}]',
+            '"created_at":1700000002}]',
       );
 
       final profiles = await search.searchProfiles('alice');
@@ -72,8 +72,10 @@ void main() {
       expect(results.single.id, 'h-1');
       expect(results.single.kind, 'hashtag');
       expect(search.results.single.kind, 'hashtag');
-      expect(api.namedArg(
-          api.callsOf('crateFfiSearchSearchGlobal').single, 'query'), '#rust');
+      expect(
+          api.namedArg(
+              api.callsOf('crateFfiSearchSearchGlobal').single, 'query'),
+          '#rust');
 
       api.stubString('crateFfiSearchSearchGlobal', '{"not":"a list"}');
       await search.searchGlobal('#rust');
@@ -112,13 +114,12 @@ void main() {
 
     test('error sets lastError and rethrows', () async {
       final search = SearchService();
-      api.stub('crateFfiSearchSearchPosts',
-          (_) => throw Exception('fts down'));
+      api.stub('crateFfiSearchSearchPosts', (_) => throw Exception('fts down'));
       await expectLater(search.searchPosts('x'), throwsException);
       expect(search.lastError, contains('fts down'));
 
-      api.stub('crateFfiSearchSearchHashtags',
-          (_) => throw Exception('tags down'));
+      api.stub(
+          'crateFfiSearchSearchHashtags', (_) => throw Exception('tags down'));
       await expectLater(search.searchHashtags('x'), throwsException);
       expect(search.lastError, contains('tags down'));
     });

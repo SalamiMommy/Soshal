@@ -36,7 +36,7 @@ void main() {
       api.stubString(
         'crateFfiFeedFeedComputeCardLayouts',
         '[{"id":"a","height_px":120.5,"media_height_px":80.0},'
-        '{"id":"b","height_px":200.0,"media_height_px":0.0}]',
+            '{"id":"b","height_px":200.0,"media_height_px":0.0}]',
       );
 
       await layout.refresh([post('a'), post('b')]);
@@ -55,9 +55,8 @@ void main() {
       await layout.refresh([post('x')], screenWidth: 600, textScale: 1.5);
 
       final inv = api.callsOf('crateFfiFeedFeedComputeCardLayouts').single;
-      final req =
-          (jsonDecode(api.namedArg(inv, 'requestsJson') as String) as List)[0]
-              as Map<String, dynamic>;
+      final req = (jsonDecode(api.namedArg(inv, 'requestsJson') as String)
+          as List)[0] as Map<String, dynamic>;
       final text = req['text'] as Map<String, dynamic>;
       expect(req['id'], 'x');
       expect(text['font_size_px'], 14.0 * 1.5);
@@ -82,8 +81,8 @@ void main() {
     test('ffi error swallowed: ready stays false, heights stay empty',
         () async {
       final layout = LayoutService();
-      api.stub('crateFfiFeedFeedComputeCardLayouts',
-          (_) => throw Exception('boom'));
+      api.stub(
+          'crateFfiFeedFeedComputeCardLayouts', (_) => throw Exception('boom'));
       await layout.refresh([post('a')]);
       expect(layout.ready, isFalse);
       expect(layout.heights, isEmpty);
@@ -101,7 +100,8 @@ void main() {
       expect(layout.heights, {'b': 0.0, 'c': 0.0});
     });
 
-    test('extentFor maps index to post height, footer and fallback extents', () async {
+    test('extentFor maps index to post height, footer and fallback extents',
+        () async {
       final layout = LayoutService();
       api.stubString(
         'crateFfiFeedFeedComputeCardLayouts',
@@ -124,17 +124,15 @@ void main() {
       await layout.refresh([post('a')]);
 
       final inv = api.callsOf('crateFfiFeedFeedComputeCardLayouts').single;
-      final req =
-          (jsonDecode(api.namedArg(inv, 'requestsJson') as String) as List)[0]
-              as Map<String, dynamic>;
+      final req = (jsonDecode(api.namedArg(inv, 'requestsJson') as String)
+          as List)[0] as Map<String, dynamic>;
       expect((req['text'] as Map)['font_size_px'], 14.0);
       expect((req['text'] as Map)['max_width_px'], 360 - 16);
 
       await layout.refresh([post('a')], screenWidth: 500, textScale: 2.0);
-      final second =
-          (jsonDecode(api.namedArg(api.callsOf('crateFfiFeedFeedComputeCardLayouts').last,
-                  'requestsJson') as String) as List)[0]
-              as Map<String, dynamic>;
+      final second = (jsonDecode(api.namedArg(
+          api.callsOf('crateFfiFeedFeedComputeCardLayouts').last,
+          'requestsJson') as String) as List)[0] as Map<String, dynamic>;
       expect((second['text'] as Map)['font_size_px'], 28.0);
       expect((second['text'] as Map)['max_width_px'], 484.0);
     });
