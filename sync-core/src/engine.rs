@@ -154,14 +154,40 @@ fn retry_at(now_secs: i64, retry_count: i32) -> i64 {
     now_secs + (1i64 << shift)
 }
 
-fn ingest_batch(
+/// `ingest_batch` on the blocking pool.
+///
+/// `ingest::handle_batch` is synchronous and reaches `db_core::block_on` for a
+/// full SQLite transaction, so calling it straight from the engine loop parks
+/// the very worker that is also responsible for polling the relay
+/// subscription — batch commit time is dead time for the notification stream.
+/// Spawning it keeps the stream draining while a batch commits.
+///
+/// Takes the batch by value because the closure has to own it; the caller's
+/// buffer is replaced with `std::mem::take`, so this trades the previous
+/// amortized capacity for one allocation per batch. That is noise next to the
+/// transaction it wraps.
+async fn ingest_batch_blocking(
     db: &Database,
     my_pubkey: &str,
-    batch: &[Event],
+    batch: Vec<Event>,
     tx: &tokio::sync::mpsc::Sender<SyncUpdate>,
     cursors: &mut HashMap<&'static str, u64>,
 ) {
-    match ingest::handle_batch(db, my_pubkey, batch, tx) {
+    let db = db.clone();
+    let my_pubkey = my_pubkey.to_string();
+    let tx = tx.clone();
+    let joined = tokio::task::spawn_blocking(move || {
+        (ingest::handle_batch(&db, &my_pubkey, &batch, &tx), batch)
+    })
+    .await;
+    let (result, batch) = match joined {
+        Ok(pair) => pair,
+        Err(e) => {
+            eprintln!("sync engine: ingest worker panicked: {e}");
+            return;
+        }
+    };
+    match result {
         Ok(ok_pos) => {
             for (i, event) in batch.iter().enumerate() {
                 if !ok_pos.contains(&i) {
@@ -443,8 +469,14 @@ pub async fn engine_loop_with_client_sealed(
         }
 
         if (idle && !batch.is_empty()) || batch.len() >= 64 {
-            ingest_batch(&db, &cfg.my_pubkey, &batch, &tx, &mut cursors);
-            batch.clear();
+            ingest_batch_blocking(
+                &db,
+                &cfg.my_pubkey,
+                std::mem::take(&mut batch),
+                &tx,
+                &mut cursors,
+            )
+            .await;
         }
 
         if last_flush.elapsed() >= FLUSH_INTERVAL {
@@ -457,7 +489,14 @@ pub async fn engine_loop_with_client_sealed(
     }
 
     if !batch.is_empty() {
-        ingest_batch(&db, &cfg.my_pubkey, &batch, &tx, &mut cursors);
+        ingest_batch_blocking(
+            &db,
+            &cfg.my_pubkey,
+            std::mem::take(&mut batch),
+            &tx,
+            &mut cursors,
+        )
+        .await;
     }
     for (key, ts) in &cursors {
         ingest::set_watermark(&db, key, *ts);

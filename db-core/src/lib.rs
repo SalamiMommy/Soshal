@@ -13,9 +13,16 @@ pub use libsql;
 pub use observable::{ObservableHandle, ObservableOptions};
 
 use libsql::Connection;
+use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, Weak};
 use turso::{TursoConfig, TursoState, TursoSyncStatus};
+
+/// Poison-tolerant mutex lock. A panic while holding one of these must not
+/// take the whole database down with it.
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// Base minimum connections handed out by the pool.
 pub const MAX_CONNECTIONS: usize = 4;
@@ -74,25 +81,50 @@ struct PoolState {
     in_use: usize,
 }
 
+/// Live pools by database path.
+///
+/// `Database::open` is called independently by the bridge global
+/// (`ffi/db.rs`), the sync engine (`sync-core/engine.rs`) and the mesh ingest
+/// task (`ffi/relay.rs`), all against the same file. Each call used to build
+/// its own libsql pool clamped to 4-16 connections, so three pools contended
+/// for the WAL write lock and held their idle connections open for the life of
+/// the process. Memoizing on the path gives all three one pool.
+///
+/// `Weak` is deliberate: an entry disappears as soon as the last `Database`
+/// handle drops, so switching accounts (a different path) neither leaks the
+/// old pool nor shares state into the new one. Dead entries are also swept on
+/// the way in, so a path that is opened and dropped repeatedly does not
+/// accumulate.
+static OPEN_POOLS: std::sync::OnceLock<Mutex<HashMap<String, Weak<PoolInner>>>> =
+    std::sync::OnceLock::new();
+
 impl Database {
     pub fn open(path: &str) -> Result<Self, error::DbError> {
+        let pools = OPEN_POOLS.get_or_init(|| Mutex::new(HashMap::new()));
+        if let Some(inner) = lock(pools).get(path).and_then(Weak::upgrade) {
+            return Ok(Self { inner });
+        }
+
         let db = block_on(libsql::Builder::new_local(path).build())?;
         let conn = db.connect()?;
         configure(&conn)?;
-        Ok(Self {
-            inner: Arc::new(PoolInner {
-                db,
-                turso_state: TursoState::new(),
-                turso_config: Mutex::new(None),
-                state: Mutex::new(PoolState {
-                    conns: vec![conn],
-                    in_use: 0,
-                }),
-                available: Condvar::new(),
-                max_connections: max_connections(),
-                change_bus: Arc::new(ChangeBus::default()),
+        let inner = Arc::new(PoolInner {
+            db,
+            turso_state: TursoState::new(),
+            turso_config: Mutex::new(None),
+            state: Mutex::new(PoolState {
+                conns: vec![conn],
+                in_use: 0,
             }),
-        })
+            available: Condvar::new(),
+            max_connections: max_connections(),
+            change_bus: Arc::new(ChangeBus::default()),
+        });
+        let mut guard = lock(pools);
+        guard.retain(|_, w| w.strong_count() > 0);
+        guard.insert(path.to_string(), Arc::downgrade(&inner));
+        drop(guard);
+        Ok(Self { inner })
     }
 
     pub fn open_in_memory() -> Result<Self, error::DbError> {

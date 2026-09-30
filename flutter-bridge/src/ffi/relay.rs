@@ -267,12 +267,28 @@ fn spawn_ingest(db_path: String, my_pubkey: String) {
                             events.push(event);
                         }
                     }
-                    if !events.is_empty()
-                        && soshal_sync_core::ingest::handle_batch(&db, &my_pubkey, &events, &tx)
-                            .is_err()
-                    {
-                        // Count (never silently drop) ingest failures.
-                        MESH_INGEST_ERRORS.fetch_add(1, Ordering::Relaxed);
+                    if !events.is_empty() {
+                        // On the blocking pool, not inline. `handle_batch`
+                        // reaches `db_core::block_on` for a full SQLite
+                        // transaction, so calling it here would park the
+                        // worker that also drives `node.poll()` — mesh
+                        // delivery would stall for the length of the commit.
+                        let worker_db = db.clone();
+                        let worker_pk = my_pubkey.clone();
+                        let worker_tx = tx.clone();
+                        let joined = tokio::task::spawn_blocking(move || {
+                            soshal_sync_core::ingest::handle_batch(
+                                &worker_db, &worker_pk, &events, &worker_tx,
+                            )
+                        })
+                        .await;
+                        // A panicked worker counts as a failure too; letting it
+                        // propagate would take down the whole ingest loop and
+                        // the mesh node with it.
+                        if !matches!(joined, Ok(Ok(_))) {
+                            // Count (never silently drop) ingest failures.
+                            MESH_INGEST_ERRORS.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 }
                 tokio::time::sleep(Duration::from_millis(500)).await;
