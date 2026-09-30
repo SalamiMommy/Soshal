@@ -54,17 +54,20 @@ impl<'a> BookmarkRepo<'a> {
         tx: &libsql::Transaction,
         row: &BookmarkRow,
     ) -> Result<(), crate::error::DbError> {
-        let id_clean = row.id.trim();
-        let pk_clean = row.pubkey.trim();
-        let evt_clean = row.event_id.trim();
+        // Key columns are lowercased, not just trimmed: `bookmark_remove` and
+        // the list queries match case-insensitively, so storing a mixed-case id
+        // makes the row unreachable from its own lookup.
+        let id_clean = row.id.trim().to_ascii_lowercase();
+        let pk_clean = row.pubkey.trim().to_ascii_lowercase();
+        let evt_clean = row.event_id.trim().to_ascii_lowercase();
         tx.execute(
             "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
-            params![pk_clean],
+            params![pk_clean.as_str()],
         )
         .await?;
         tx.execute(
             "INSERT INTO bookmarks (id, pubkey, event_id, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET pubkey=excluded.pubkey, event_id=excluded.event_id, created_at=excluded.created_at",
-            params![id_clean, pk_clean, evt_clean, row.created_at],
+            params![id_clean.as_str(), pk_clean.as_str(), evt_clean.as_str(), row.created_at],
         )
         .await?;
         Ok(())

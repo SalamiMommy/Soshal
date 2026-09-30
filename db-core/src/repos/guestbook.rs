@@ -16,7 +16,7 @@ impl<'a> GuestbookRepo<'a> {
             &conn,
             "INSERT INTO guestbook_entries (id, profile_pubkey, sender_pubkey, sender_name, sender_avatar, content, created_at, signature, approved) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO NOTHING",
             params![
-                e.id.trim(),
+                e.id.trim().to_ascii_lowercase(),
                 norm_profile.as_str(),
                 norm_sender.as_str(),
                 e.sender_name.as_deref(),

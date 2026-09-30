@@ -13,13 +13,17 @@ impl<'a> ZapRepo<'a> {
         tx: &libsql::Transaction,
         row: &ZapRow,
     ) -> Result<(), crate::error::DbError> {
-        let id_clean = row.id.trim();
-        let pubkey_clean = row.pubkey.trim();
-        let recipient_clean = row.recipient_pubkey.trim();
-        let event_id_clean = row.event_id.as_ref().map(|s| s.trim());
+        // All four key columns are lowercased, not just trimmed. `zap_fetch`
+        // looks rows up case-insensitively, so a mixed-case value stored here
+        // would be invisible to its own lookup and the `ON CONFLICT(id)` would
+        // never collapse the duplicate it is there to prevent.
+        let id_clean = row.id.trim().to_ascii_lowercase();
+        let pubkey_clean = row.pubkey.trim().to_ascii_lowercase();
+        let recipient_clean = row.recipient_pubkey.trim().to_ascii_lowercase();
+        let event_id_clean = row.event_id.as_ref().map(|s| s.trim().to_ascii_lowercase());
         tx.execute(
             "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
-            params![pubkey_clean],
+            params![pubkey_clean.as_str()],
         )
         .await?;
         tx.execute(

@@ -11,7 +11,7 @@ impl<'a> SavedContentRepo<'a> {
     pub fn upsert(&self, row: &SavedContentRow) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
         let norm_pk = row.pubkey.trim().to_ascii_lowercase();
-        let norm_id = row.id.trim();
+        let norm_id = row.id.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT INTO saved_content (kind, id, pubkey, d, media_type, media_url, text_overlay, title, thumbnail, blob_hash, media_size, audience, hashtags, host_ready, created_at, saved_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16) ON CONFLICT(kind, id) DO UPDATE SET pubkey=excluded.pubkey, d=excluded.d, media_type=excluded.media_type, media_url=excluded.media_url, text_overlay=excluded.text_overlay, title=excluded.title, thumbnail=excluded.thumbnail, blob_hash=excluded.blob_hash, media_size=excluded.media_size, audience=excluded.audience, hashtags=excluded.hashtags, host_ready=excluded.host_ready, created_at=excluded.created_at, saved_at=excluded.saved_at",

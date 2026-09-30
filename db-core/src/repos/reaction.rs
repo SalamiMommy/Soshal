@@ -13,12 +13,19 @@ impl<'a> ReactionRepo<'a> {
         tx: &libsql::Transaction,
         row: &ReactionRow,
     ) -> Result<(), crate::error::DbError> {
-        let norm_eid = row.event_id.trim();
-        let norm_pk = row.pubkey.trim();
+        let norm_eid = row.event_id.trim().to_ascii_lowercase();
+        let norm_pk = row.pubkey.trim().to_ascii_lowercase();
+        // `id` is the primary key. It used to be bound as `row.id.trim()`
+        // (no lowercasing) while the dedup DELETE and the existing-row probe
+        // right above compared case-insensitively — so a mixed-case id
+        // deleted the old row, then inserted under a *different* primary key
+        // than the one the next upsert would collide with. Normalize it here
+        // so the PK, the dedup, and the ON CONFLICT all agree.
+        let norm_id = row.id.trim().to_ascii_lowercase();
         let existing: Option<i64> = crate::query::query_first_async(
             tx,
             "SELECT created_at FROM reactions WHERE LOWER(event_id) = LOWER(?1) AND LOWER(pubkey) = LOWER(?2)",
-            params![norm_eid, norm_pk],
+            params![norm_eid.as_str(), norm_pk.as_str()],
             |r| r.get::<i64>(0),
         )
         .await?;
@@ -29,7 +36,7 @@ impl<'a> ReactionRepo<'a> {
         }
         tx.execute(
             "DELETE FROM reactions WHERE LOWER(event_id) = LOWER(?1) AND LOWER(pubkey) = LOWER(?2)",
-            params![norm_eid, norm_pk],
+            params![norm_eid.as_str(), norm_pk.as_str()],
         )
         .await?;
         if row.content.as_deref() == Some("-") {
@@ -37,15 +44,15 @@ impl<'a> ReactionRepo<'a> {
         }
         tx.execute(
             "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
-            params![norm_pk],
+            params![norm_pk.as_str()],
         )
         .await?;
         tx.execute(
             "INSERT INTO reactions (id, pubkey, event_id, kind, content, created_at) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(id) DO UPDATE SET content=excluded.content",
             params![
-                row.id.trim(),
-                norm_pk,
-                norm_eid,
+                norm_id.as_str(),
+                norm_pk.as_str(),
+                norm_eid.as_str(),
                 row.kind,
                 row.content.as_deref(),
                 row.created_at,

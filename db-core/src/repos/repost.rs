@@ -24,6 +24,11 @@ impl<'a> RepostRepo<'a> {
     ) -> Result<(), crate::error::DbError> {
         let norm_pk = r.pubkey.trim().to_ascii_lowercase();
         let norm_eid = r.event_id.trim().to_ascii_lowercase();
+        // `id` is the primary key and every lookup on this table is
+        // case-insensitive, so it must be stored normalized too — a
+        // mixed-case id would miss its own `ON CONFLICT` row and the
+        // dedup query would then match a row the insert could not replace.
+        let norm_id = r.id.trim().to_ascii_lowercase();
         tx.execute(
             "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
             params![norm_pk.as_str()],
@@ -31,7 +36,7 @@ impl<'a> RepostRepo<'a> {
         .await?;
         tx.execute(
             "INSERT INTO reposts (id, pubkey, event_id, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO NOTHING",
-            params![r.id.trim(), norm_pk.as_str(), norm_eid.as_str(), r.created_at],
+            params![norm_id.as_str(), norm_pk.as_str(), norm_eid.as_str(), r.created_at],
         )
         .await?;
         Ok(())
