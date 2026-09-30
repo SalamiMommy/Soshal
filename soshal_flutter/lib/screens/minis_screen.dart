@@ -465,177 +465,193 @@ class _MinisScreenState extends State<MinisScreen>
             ? _buildReelsFeed(activeList)
             : RefreshIndicator(
                 onRefresh: _load,
-                child: ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    if (_wasmRuntimeUnavailable) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.info_outline,
-                            size: 16,
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'WASM runtime unavailable (roadmap): plugin '
-                              'execution is simulated in this build.',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                    Text('Content filter plugin',
-                        style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 8),
-                    TextField(
-                      onChanged: (v) => setState(() => _filterText = v),
-                      decoration: const InputDecoration(
-                        hintText: 'Text to check with the WASI filter plugin',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    FilledButton.icon(
-                      icon: const Icon(Icons.filter_alt),
-                      label: const Text('Run filter'),
-                      onPressed: _runFilter,
-                    ),
-                    if (_filterResult != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        _filterResult!,
-                        maxLines: 4,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ],
-                    const Divider(height: 32),
-                    SwitchListTile(
-                      title: const Text('Rank feed with mini plugin'),
-                      subtitle: const Text(
-                          'Reorders the mini list via the WASI feed-ranker host'),
-                      value: _rankOn,
-                      onChanged: _toggleRank,
-                    ),
-                    if (_rankOn) ...[
-                      const Text(
-                        'Ranked order',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 4),
-                    ],
-                    const Divider(height: 32),
-                    Text('Minis',
-                        style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 8),
-                    if (display.isEmpty)
-                      EmptyState(
-                        compact: true,
-                        icon: Icons.video_library,
-                        title: 'No minis yet',
-                        body:
-                            'Publish a mini video — it is hosted from device caches, not URL links.',
-                      )
-                    else if (_rankOn && _ranked.isNotEmpty)
-                      for (final url in _ranked) ...[
-                        ListTile(
-                          leading: Icon(
-                            Icons.video_library,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          title: Text(url,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: const Text('Mini video (ranked)'),
-                        ),
-                        const Divider(height: 1),
-                      ]
-                    else
-                      for (var i = 0; i < activeList.length; i++) ...[
-                        ListTile(
-                          leading: activeList[i].thumbnail.isNotEmpty
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: BlobImage(
-                                    source: activeList[i].thumbnail,
-                                    width: 48,
-                                    height: 48,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_) => Icon(
-                                      Icons.video_library,
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
-                                    ),
-                                  ),
-                                )
-                              : Icon(
-                                  Icons.video_library,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                          title: Text(
-                            activeList[i].textOverlay.isEmpty
-                                ? (mediaBlobHash(activeList[i].videoUrl) != null
-                                    ? 'Mini video'
-                                    : activeList[i].videoUrl)
-                                : activeList[i].textOverlay,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            mediaBlobHash(activeList[i].videoUrl) != null
-                                ? 'Mini video · hosted from device caches'
-                                : 'Mini video · ${activeList[i].videoUrl}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (!_rankOn)
-                                Builder(
-                                  builder: (ctx) {
-                                    final saved = ctx
-                                        .watch<MinisService>()
-                                        .isSaved(activeList[i].id);
-                                    return IconButton(
-                                      icon: Icon(
-                                        saved
-                                            ? Icons.bookmark
-                                            : Icons.bookmark_border,
-                                      ),
-                                      tooltip: saved
-                                          ? 'Unsave'
-                                          : 'Save (and host on this device)',
-                                      onPressed: () =>
-                                          _toggleSave(activeList[i]),
-                                    );
-                                  },
-                                ),
-                              IconButton(
-                                icon: const Icon(Icons.play_circle_outline),
-                                tooltip: 'Play',
-                                onPressed: () => _play(activeList[i]),
-                              ),
-                            ],
-                          ),
-                          onTap: () => _play(activeList[i]),
-                        ),
-                        if (i < activeList.length - 1) const Divider(height: 1),
-                      ],
-                  ],
-                ),
+                child: _buildForYouList(display, activeList),
               );
   }
+
+  /// The ForYou list, built lazily.
+  ///
+  /// [header] is a bounded number of widgets -- the roadmap banner, the filter
+  /// controls, and the empty state -- so it is built once here and indexed into
+  /// [itemBuilder]. Only the mini rows are built on demand, because that is the
+  /// part that grows with the local registry, and this list sits inside a
+  /// `watch<MinisService>()` subtree.
+  Widget _buildForYouList(List<Object> display, List<MiniItem> activeList) {
+    final ranked = _rankOn && _ranked.isNotEmpty;
+    // `display` is the mixed-type ternary of `List<String>` and
+    // `List<MiniItem>`, so it is never indexed; the branch picks the list.
+    // `display.length` is 0 exactly when the header's empty state covers the
+    // screen, so this needs no separate empty case.
+    final itemCount = display.length;
+    final header = <Widget>[
+      if (_wasmRuntimeUnavailable) ...[
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline,
+              size: 16,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'WASM runtime unavailable (roadmap): plugin '
+                'execution is simulated in this build.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+      Text('Content filter plugin',
+          style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      TextField(
+        onChanged: (v) => setState(() => _filterText = v),
+        decoration: const InputDecoration(
+          hintText: 'Text to check with the WASI filter plugin',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 8),
+      FilledButton.icon(
+        icon: const Icon(Icons.filter_alt),
+        label: const Text('Run filter'),
+        onPressed: _runFilter,
+      ),
+      if (_filterResult != null) ...[
+        const SizedBox(height: 8),
+        Text(
+          _filterResult!,
+          maxLines: 4,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12),
+        ),
+      ],
+      const Divider(height: 32),
+      SwitchListTile(
+        title: const Text('Rank feed with mini plugin'),
+        subtitle:
+            const Text('Reorders the mini list via the WASI feed-ranker host'),
+        value: _rankOn,
+        onChanged: _toggleRank,
+      ),
+      if (_rankOn) ...[
+        const Text(
+          'Ranked order',
+          style: TextStyle(fontSize: 11, color: Colors.grey),
+        ),
+        const SizedBox(height: 4),
+      ],
+      const Divider(height: 32),
+      Text('Minis', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      if (display.isEmpty)
+        EmptyState(
+          compact: true,
+          icon: Icons.video_library,
+          title: 'No minis yet',
+          body:
+              'Publish a mini video — it is hosted from device caches, not URL links.',
+        )
+    ];
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: header.length + itemCount,
+      itemBuilder: (context, index) {
+        if (index < header.length) return header[index];
+        final i = index - header.length;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (ranked) _rankedTile(_ranked[i]) else _miniTile(activeList[i]),
+            // The ranked branch put a divider after every row; the plain branch
+            // omitted the last one. Preserved exactly -- a missing final
+            // divider shows as a 1px gap before the scroll padding.
+            if (ranked || i < itemCount - 1) const Divider(height: 1),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _rankedTile(String url) => ListTile(
+        leading: Icon(
+          Icons.video_library,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        title: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: const Text('Mini video (ranked)'),
+      );
+
+  Widget _miniTile(MiniItem mini) => ListTile(
+        leading: mini.thumbnail.isNotEmpty
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: BlobImage(
+                  source: mini.thumbnail,
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_) => Icon(
+                    Icons.video_library,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              )
+            : Icon(
+                Icons.video_library,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+        title: Text(
+          mini.textOverlay.isEmpty
+              ? (mediaBlobHash(mini.videoUrl) != null
+                  ? 'Mini video'
+                  : mini.videoUrl)
+              : mini.textOverlay,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          mediaBlobHash(mini.videoUrl) != null
+              ? 'Mini video · hosted from device caches'
+              : 'Mini video · ${mini.videoUrl}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!_rankOn)
+              Builder(
+                builder: (ctx) {
+                  final saved = ctx.watch<MinisService>().isSaved(mini.id);
+                  return IconButton(
+                    icon: Icon(
+                      saved ? Icons.bookmark : Icons.bookmark_border,
+                    ),
+                    tooltip:
+                        saved ? 'Unsave' : 'Save (and host on this device)',
+                    onPressed: () => _toggleSave(mini),
+                  );
+                },
+              ),
+            IconButton(
+              icon: const Icon(Icons.play_circle_outline),
+              tooltip: 'Play',
+              onPressed: () => _play(mini),
+            ),
+          ],
+        ),
+        onTap: () => _play(mini),
+      );
 
   Widget _buildSaved() {
     final saved = context.watch<MinisService>().savedMinis;

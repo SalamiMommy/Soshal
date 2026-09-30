@@ -359,6 +359,14 @@ class _GroupSidebarState extends State<GroupSidebar> {
 
     final headerStyle =
         Theme.of(context).textTheme.labelSmall?.copyWith(fontSize: 10);
+    // One permission parse per role row, memoized across rebuilds. This used to
+    // be `groupPermsSet(role.permissions)` *inside* the per-cell loop below, so
+    // a server with 20 roles paid 400 `jsonDecode` calls plus 400 list rebuilds
+    // every time the matrix was built -- and the matrix is inside a
+    // `watch<GroupsService>()` subtree, so any notification re-paid it.
+    final permsByRole = <Set<String>>[
+      for (final role in roles) _permissionKeysFor(role.permissions),
+    ];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -380,13 +388,13 @@ class _GroupSidebarState extends State<GroupSidebar> {
                 ),
             ],
           ),
-          for (final role in roles)
+          for (var i = 0; i < roles.length; i++)
             TableRow(
               children: [
                 cell(
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(role.name,
+                    child: Text(roles[i].name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 12)),
@@ -394,7 +402,7 @@ class _GroupSidebarState extends State<GroupSidebar> {
                 ),
                 for (final (key, _) in groupPermissionKeys)
                   cell(
-                    groupPermsSet(role.permissions).contains(key)
+                    permsByRole[i].contains(key)
                         ? Icon(Icons.check,
                             size: 14,
                             color: Theme.of(context).colorScheme.primary)
@@ -410,6 +418,32 @@ class _GroupSidebarState extends State<GroupSidebar> {
 
   List<GroupMemberWithRole>? _membersRowsCache;
   List<String>? _membersRowsCacheKey;
+
+  /// Parsed permission keys per raw `permissions` blob.
+  ///
+  /// The permission matrix is inside a `watch<GroupsService>()` subtree, so it
+  /// is rebuilt on every notification from anywhere in the group service, while
+  /// a role's blob only changes when that role is edited. Hoisting the parse
+  /// out of the per-cell loop removed the factor of ~20; this removes the
+  /// repeats across rebuilds.
+  ///
+  /// Keyed on the raw string, so a stale entry can only ever be a *wasted*
+  /// entry, never a wrong one — the mapping is a pure function of the key.
+  /// That is why this needs no account-switch reset; the size cap is the only
+  /// thing that has to be maintained.
+  static const int _permKeyCacheCap = 512;
+  final Map<String, Set<String>> _permKeyCache = {};
+
+  /// The permission keys active in [raw], as a set.
+  Set<String> _permissionKeysFor(String raw) {
+    final hit = _permKeyCache[raw];
+    if (hit != null) return hit;
+    // Cleared wholesale rather than evicted: the contents are derived, so
+    // dropping all of them costs one rebuild of the matrix and cannot make the
+    // answer wrong.
+    if (_permKeyCache.length >= _permKeyCacheCap) _permKeyCache.clear();
+    return _permKeyCache[raw] = groupPermsSet(raw).toSet();
+  }
 
   List<GroupMemberWithRole> _sortedMemberRowsCached(GroupsService api) {
     final members = api.members;
@@ -598,153 +632,165 @@ class _GroupSidebarState extends State<GroupSidebar> {
     final group = api.current;
     final isPrivate = group?.isPrivate ?? false;
 
-    return ListView(
-      children: [
-        if (widget.isOwner) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                const Icon(Icons.security_outlined, size: 18),
-                const SizedBox(width: 8),
-                Text('Privacy & Access',
-                    style: Theme.of(context).textTheme.titleSmall),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        isPrivate ? Icons.lock_outline : Icons.public_outlined,
-                        size: 16,
-                        color: isPrivate ? Colors.amber : Colors.green,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          isPrivate
-                              ? 'Private (Password protected)'
-                              : 'Public (Open to all)',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w600, fontSize: 13),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: () => _editPasswordDialog(isPrivate),
-                    icon: Icon(
-                        isPrivate ? Icons.edit_outlined : Icons.lock_outline,
-                        size: 16),
-                    label: Text(isPrivate
-                        ? 'Change / Remove Password'
-                        : 'Set Password (Make Private)'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Divider(),
-        ],
+    final memberRows = _sortedMemberRowsCached(api);
+    // Everything above the member list is a bounded number of widgets, so it is
+    // built once here and indexed into. Order is preserved exactly, empty-state
+    // included; the only unbounded part is the member rows below.
+    final header = <Widget>[
+      if (widget.isOwner) ...[
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: [
-              Expanded(
-                child: Text('Roles (${api.roles.length})',
-                    style: Theme.of(context).textTheme.titleSmall,
-                    overflow: TextOverflow.ellipsis),
-              ),
-              if (widget.isOwner)
-                TextButton.icon(
-                  onPressed: () => _editRoleDialog(),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('New Role'),
-                ),
+              const Icon(Icons.security_outlined, size: 18),
+              const SizedBox(width: 8),
+              Text('Privacy & Access',
+                  style: Theme.of(context).textTheme.titleSmall),
             ],
           ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final (label, roleId, hex) in [
-                ('Owner', 'owner', '#f59e0b'),
-                ('Admin', 'admin', '#f59e0b'),
-                ('Member', 'member', '#6b7280'),
-              ])
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: hexColor(hex), width: 1),
-                  ),
-                  child: Text(
-                    '$label · ${_memberCountForRole(roleId, api.memberRoles)}',
-                    style: TextStyle(fontSize: 12, color: hexColor(hex)),
-                  ),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      isPrivate ? Icons.lock_outline : Icons.public_outlined,
+                      size: 16,
+                      color: isPrivate ? Colors.amber : Colors.green,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        isPrivate
+                            ? 'Private (Password protected)'
+                            : 'Public (Open to all)',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
-            ],
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => _editPasswordDialog(isPrivate),
+                  icon: Icon(
+                      isPrivate ? Icons.edit_outlined : Icons.lock_outline,
+                      size: 16),
+                  label: Text(isPrivate
+                      ? 'Change / Remove Password'
+                      : 'Set Password (Make Private)'),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 8),
-        if (api.roles.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text('No custom roles yet.',
-                style: TextStyle(color: Colors.grey)),
-          )
-        else
-          for (final role in api.roles) _roleCard(role, api),
-        if (api.roles.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Text('Permission Matrix',
-                style: Theme.of(context).textTheme.titleSmall),
-          ),
-          const Padding(
-            padding: EdgeInsets.only(left: 16, bottom: 8),
-            child: Text(
-              'System roles have fixed permissions; custom roles shown below.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ),
-          _permissionMatrix(api.roles),
-        ],
         const Divider(),
+      ],
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text('Roles (${api.roles.length})',
+                  style: Theme.of(context).textTheme.titleSmall,
+                  overflow: TextOverflow.ellipsis),
+            ),
+            if (widget.isOwner)
+              TextButton.icon(
+                onPressed: () => _editRoleDialog(),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('New Role'),
+              ),
+          ],
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final (label, roleId, hex) in [
+              ('Owner', 'owner', '#f59e0b'),
+              ('Admin', 'admin', '#f59e0b'),
+              ('Member', 'member', '#6b7280'),
+            ])
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: hexColor(hex), width: 1),
+                ),
+                child: Text(
+                  '$label · ${_memberCountForRole(roleId, api.memberRoles)}',
+                  style: TextStyle(fontSize: 12, color: hexColor(hex)),
+                ),
+              ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 8),
+      if (api.roles.isEmpty)
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Text('No custom roles yet.',
+              style: TextStyle(color: Colors.grey)),
+        )
+      else
+        for (final role in api.roles) _roleCard(role, api),
+      if (api.roles.isNotEmpty) ...[
+        const SizedBox(height: 12),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text('Members (${api.members.length})',
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Text('Permission Matrix',
               style: Theme.of(context).textTheme.titleSmall),
         ),
-        if (api.members.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child:
-                Text('No members yet.', style: TextStyle(color: Colors.grey)),
-          )
-        else
-          for (final m in _sortedMemberRowsCached(api)) _memberTile(m, api),
-        const SizedBox(height: 16),
+        const Padding(
+          padding: EdgeInsets.only(left: 16, bottom: 8),
+          child: Text(
+            'System roles have fixed permissions; custom roles shown below.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ),
+        _permissionMatrix(api.roles),
       ],
+      const Divider(),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Text('Members (${api.members.length})',
+            style: Theme.of(context).textTheme.titleSmall),
+      ),
+      if (api.members.isEmpty)
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Text('No members yet.', style: TextStyle(color: Colors.grey)),
+        )
+    ];
+
+    return ListView.builder(
+      // Only the member rows go through `itemBuilder`. A 5 000-member server
+      // was building 5 000 tiles on every build, and this list sits inside a
+      // `watch<GroupsService>()` subtree, so any notification from anywhere in
+      // the group service re-paid the whole list.
+      itemCount: header.length + memberRows.length + 1,
+      itemBuilder: (context, index) {
+        if (index < header.length) return header[index];
+        final i = index - header.length;
+        if (i < memberRows.length) return _memberTile(memberRows[i], api);
+        return const SizedBox(height: 16);
+      },
     );
   }
 }
