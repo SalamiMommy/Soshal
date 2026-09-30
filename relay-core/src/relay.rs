@@ -31,13 +31,24 @@ fn payload_digest(payload: &[u8]) -> String {
 /// inject garbage that fans out to every backend at hop+1 (flood
 /// amplification). Event JSON is self-authenticating — no key material
 /// needed to verify.
-fn valid_event_payload(payload: &[u8]) -> bool {
-    let Ok(json) = std::str::from_utf8(payload) else {
-        return false;
-    };
-    match nostr::event::Event::from_json(json) {
-        Ok(event) => soshal_nostr_core::models::verify_event(&event),
-        Err(_) => false,
+///
+/// Returns the parsed event, not just a verdict, because the caller needs the
+/// event anyway: the app-drain path used to hand out the raw payload bytes and
+/// let the bridge parse them a second time. A full `Event::from_json` is ~465 ns
+/// on a ~676-byte note, which is the bulk of what this saves.
+///
+/// Note on the *verification*: a second `verify_event` on the same event was
+/// already cheap. `verify_event` memoizes on `sha256(id‖sig)`, so the repeat
+/// call costs ~84 ns against ~21 µs for a real Schnorr check (measured, 253x).
+/// So this does not remove a second signature check — it removes a duplicate
+/// *parse*, which is the expensive half.
+fn verified_event_payload(payload: &[u8]) -> Option<nostr::event::Event> {
+    let json = std::str::from_utf8(payload).ok()?;
+    let event = nostr::event::Event::from_json(json).ok()?;
+    if soshal_nostr_core::models::verify_event(&event) {
+        Some(event)
+    } else {
+        None
     }
 }
 
@@ -47,7 +58,12 @@ pub struct RelayNode {
     recent: VecDeque<MeshEnvelope>,
     seen: BoundedSet<String>,
     seen_bloom: crate::bloom_dedup::FastBloomSeenFilter,
-    delivered: VecDeque<Vec<u8>>,
+    /// Verified events queued for the app, already parsed.
+    ///
+    /// `Event`s, not payload bytes: `poll` has just parsed and verified each
+    /// one to decide whether to admit it, so keeping the result means the drain
+    /// path does not have to do it again. See [`Self::drain_delivered`].
+    delivered: VecDeque<nostr::event::Event>,
     published: u64,
     received: u64,
     running: bool,
@@ -178,11 +194,16 @@ impl RelayNode {
             self.recent.pop_front();
         }
         let mut total = 0usize;
+        // Serialize once, not once per backend. Lazily, so a publish with no
+        // running backend still costs nothing — the previous code only reached
+        // `to_bytes` inside the `running()` check. `broadcast` takes the
+        // payload by value, so each backend still gets its own clone, but a
+        // clone is much cheaper than a re-serialization.
+        let mut encoded: Option<Vec<u8>> = None;
         for backend in self.backends.iter_mut() {
             if backend.running() {
-                total += backend
-                    .broadcast(env.to_bytes().unwrap_or_default())
-                    .unwrap_or(0);
+                let bytes = encoded.get_or_insert_with(|| env.to_bytes().unwrap_or_default());
+                total += backend.broadcast(bytes.clone()).unwrap_or(0);
             }
         }
         self.published += 1;
@@ -215,24 +236,28 @@ impl RelayNode {
                 jobs.push((idx, env));
             }
         }
-        let verified: Vec<bool> = if jobs.len() >= 4 {
+        // Parse + verify, keeping the parsed event. This is where the payload
+        // is decoded and its Schnorr signature checked, so the result is
+        // carried forward rather than thrown away: the app-drain path needs
+        // the same `Event`, and used to redo both steps from raw bytes.
+        let verified: Vec<Option<nostr::event::Event>> = if jobs.len() >= 4 {
             use rayon::prelude::*;
             jobs.par_iter()
-                .map(|(_, env)| valid_event_payload(&env.payload))
+                .map(|(_, env)| verified_event_payload(&env.payload))
                 .collect()
         } else {
             jobs.iter()
-                .map(|(_, env)| valid_event_payload(&env.payload))
+                .map(|(_, env)| verified_event_payload(&env.payload))
                 .collect()
         };
 
         let mut new_count = 0usize;
-        for ((idx, env), ok) in jobs.into_iter().zip(verified) {
+        for ((idx, env), event) in jobs.into_iter().zip(verified) {
             // Verify before dedup/delivery/re-broadcast: forged or garbage
             // payloads die at the first relay hop.
-            if !ok {
+            let Some(event) = event else {
                 continue;
-            }
+            };
             // Dedup on the payload digest, NOT the envelope's event_id
             // header: the id claim is unverified at the relay layer, so
             // keying on it lets a forged envelope reuse a legit event's
@@ -245,7 +270,9 @@ impl RelayNode {
             self.note_seen(digest);
             self.received += 1;
             new_count += 1;
-            self.delivered.push_back(env.payload.clone());
+            // Moved, not cloned: this is where the old code copied the whole
+            // payload out of the envelope purely so the queue could own it.
+            self.delivered.push_back(event);
             while self.delivered.len() > DELIVERED_CAPACITY {
                 self.delivered.pop_front();
             }
@@ -260,8 +287,20 @@ impl RelayNode {
         new_count
     }
 
-    /// Drains payloads queued for the app.
-    pub fn drain_delivered(&mut self) -> Vec<Vec<u8>> {
+    /// Drains the events queued for the app.
+    ///
+    /// These are the events `poll` already parsed and signature-verified, so
+    /// the caller does not need to re-derive them: it can go straight to
+    /// [`soshal_sync_core::ingest::handle_batch_verified`].
+    ///
+    /// What the relay has established, precisely: the payload was valid UTF-8,
+    /// parsed as a `nostr::event::Event`, and passed
+    /// `soshal_nostr_core::models::verify_event` — which checks the Schnorr
+    /// signature against the event id, so the id is bound to the content. What
+    /// it has *not* established is anything about the event's semantics;
+    /// the ingest path's kind allowlist, dedup and p-tag-to-me rules are
+    /// unaffected and still apply.
+    pub fn drain_delivered(&mut self) -> Vec<nostr::event::Event> {
         self.delivered.drain(..).collect()
     }
 
@@ -475,10 +514,20 @@ mod tests {
         assert_eq!(node.poll(), 1);
         let delivered = node.drain_delivered();
         assert_eq!(delivered.len(), 1);
-        assert!(valid_event_payload(&delivered[0]));
+        // The drain hands back the event `poll` already parsed and verified, so
+        // the old `assert!(valid_event_payload(&delivered[0]))` no longer has
+        // anything to check — the type says it. What is worth pinning is that
+        // it is the *same* event the envelope carried, not a re-parse of
+        // something else: the id, author and content must all agree with the
+        // envelope the re-broadcast produced.
+        let event = &delivered[0];
+        assert_eq!(event.kind, nostr::event::Kind::TextNote);
+        assert_eq!(event.content, "hello");
         let outbox = s1.lock().unwrap().outbox.clone();
         assert_eq!(outbox.len(), 1);
         let env = MeshEnvelope::from_bytes(&outbox[0]).unwrap();
+        assert_eq!(env.event_id, event.id.to_hex());
+        assert_eq!(env.author, event.pubkey.to_hex());
         assert_eq!(env.hop_count, 1);
     }
 

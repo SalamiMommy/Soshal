@@ -22,6 +22,46 @@ impl<'a> SettingsRepo<'a> {
         Ok(())
     }
 
+    /// Set several keys in one statement.
+    ///
+    /// A multi-row upsert is atomic on its own, so this needs no explicit
+    /// transaction wrapper — and it notifies the change bus once instead of
+    /// once per key. The sync engine used to write its three watermarks with
+    /// three separate `set` calls on every flush interval, three connections
+    /// and three notifications, whether or not anything had advanced.
+    ///
+    /// The rows are variable-length, so the `VALUES` list and the bind vector
+    /// are both built at runtime. SQLite numbers parameters by order of first
+    /// appearance, one number per token, so row *i* binds to `?2i+1`/`?2i+2`
+    /// and `binds` is in that same interleaved order.
+    ///
+    /// No-op on an empty slice.
+    pub fn set_many(&self, pairs: &[(&str, &str)]) -> Result<(), DbError> {
+        if pairs.is_empty() {
+            return Ok(());
+        }
+        let mut placeholders = String::new();
+        let mut binds: Vec<libsql::Value> = Vec::with_capacity(pairs.len() * 2);
+        for (i, (k, v)) in pairs.iter().enumerate() {
+            if i > 0 {
+                placeholders.push_str(", ");
+            }
+            let base = i * 2;
+            placeholders.push_str(&format!("(?{}, ?{})", base + 1, base + 2));
+            binds.push(libsql::Value::from(*k));
+            binds.push(libsql::Value::from(*v));
+        }
+        let sql = format!(
+            "INSERT INTO settings (key, value) VALUES {placeholders} \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+        );
+        let conn = self.db.conn()?;
+        crate::query::execute(&conn, &sql, libsql::params_from_iter(binds))?;
+        self.db
+            .notify_change(crate::change_bus::Table::Settings, None);
+        Ok(())
+    }
+
     pub fn get(&self, key: &str) -> Result<Option<String>, DbError> {
         let conn = self.db.conn()?;
         crate::query::query_first(

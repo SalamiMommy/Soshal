@@ -10,6 +10,11 @@ ON CONFLICT(pubkey) DO UPDATE SET \
   updated_at=excluded.updated_at, metadata_json=excluded.metadata_json, contact_pubkeys=excluded.contact_pubkeys, \
   relay_list=excluded.relay_list";
 
+/// The projection [`UserRepo::map_row`] decodes. Shared by the connection-level
+/// and transaction-level reads so the two cannot drift on column order — a
+/// mismatch here is a silent field shift, not a compile error.
+const USER_SELECT_SQL: &str = "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE pubkey = ?1";
+
 pub struct UserRepo<'a> {
     db: &'a Database,
 }
@@ -22,10 +27,30 @@ impl<'a> UserRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query_first(
             &conn,
-            "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE pubkey = ?1",
+            USER_SELECT_SQL,
             params![norm_pk.as_str()],
             Self::map_row,
         )
+    }
+
+    /// [`Self::get_by_pubkey`], reading through an open transaction.
+    ///
+    /// This is the read half of a read-modify-write. A caller that reads on one
+    /// connection and writes on another is racing every other writer, so
+    /// follow/unfollow use this to keep the read, the list write and the
+    /// follower-count update in one transaction.
+    pub async fn get_by_pubkey_in(
+        &self,
+        tx: &libsql::Transaction,
+        pubkey: &str,
+    ) -> Result<Option<UserRow>, crate::error::DbError> {
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
+        let stmt = tx.prepare(USER_SELECT_SQL).await?;
+        let mut rows = stmt.query(params![norm_pk.as_str()]).await?;
+        match rows.next().await? {
+            Some(row) => Ok(Some(Self::map_row(&row)?)),
+            None => Ok(None),
+        }
     }
 
     /// Which of the given pubkeys have a stored user row. One indexed query
@@ -103,22 +128,6 @@ impl<'a> UserRepo<'a> {
                 Ok(map)
             },
         )
-    }
-
-    pub async fn get_by_pubkey_in(
-        &self,
-        tx: &libsql::Transaction,
-        pubkey: &str,
-    ) -> Result<Option<UserRow>, crate::error::DbError> {
-        let norm_pk = pubkey.trim().to_ascii_lowercase();
-        let stmt = tx
-            .prepare("SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE pubkey = ?1")
-            .await?;
-        let mut rows = stmt.query(params![norm_pk.as_str()]).await?;
-        match rows.next().await? {
-            Some(row) => Ok(Some(Self::map_row(&row)?)),
-            None => Ok(None),
-        }
     }
 
     pub fn upsert(&self, user: &UserRow) -> Result<(), crate::error::DbError> {
@@ -210,6 +219,66 @@ impl<'a> UserRepo<'a> {
             "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
             params![norm_pk.as_str()],
         )?;
+        Ok(())
+    }
+
+    /// Apply many follower-count deltas at once.
+    ///
+    /// The single-pubkey form is one `UPDATE` per call, and a contact-list
+    /// change calls it once per entry — a 5 000-follow list was 5 000
+    /// sequential statements inside an already-open transaction. Deltas are
+    /// summed per pubkey and grouped by value, so the whole batch becomes one
+    /// statement per distinct delta (two in practice: the added set and the
+    /// removed set) no matter how large the list is.
+    ///
+    /// Summing first is what keeps this equivalent to the sequential version:
+    /// a pubkey that appears in both the added and the removed set lands in
+    /// exactly one group, with a net delta, instead of two statements against
+    /// the same row. Grouping second is what bounds the statement count at one
+    /// per distinct delta. `MAX(0, …)` is still applied per statement, so a
+    /// count that would go negative clamps at 0 exactly as it did before.
+    ///
+    /// No-op on an empty slice, or when every delta nets to zero.
+    pub async fn bump_follower_counts_in(
+        &self,
+        tx: &libsql::Transaction,
+        deltas: &[(&str, i64)],
+    ) -> Result<(), crate::error::DbError> {
+        // Normalize and sum, so a pubkey touched twice does not become two
+        // statements against the same row and a +1/-1 pair nets out here.
+        let mut sums: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        for (pubkey, delta) in deltas {
+            *sums.entry(pubkey.trim().to_ascii_lowercase()).or_insert(0) += delta;
+        }
+        let mut by_delta: std::collections::BTreeMap<i64, Vec<String>> =
+            std::collections::BTreeMap::new();
+        for (pubkey, delta) in sums {
+            if delta != 0 {
+                by_delta.entry(delta).or_default().push(pubkey);
+            }
+        }
+        for (delta, pubkeys) in by_delta {
+            // Numbered placeholders: `?1..?n` for the pubkeys, `?n+1` for the
+            // delta, so the bind order is unambiguous and the list stays one
+            // pass over `users`. Not `UPDATE ... FROM (VALUES …)`, which
+            // would add a 3.33+ SQLite floor for no gain.
+            let n = pubkeys.len();
+            let in_list = (1..=n)
+                .map(|i| format!("?{i}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "UPDATE users SET follower_count = MAX(0, follower_count + ?{}) \
+                 WHERE pubkey IN ({in_list})",
+                n + 1
+            );
+            let mut binds: Vec<libsql::Value> = pubkeys
+                .iter()
+                .map(|p| libsql::Value::from(p.as_str()))
+                .collect();
+            binds.push(libsql::Value::from(delta));
+            tx.execute(&sql, libsql::params_from_iter(binds)).await?;
+        }
         Ok(())
     }
 

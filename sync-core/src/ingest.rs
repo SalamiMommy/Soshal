@@ -433,6 +433,8 @@ pub fn set_watermark(db: &Database, key: &str, ts: u64) {
 
 /// Handle one verified relay event: cache it, bump the watermark, and emit a
 /// [`SyncUpdate`] for the app layer. Any kind we don't model is skipped.
+///
+/// The event is verified here, so the signature is checked exactly once.
 pub fn handle(
     db: &Database,
     my_pubkey: &str,
@@ -442,6 +444,40 @@ pub fn handle(
     let conn = db.conn()?;
     soshal_db_core::query::with_tx(&conn, |t| async move {
         handle_impl(db, my_pubkey, event, tx, false, &t).await?;
+        t.commit().await?;
+        Ok(())
+    })
+}
+
+/// [`handle`], for a caller that has *already* verified the signature.
+///
+/// The gossip path has to verify before it will amplify — `gossip.rs` needs to
+/// know the event is valid before handing it to `handle_incoming` for fan-out —
+/// and then `handle` checked the very same event again immediately afterwards.
+///
+/// How much that second check cost is worth being precise about, because the
+/// obvious reading is wrong. `verify_event` memoizes on `sha256(id‖sig)`, so
+/// the repeat call is a cache hit: ~84 ns, against ~21 µs for a real Schnorr
+/// verification (measured, 253x). So this does not remove a signature check
+/// from the gossip path; it removes a redundant cache lookup, a RwLock read
+/// and a 32-byte hash. Small, but free and it removes a second place for the
+/// verification contract to be got wrong.
+///
+/// The `already_verified` contract is exactly as narrow as it sounds — the
+/// caller must have checked *this* event's signature against *this* event's
+/// id, not merely that it parsed or that some earlier event did. Passing an
+/// event whose signature has not been checked would write attacker-chosen
+/// content to the database, so a new caller should prefer [`handle`] unless it
+/// genuinely needs the pre-check.
+pub fn handle_verified(
+    db: &Database,
+    my_pubkey: &str,
+    event: &Event,
+    tx: &tokio::sync::mpsc::Sender<SyncUpdate>,
+) -> Result<(), DbError> {
+    let conn = db.conn()?;
+    soshal_db_core::query::with_tx(&conn, |t| async move {
+        handle_impl(db, my_pubkey, event, tx, true, &t).await?;
         t.commit().await?;
         Ok(())
     })
@@ -615,25 +651,30 @@ async fn handle_impl(
             row.relay_list = serde_json::to_string(&r_tags(event)).unwrap_or_default();
             repo.upsert_in(t, &row).await?;
             // Materialized follower counts: bump +1 for each pubkey newly
-            // added to this author's list.
+            // added to this author's list, -1 for each unfollowed. Collected
+            // and applied as one batched call — this was a sequential
+            // statement per entry, so a large contact list meant thousands of
+            // them inside this already-open transaction.
             let before: std::collections::HashSet<String> =
                 split_pubkey_list(&stored_list).into_iter().collect();
             let new_list = split_pubkey_list(&row.contact_pubkeys);
+            let mut follower_deltas: Vec<(&str, i64)> = Vec::new();
             for added in &new_list {
                 if added != &pubkey && !before.contains(added) {
-                    UserRepo::new(db)
-                        .bump_follower_count_in(t, added, 1)
-                        .await?;
+                    follower_deltas.push((added.as_str(), 1));
                 }
             }
-            let new: std::collections::HashSet<String> = new_list.into_iter().collect();
+            // Borrowed, not moved: `follower_deltas` holds `&str` into
+            // `new_list`, and it is still needed by the call below.
+            let new: std::collections::HashSet<String> = new_list.iter().cloned().collect();
             for removed in before.difference(&new) {
                 if removed != &pubkey {
-                    UserRepo::new(db)
-                        .bump_follower_count_in(t, removed, -1)
-                        .await?;
+                    follower_deltas.push((removed.as_str(), -1));
                 }
             }
+            UserRepo::new(db)
+                .bump_follower_counts_in(t, &follower_deltas)
+                .await?;
             // "follow" notifications: only when the local user is newly on
             // this author's list (new follows, not re-syncs of the same list).
             if !pubkey.eq_ignore_ascii_case(my_pubkey)
@@ -685,6 +726,15 @@ async fn handle_impl(
                 .get_zap_requests_for_note_in(t, &zapped_event)
                 .await?;
             let matched = requests.iter().any(|req| {
+                // Digest first. `zap_request_digest` is memoized per request
+                // id, so this is a hash-map lookup, while the `p`/`amount` tags
+                // need a full JSON parse of `tags_json`. Testing the cheap
+                // predicate first means the parse only runs for the candidate
+                // that can actually match — the previous order parsed every
+                // candidate's tags.
+                if zap_request_digest(req).as_slice() != desc_hash {
+                    return false;
+                }
                 let tags: Vec<Vec<String>> =
                     serde_json::from_str(&req.tags_json).unwrap_or_default();
                 let p_me = tags.iter().any(|t| {
@@ -695,8 +745,7 @@ async fn handle_impl(
                     t.first().is_some_and(|k| k == "amount")
                         && t.get(1).and_then(|v| v.parse::<u64>().ok()) == Some(amount_msats)
                 });
-                let hash_ok = zap_request_digest(req).as_slice() == desc_hash;
-                p_me && amount_ok && hash_ok
+                p_me && amount_ok
             });
             if !matched {
                 return Ok(());
@@ -756,23 +805,26 @@ async fn handle_impl(
             let pubkey = event.pubkey.to_hex();
             let created_at = sanitize_ts(event.created_at.as_secs());
             let repo = BookmarkRepo::new(db);
-            for (idx, event_id) in e_ids.into_iter().enumerate() {
-                let id = if idx == 0 {
-                    event.id.to_hex()
-                } else {
-                    format!("{}:{event_id}", event.id.to_hex())
-                };
-                repo.upsert_in(
-                    t,
-                    &BookmarkRow {
-                        id,
-                        pubkey: pubkey.clone(),
-                        event_id,
-                        created_at,
+            // Collected, then written in one batch. This was one upsert per
+            // e-tag, and each upsert was itself two statements (the users
+            // ensure plus the row), so an N-item list was 2N sequential
+            // statements inside the transaction.
+            let own_id = event.id.to_hex();
+            let rows: Vec<BookmarkRow> = e_ids
+                .into_iter()
+                .enumerate()
+                .map(|(idx, event_id)| BookmarkRow {
+                    id: if idx == 0 {
+                        own_id.clone()
+                    } else {
+                        format!("{own_id}:{event_id}")
                     },
-                )
-                .await?;
-            }
+                    pubkey: pubkey.clone(),
+                    event_id,
+                    created_at,
+                })
+                .collect();
+            repo.upsert_many_in(t, &rows).await?;
             // Tombstoned targets: bookmarks are useless once the post is
             // deleted; sweep them whenever the list refreshes.
             let _ = repo.delete_for_deleted_targets_in(t, &pubkey).await;
@@ -849,23 +901,21 @@ async fn handle_impl(
                 let author = event.pubkey.to_hex();
                 let created_at = sanitize_ts(event.created_at.as_secs());
                 let mut seen_tags = std::collections::HashSet::new();
-                for tag in soshal_content_core::hashtag::extract(&event.content)
-                    .into_iter()
-                    .filter(|t| seen_tags.insert(t.to_ascii_lowercase()))
-                    .take(MAX_TAGS)
-                {
-                    HashtagRepo::new(db)
-                        .upsert_in(
-                            t,
-                            &HashtagRow {
-                                tag,
-                                pubkey: author.clone(),
-                                last_used_at: created_at,
-                                count: 1,
-                            },
-                        )
-                        .await?;
-                }
+                // One statement for all of the post's tags; see
+                // `HashtagRepo::upsert_many_in`.
+                let tag_rows: Vec<HashtagRow> =
+                    soshal_content_core::hashtag::extract(&event.content)
+                        .into_iter()
+                        .filter(|t| seen_tags.insert(t.to_ascii_lowercase()))
+                        .take(MAX_TAGS)
+                        .map(|tag| HashtagRow {
+                            tag,
+                            pubkey: author.clone(),
+                            last_used_at: created_at,
+                            count: 1,
+                        })
+                        .collect();
+                HashtagRepo::new(db).upsert_many_in(t, &tag_rows).await?;
                 // Notifications for text notes touching the local user are
                 // delegated to the shared helper so batch-ingested text notes
                 // emit the same friend-request / reply / mention alerts.
@@ -941,6 +991,59 @@ pub fn handle_batch(
             .collect()
     };
 
+    handle_batch_masked(db, my_pubkey, events, &verified_mask, tx)
+}
+
+/// [`handle_batch`], for a caller that has *already* verified every signature.
+///
+/// The mesh path has no choice but to verify before it will amplify:
+/// `RelayNode::poll` drops a payload whose signature does not check and hands
+/// the survivors to the app as parsed `Event`s. Re-checking them inside
+/// `handle_batch` was therefore redundant.
+///
+/// What that redundancy actually cost: `verify_event` memoizes on
+/// `sha256(id‖sig)`, so the second call was a cache hit at ~84 ns, not a second
+/// ~21 µs Schnorr check. The batch pre-verify is ~84 ns/event of waste, and
+/// this removes it along with the rayon fan-out that existed only to parallelize
+/// work the relay had already done. The *expensive* duplicate on this path was
+/// the JSON re-parse in the bridge, and that is gone too — see
+/// `RelayNode::drain_delivered`.
+///
+/// The contract is narrow: the caller must have checked *these* events'
+/// signatures against *these* events. Passing an unverified event writes
+/// attacker-chosen content to the database, so prefer [`handle_batch`] unless
+/// there is a verified source upstream. See also [`handle_verified`], the
+/// single-event form of the same escape hatch.
+pub fn handle_batch_verified(
+    db: &Database,
+    my_pubkey: &str,
+    events: &[Event],
+    tx: &tokio::sync::mpsc::Sender<SyncUpdate>,
+) -> Result<Vec<usize>, DbError> {
+    if events.is_empty() {
+        return Ok(Vec::new());
+    }
+    handle_batch_masked(db, my_pubkey, events, &vec![true; events.len()], tx)
+}
+
+/// The shared body: `verified_mask[pos]` gates whether `events[pos]` is written
+/// at all. Split out so the pre-verify step is the only difference between the
+/// verifying and the pre-verified entry points.
+fn handle_batch_masked(
+    db: &Database,
+    my_pubkey: &str,
+    events: &[Event],
+    verified_mask: &[bool],
+    tx: &tokio::sync::mpsc::Sender<SyncUpdate>,
+) -> Result<Vec<usize>, DbError> {
+    debug_assert_eq!(
+        verified_mask.len(),
+        events.len(),
+        "verification mask must cover every event"
+    );
+    if events.is_empty() {
+        return Ok(Vec::new());
+    }
     let conn = db.conn()?;
     soshal_db_core::query::with_tx(&conn, |t| async move {
         let mut rows: Vec<PostRow> = Vec::with_capacity(events.len());
@@ -950,7 +1053,15 @@ pub fn handle_batch(
         // arrives in the SAME batch must see the parent's author. Running the
         // notify during the loop queried a transaction that didn't yet
         // contain same-batch parents, so these notifications were dropped.
-        let mut notify_queue: Vec<(Event, PostRow)> = Vec::new();
+        //
+        // Positions, not values. This used to be a `Vec<(Event, PostRow)>` and
+        // every TextNote paid two full clones for it — the `content` String and
+        // the `tags` Vec, both potentially long, once into the queue and again
+        // out of it. `events` and `rows` both outlive this scope, so indices
+        // into them are free.
+        //
+        // First element indexes `events`, second indexes `rows`.
+        let mut notify_queue: Vec<(usize, usize)> = Vec::new();
         let mut seen_authors: std::collections::HashSet<String> = std::collections::HashSet::new();
         for (pos, event) in events.iter().enumerate() {
             if !verified_mask[pos] {
@@ -993,30 +1104,36 @@ pub fn handle_batch(
                                         let author = event.pubkey.to_hex();
                                         let created_at = sanitize_ts(event.created_at.as_secs());
                                         let mut seen_tags = std::collections::HashSet::new();
-                                        for tag in
+                                        // Collected, then written in one
+                                        // statement. This was one upsert per
+                                        // tag per post, so a tag-heavy post
+                                        // meant a burst of sequential
+                                        // statements inside the batch
+                                        // transaction. Failures stay
+                                        // non-fatal, as before — a missing
+                                        // trend row must not abort the batch.
+                                        let tag_rows: Vec<HashtagRow> =
                                             soshal_content_core::hashtag::extract(&event.content)
                                                 .into_iter()
                                                 .filter(|t| {
                                                     seen_tags.insert(t.to_ascii_lowercase())
                                                 })
                                                 .take(MAX_TAGS)
+                                                .map(|tag| HashtagRow {
+                                                    tag,
+                                                    pubkey: author.clone(),
+                                                    last_used_at: created_at,
+                                                    count: 1,
+                                                })
+                                                .collect();
+                                        if let Err(e) =
+                                            HashtagRepo::new(db).upsert_many_in(&t, &tag_rows).await
                                         {
-                                            if let Err(e) = HashtagRepo::new(db)
-                                                .upsert_in(
-                                                    &t,
-                                                    &HashtagRow {
-                                                        tag,
-                                                        pubkey: author.clone(),
-                                                        last_used_at: created_at,
-                                                        count: 1,
-                                                    },
-                                                )
-                                                .await
-                                            {
-                                                eprintln!("sync engine: hashtag upsert: {e}");
-                                            }
+                                            eprintln!("sync engine: hashtag upsert: {e}");
                                         }
-                                        notify_queue.push((event.clone(), row.clone()));
+                                        // The row's own index in `rows`,
+                                        // recorded before the push below.
+                                        notify_queue.push((pos, rows.len()));
                                     }
                                     rows.push(row);
                                     ok_pos.push(pos);
@@ -1036,7 +1153,9 @@ pub fn handle_batch(
         PostRepo::new(db).upsert_batch_in(&t, &rows).await?;
         // Notifications now that the batch rows (incl. same-batch parents)
         // are visible inside this transaction (committed on `t.commit`).
-        for (event, row) in &notify_queue {
+        for (event_pos, row_pos) in &notify_queue {
+            let event = &events[*event_pos];
+            let row = &rows[*row_pos];
             if let Err(e) = maybe_notify_text_note(db, my_pubkey, &t, event, row).await {
                 eprintln!("sync engine: batch text-note notify: {e}");
             }

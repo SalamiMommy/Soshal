@@ -54,22 +54,75 @@ impl<'a> BookmarkRepo<'a> {
         tx: &libsql::Transaction,
         row: &BookmarkRow,
     ) -> Result<(), crate::error::DbError> {
+        let normed = [normalize(row)];
+        self.upsert_many_in(tx, &normed).await
+    }
+
+    /// Upsert many bookmarks for one author in one statement each for the
+    /// `users` ensure, one for the rows.
+    ///
+    /// Ingest built a whole NIP-51 bookmark list with one `upsert_in` per e-tag,
+    /// which was two statements per bookmark — the `INSERT OR IGNORE` into
+    /// `users` and the row upsert. Both collapse: the user ensure is
+    /// idempotent, so one covers the whole batch, and the rows go in as a
+    /// single multi-row upsert.
+    ///
+    /// The conflict clause is shared with the single-row form so the two
+    /// cannot drift on which columns win.
+    ///
+    /// No-op on an empty slice.
+    pub async fn upsert_many_in(
+        &self,
+        tx: &libsql::Transaction,
+        rows: &[BookmarkRow],
+    ) -> Result<(), crate::error::DbError> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let normed: Vec<BookmarkRow> = rows.iter().map(normalize).collect();
+
         // Key columns are lowercased, not just trimmed: `bookmark_remove` and
         // the list queries match case-insensitively, so storing a mixed-case id
         // makes the row unreachable from its own lookup.
-        let id_clean = row.id.trim().to_ascii_lowercase();
-        let pk_clean = row.pubkey.trim().to_ascii_lowercase();
-        let evt_clean = row.event_id.trim().to_ascii_lowercase();
-        tx.execute(
-            "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
-            params![pk_clean.as_str()],
-        )
-        .await?;
-        tx.execute(
-            "INSERT INTO bookmarks (id, pubkey, event_id, created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET pubkey=excluded.pubkey, event_id=excluded.event_id, created_at=excluded.created_at",
-            params![id_clean.as_str(), pk_clean.as_str(), evt_clean.as_str(), row.created_at],
-        )
-        .await?;
+        //
+        // Batches in practice are one author, so this is one statement; the
+        // distinct set keeps it correct if that ever stops holding.
+        let authors: std::collections::BTreeSet<String> =
+            normed.iter().map(|r| r.pubkey.clone()).collect();
+        for pk in &authors {
+            tx.execute(
+                "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
+                params![pk.as_str()],
+            )
+            .await?;
+        }
+
+        let n = normed.len();
+        let values = (0..n)
+            .map(|i| {
+                format!(
+                    "(?{},?{},?{},?{})",
+                    i * 4 + 1,
+                    i * 4 + 2,
+                    i * 4 + 3,
+                    i * 4 + 4
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "INSERT INTO bookmarks (id, pubkey, event_id, created_at) VALUES {values} \
+             ON CONFLICT(id) DO UPDATE SET pubkey=excluded.pubkey, \
+             event_id=excluded.event_id, created_at=excluded.created_at"
+        );
+        let mut binds: Vec<libsql::Value> = Vec::with_capacity(n * 4);
+        for row in &normed {
+            binds.push(libsql::Value::from(row.id.as_str()));
+            binds.push(libsql::Value::from(row.pubkey.as_str()));
+            binds.push(libsql::Value::from(row.event_id.as_str()));
+            binds.push(libsql::Value::from(row.created_at));
+        }
+        tx.execute(&sql, libsql::params_from_iter(binds)).await?;
         Ok(())
     }
 
@@ -119,4 +172,19 @@ pub struct BookmarkRow {
     pub pubkey: String,
     pub event_id: String,
     pub created_at: i64,
+}
+
+/// Lowercase the three key columns, in place.
+///
+/// `bookmark_remove` and the list queries match case-insensitively, so storing
+/// a mixed-case id makes the row unreachable from its own lookup. Every write
+/// path goes through this so the batched form cannot skip what the single-row
+/// form does.
+fn normalize(row: &BookmarkRow) -> BookmarkRow {
+    BookmarkRow {
+        id: row.id.trim().to_ascii_lowercase(),
+        pubkey: row.pubkey.trim().to_ascii_lowercase(),
+        event_id: row.event_id.trim().to_ascii_lowercase(),
+        created_at: row.created_at,
+    }
 }

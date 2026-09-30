@@ -11,8 +11,9 @@ use nostr::key::PublicKey;
 use nostr::types::Timestamp;
 use nostr_sdk::client::Client;
 use nostr_sdk::prelude::*;
+use soshal_db_core::repos::settings::SettingsRepo;
 use soshal_db_core::Database;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -28,6 +29,11 @@ const OVERLAP_META_SECS: u64 = 3600;
 const WATERMARK_SKEW_SECS: u64 = 120;
 
 /// Flush watermarks to SQLite at most this often.
+///
+/// An upper bound, not a cadence. [`flush_watermarks`] writes only what
+/// advanced, so this is really "how long an advance can sit in memory before
+/// it is durable". A busy feed can advance the watermarks many times inside
+/// one interval; all of that collapses into the same single upsert at the end.
 const FLUSH_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Poll cadence while idle, so `stop` is honored promptly.
@@ -189,14 +195,19 @@ async fn ingest_batch_blocking(
     };
     match result {
         Ok(ok_pos) => {
+            // `ok_pos` is a positional list, so the old `contains` was a linear
+            // scan per event — quadratic in the batch, and the batch is unbounded
+            // whenever the idle trigger never fires. Build the set once.
+            let ok: HashSet<usize> = ok_pos.into_iter().collect();
+            // One clock read for the whole batch instead of one per event.
+            let now = soshal_common_core::format::now_secs().max(0) as u64;
             for (i, event) in batch.iter().enumerate() {
-                if !ok_pos.contains(&i) {
+                if !ok.contains(&i) {
                     continue;
                 }
                 if let Some(key) = watermark_key(event.kind) {
                     let cur = cursors.entry(key).or_insert(0);
                     let created = event.created_at.as_secs();
-                    let now = soshal_common_core::format::now_secs().max(0) as u64;
                     let capped = created.min(now + WATERMARK_SKEW_SECS);
                     if capped > *cur {
                         *cur = capped;
@@ -383,6 +394,9 @@ pub async fn engine_loop_with_client_sealed(
     cursors.insert(WM_FEED, ingest::watermark(&db, WM_FEED));
     cursors.insert(WM_DM, ingest::watermark(&db, WM_DM));
     cursors.insert(WM_META, ingest::watermark(&db, WM_META));
+    // Starts equal to the cursors, so a flush that changed nothing writes
+    // nothing. Seeded from the same reads above, deliberately.
+    let mut persisted = cursors.clone();
 
     if let Ok(pk) = PublicKey::from_hex(&cfg.my_pubkey) {
         let since_feed = Timestamp::from(cursors[WM_FEED].saturating_sub(OVERLAP_FEED_SECS));
@@ -480,9 +494,7 @@ pub async fn engine_loop_with_client_sealed(
         }
 
         if last_flush.elapsed() >= FLUSH_INTERVAL {
-            for (key, ts) in &cursors {
-                ingest::set_watermark(&db, key, *ts);
-            }
+            flush_watermarks(&db, &cursors, &mut persisted);
             replay_outbox_sealed(&db, &client, &unseal).await;
             last_flush = Instant::now();
         }
@@ -498,10 +510,44 @@ pub async fn engine_loop_with_client_sealed(
         )
         .await;
     }
-    for (key, ts) in &cursors {
-        ingest::set_watermark(&db, key, *ts);
-    }
+    flush_watermarks(&db, &cursors, &mut persisted);
     Ok(())
+}
+
+/// Persist only the watermarks that actually moved, in one multi-row upsert.
+///
+/// The old loop wrote all three keys on every flush interval and again at
+/// shutdown, whether or not anything had advanced: three connections and three
+/// change-bus notifications per interval for no state change. `persisted`
+/// holds the last written value per key, so a quiet interval costs one
+/// no-op-ish call that returns before touching the database at all.
+///
+/// Best-effort by design, as `set_watermark` was: a stale watermark only costs
+/// a small re-fetch overlap on the next start. If the write fails,
+/// `persisted` is not advanced, so the next flush retries it.
+fn flush_watermarks(
+    db: &Database,
+    cursors: &HashMap<&'static str, u64>,
+    persisted: &mut HashMap<&'static str, u64>,
+) {
+    let advanced: Vec<(&str, String)> = cursors
+        .iter()
+        .filter(|(key, ts)| persisted.get(*key) != Some(ts))
+        .map(|(key, ts)| (*key, ts.to_string()))
+        .collect();
+    if advanced.is_empty() {
+        return;
+    }
+    let pairs: Vec<(&str, &str)> = advanced.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    if let Err(e) = SettingsRepo::new(db).set_many(&pairs) {
+        eprintln!("settings persist: {e}");
+        return;
+    }
+    for (key, ts) in cursors.iter() {
+        if advanced.iter().any(|(k, _)| k == key) {
+            persisted.insert(key, *ts);
+        }
+    }
 }
 
 #[cfg(test)]

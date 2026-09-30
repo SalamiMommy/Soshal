@@ -184,22 +184,72 @@ fn feed_engagement_counters(
         return std::collections::HashMap::new();
     }
     let id_json = serde_json::to_string(ids).unwrap_or_else(|_| "[]".to_string());
-    let active_pubkey: String = super::db::active_pubkey()
-        .unwrap_or_default()
-        .trim()
-        .to_ascii_lowercase();
     soshal_db_core::block_on(async {
         let r: Result<std::collections::HashMap<String, EngagementCounters>, String> = async {
             let conn = db.conn().map_err(|e| e.to_string())?;
+            // Read off the connection already in hand. This used to call
+            // `db::active_pubkey()`, which goes back through `with_db_result`
+            // and checks a *second* connection out of the pool for a single
+            // settings row — on every page of every feed. All three callers
+            // get `db` from `with_db`, so this is the same database; the only
+            // difference is that a failure now degrades to "no liked flags"
+            // rather than failing the page, which is what the old
+            // `.unwrap_or_default()` did anyway.
+            let active_pubkey: String = async {
+                let mut rows = conn
+                    .query("SELECT value FROM settings WHERE key = 'active_pubkey'", ())
+                    .await
+                    .ok()?;
+                let row = rows.next().await.ok()??;
+                row.get::<String>(0).ok()
+            }
+            .await
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+            // Pre-aggregated, not per-row correlated subqueries.
+            //
+            // The old form ran three subqueries for every post row: two
+            // `COUNT(*)` and an `EXISTS`, each an index probe. Pre-grouping
+            // both child tables once and LEFT JOINing the aggregates turns
+            // three probes per row into one probe per child table, so the cost
+            // tracks the number of page rows plus their reactions and replies
+            // rather than three times that.
+            //
+            // The "liked" flag stays a correlated `EXISTS` because it depends
+            // on a per-query bind (`active_pubkey`) and is the one predicate a
+            // grouped aggregate cannot express. It rides
+            // `idx_reactions_event_pubkey`, so it is a single index seek.
+            //
+            // Both joins are `LEFT` and both aggregates are grouped only over
+            // the page's ids, so a post with no reactions or no replies still
+            // returns a row — with `COALESCE(…, 0)`, not `NULL`. A post id
+            // present in `json_each` but absent from `posts` returns no row at
+            // all, exactly as before.
             let stmt = conn
                 .prepare(
-                    "SELECT p.id,
-                            (SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id),
-                            (SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.kind = 1 AND rp.is_deleted = 0),
+                    "WITH wanted(id) AS (SELECT LOWER(value) FROM json_each(?1)),
+                          rx AS (
+                              SELECT r.event_id AS id, COUNT(*) AS n
+                              FROM reactions r JOIN wanted w ON w.id = r.event_id
+                              GROUP BY r.event_id
+                          ),
+                          rp AS (
+                              SELECT p.root_id AS id, COUNT(*) AS n
+                              FROM posts p JOIN wanted w ON w.id = p.root_id
+                              WHERE p.kind = 1 AND p.is_deleted = 0
+                              GROUP BY p.root_id
+                          )
+                     SELECT p.id,
+                            COALESCE(rx.n, 0),
+                            COALESCE(rp.n, 0),
                             p.reposts_count,
-                            EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND rl.pubkey = ?2)
+                            EXISTS(SELECT 1 FROM reactions rl
+                                   WHERE rl.event_id = p.id AND rl.pubkey = ?2)
                      FROM posts p
-                     WHERE p.id IN (SELECT LOWER(value) FROM json_each(?1))",
+                     JOIN wanted w ON w.id = p.id
+                     LEFT JOIN rx ON rx.id = p.id
+                     LEFT JOIN rp ON rp.id = p.id",
                 )
                 .await
                 .map_err(|e| e.to_string())?;

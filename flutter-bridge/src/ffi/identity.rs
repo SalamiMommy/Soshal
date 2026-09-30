@@ -549,6 +549,33 @@ fn publish_event(signed: String) -> Result<i32, String> {
     runtime.block_on(super::network::network_publish_event(signed))
 }
 
+/// A blank profile row for a pubkey with no stored `users` row yet.
+///
+/// The follow and unfollow paths both need one: the local user is not
+/// necessarily in the `users` table on a fresh install, and the contact list
+/// write has to land somewhere. `followers` starts at 0 and the caller fills in
+/// `contact_pubkeys`; the rest stay `None` so a later profile ingest is what
+/// first fills them, not this placeholder.
+fn empty_user_row(pubkey: &str) -> UserRow {
+    UserRow {
+        pubkey: pubkey.to_string(),
+        npub: soshal_identity_core::keys::npub_encode(pubkey).unwrap_or_default(),
+        name: None,
+        display_name: None,
+        about: None,
+        picture: None,
+        banner: None,
+        nip05: None,
+        lud16: None,
+        created_at: soshal_common_core::format::now_secs(),
+        updated_at: soshal_common_core::format::now_secs(),
+        metadata_json: None,
+        contact_pubkeys: String::new(),
+        relay_list: String::from("[]"),
+        follower_count: 0,
+    }
+}
+
 /// Follow `pubkey`: rebuild the FULL NIP-02 contact list of the unlocked
 /// signer from the local `users.contact_pubkeys` (appending the target when
 /// absent), persist it, sign a kind-3 event and publish. Returns the signed
@@ -566,48 +593,73 @@ pub fn identity_follow_user(pubkey: String) -> Result<String, String> {
     if pubkey.eq_ignore_ascii_case(&unlocked) {
         return Err("cannot follow yourself".to_string());
     }
-    let (list, row, was_following) = super::db::with_db_result(|db| {
-        let row = UserRepo::new(db).get_by_pubkey(&unlocked)?;
-        let mut follows: Vec<String> = match &row {
-            Some(r) => serde_json::from_str(&r.contact_pubkeys).unwrap_or_default(),
-            None => Vec::new(),
-        };
-        let was_following = follows.iter().any(|f| f.eq_ignore_ascii_case(&pubkey));
-        if !was_following {
-            follows.push(pubkey.clone());
-        }
-        Ok((follows, row, was_following))
-    })?;
-    let updated = serde_json::to_string(&list).map_err(|e| format!("serialize: {e}"))?;
-    super::db::with_db_result(|db| {
-        let mut r = match row {
-            Some(r) => r,
-            None => UserRow {
-                pubkey: unlocked.clone(),
-                npub: soshal_identity_core::keys::npub_encode(&unlocked).unwrap_or_default(),
-                name: None,
-                display_name: None,
-                about: None,
-                picture: None,
-                banner: None,
-                nip05: None,
-                lud16: None,
-                created_at: soshal_common_core::format::now_secs(),
-                updated_at: soshal_common_core::format::now_secs(),
-                metadata_json: None,
-                contact_pubkeys: String::new(),
-                relay_list: String::from("[]"),
-                follower_count: 0,
-            },
-        };
-        r.contact_pubkeys = updated;
-        UserRepo::new(db).upsert(&r)?;
-        // Materialized follower count: a new follow adds +1 to the target.
-        if !was_following && !pubkey.eq_ignore_ascii_case(&unlocked) {
-            UserRepo::new(db).bump_follower_count(&pubkey, 1)?;
-        }
-        Ok(())
-    })?;
+    // Read, modify and write inside one IMMEDIATE transaction.
+    //
+    // This used to be three independent transactions: a `with_db_result` that
+    // read the list, then a second that wrote it, then a third inside
+    // `bump_follower_count`. Between them another writer — the sync engine
+    // ingesting the signer's own kind-3, or a second follow tap — could change
+    // the list, and the write would silently discard that change. Two rapid
+    // taps on the same target could also each read "not following" and each
+    // bump the target's follower count by +1.
+    //
+    // IMMEDIATE (not DEFERRED) so the write lock is taken up front and a
+    // second writer blocks here rather than failing at commit with SQLITE_BUSY.
+    let list = {
+        let unlocked = unlocked.clone();
+        let pubkey = pubkey.clone();
+        super::db::with_db_result(|db| {
+            let conn = db.conn()?;
+            let repo = UserRepo::new(db);
+            // Clones so the outer scope keeps the two pubkeys for the
+            // change-bus notifications below.
+            let (tx_unlocked, tx_pubkey) = (unlocked.clone(), pubkey.clone());
+            let (list, bumped) = soshal_db_core::query::with_tx(&conn, |tx| async move {
+                let (unlocked, pubkey) = (tx_unlocked, tx_pubkey);
+                let row = repo.get_by_pubkey_in(&tx, &unlocked).await?;
+                let mut follows: Vec<String> = match &row {
+                    Some(r) => serde_json::from_str(&r.contact_pubkeys).unwrap_or_default(),
+                    None => Vec::new(),
+                };
+                let was_following = follows.iter().any(|f| f.eq_ignore_ascii_case(&pubkey));
+                if !was_following {
+                    follows.push(pubkey.clone());
+                }
+                let mut r = row.unwrap_or_else(|| empty_user_row(&unlocked));
+                r.contact_pubkeys = serde_json::to_string(&follows).map_err(|e| {
+                    soshal_db_core::error::DbError::Migration(format!("serialize: {e}"))
+                })?;
+                repo.upsert_in(&tx, &r).await?;
+                // Materialized follower count: a new follow adds +1 to the
+                // target. Gated on `was_following` so a repeat follow is a
+                // no-op, and skipped for a self-follow, which the guard above
+                // already rejects.
+                let bumped = !was_following && !pubkey.eq_ignore_ascii_case(&unlocked);
+                if bumped {
+                    repo.bump_follower_count_in(&tx, &pubkey, 1).await?;
+                }
+                tx.commit().await?;
+                Ok((follows, bumped))
+            })?;
+            // The old code notified through two repo calls, one for the
+            // signer's profile row and one for the target's. Both are
+            // `Profiles`, and the change bus has no batch form, so they stay
+            // two notifications — but they now happen only after the commit
+            // that established the new state, instead of one before and one
+            // after.
+            db.notify_change(
+                soshal_db_core::change_bus::Table::Profiles,
+                Some(unlocked.clone()),
+            );
+            if bumped {
+                db.notify_change(
+                    soshal_db_core::change_bus::Table::Profiles,
+                    Some(pubkey.clone()),
+                );
+            }
+            Ok(list)
+        })?
+    };
     let mut builder = EventBuilder::new(Kind::ContactList, "");
     for f in &list {
         if let Ok(tag) = nostr::event::Tag::parse(vec!["p".to_string(), f.clone()]) {
@@ -633,46 +685,55 @@ pub fn identity_unfollow_user(pubkey: String) -> Result<bool, String> {
     if pubkey.len() != 64 || hex::decode(&pubkey).is_err() {
         return Err("invalid pubkey: must be 64-character hex".to_string());
     }
-    let (list, row, was_following) = super::db::with_db_result(|db| {
-        let row = UserRepo::new(db).get_by_pubkey(&unlocked)?;
-        let mut follows: Vec<String> = match &row {
-            Some(r) => serde_json::from_str(&r.contact_pubkeys).unwrap_or_default(),
-            None => Vec::new(),
-        };
-        let was_following = follows.iter().any(|f| f.eq_ignore_ascii_case(&pubkey));
-        follows.retain(|f| !f.eq_ignore_ascii_case(&pubkey));
-        Ok((follows, row, was_following))
-    })?;
-    let updated = serde_json::to_string(&list).map_err(|e| format!("serialize: {e}"))?;
-    super::db::with_db_result(|db| {
-        let mut r = match row {
-            Some(r) => r,
-            None => UserRow {
-                pubkey: unlocked.clone(),
-                npub: soshal_identity_core::keys::npub_encode(&unlocked).unwrap_or_default(),
-                name: None,
-                display_name: None,
-                about: None,
-                picture: None,
-                banner: None,
-                nip05: None,
-                lud16: None,
-                created_at: soshal_common_core::format::now_secs(),
-                updated_at: soshal_common_core::format::now_secs(),
-                metadata_json: None,
-                contact_pubkeys: String::new(),
-                relay_list: String::from("[]"),
-                follower_count: 0,
-            },
-        };
-        r.contact_pubkeys = updated;
-        UserRepo::new(db).upsert(&r)?;
-        // Materialized follower count: an unfollow removes -1 from the target.
-        if was_following && !pubkey.eq_ignore_ascii_case(&unlocked) {
-            UserRepo::new(db).bump_follower_count(&pubkey, -1)?;
-        }
-        Ok(())
-    })?;
+    // See `identity_follow_user`: one IMMEDIATE transaction for the read, the
+    // list write and the follower-count update, where the old code used three.
+    let list = {
+        let unlocked = unlocked.clone();
+        let pubkey = pubkey.clone();
+        super::db::with_db_result(|db| {
+            let conn = db.conn()?;
+            let repo = UserRepo::new(db);
+            // Clones so the outer scope keeps the two pubkeys for the
+            // change-bus notifications below.
+            let (tx_unlocked, tx_pubkey) = (unlocked.clone(), pubkey.clone());
+            let (list, bumped) = soshal_db_core::query::with_tx(&conn, |tx| async move {
+                let (unlocked, pubkey) = (tx_unlocked, tx_pubkey);
+                let row = repo.get_by_pubkey_in(&tx, &unlocked).await?;
+                let mut follows: Vec<String> = match &row {
+                    Some(r) => serde_json::from_str(&r.contact_pubkeys).unwrap_or_default(),
+                    None => Vec::new(),
+                };
+                let was_following = follows.iter().any(|f| f.eq_ignore_ascii_case(&pubkey));
+                follows.retain(|f| !f.eq_ignore_ascii_case(&pubkey));
+                let mut r = row.unwrap_or_else(|| empty_user_row(&unlocked));
+                r.contact_pubkeys = serde_json::to_string(&follows).map_err(|e| {
+                    soshal_db_core::error::DbError::Migration(format!("serialize: {e}"))
+                })?;
+                repo.upsert_in(&tx, &r).await?;
+                // Materialized follower count: an unfollow removes -1 from the
+                // target. Gated on `was_following` for the same reason the
+                // follow side is gated — an unfollow of someone not on the
+                // list is a no-op and must not decrement.
+                let bumped = was_following && !pubkey.eq_ignore_ascii_case(&unlocked);
+                if bumped {
+                    repo.bump_follower_count_in(&tx, &pubkey, -1).await?;
+                }
+                tx.commit().await?;
+                Ok((follows, bumped))
+            })?;
+            db.notify_change(
+                soshal_db_core::change_bus::Table::Profiles,
+                Some(unlocked.clone()),
+            );
+            if bumped {
+                db.notify_change(
+                    soshal_db_core::change_bus::Table::Profiles,
+                    Some(pubkey.clone()),
+                );
+            }
+            Ok(list)
+        })?
+    };
     let mut builder = EventBuilder::new(Kind::ContactList, "");
     for f in &list {
         if let Ok(tag) = nostr::event::Tag::parse(vec!["p".to_string(), f.clone()]) {

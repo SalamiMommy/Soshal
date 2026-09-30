@@ -18,6 +18,44 @@ static SEEN_GOSSIP: LazyLock<Mutex<BoundedSet<String>>> =
 
 const SEEN_GOSSIP_CAP: usize = 10_000;
 
+/// Verify a `Gossip` message and extract its event, or `None` if the message is
+/// not gossip or does not survive verification.
+///
+/// A Gossip must carry a signature-valid event whose id binds the claimed
+/// `message_id`. Anything else is dropped WITHOUT fan-out — an attacker cannot
+/// force replication of unverified content by choosing an arbitrary
+/// `message_id`, and dedup keys on the real event id, not the attacker-chosen
+/// one. This is a security boundary, not an optimization.
+///
+/// Both gossip entry points call this. They were byte-identical inline copies,
+/// which is exactly the shape where one of them later drifts and the other
+/// does not — a divergence in a verification gate is silent and serious.
+///
+/// The `Some(event)` result is what makes [`crate::ingest::handle_verified`]
+/// sound downstream: the signature has been checked against this event.
+fn verified_gossip(msg: &PlumTreeMessage) -> Option<nostr::event::Event> {
+    let PlumTreeMessage::Gossip {
+        message_id,
+        payload_json,
+        ..
+    } = msg
+    else {
+        return None;
+    };
+    let event: nostr::event::Event = serde_json::from_str(payload_json.as_ref()).ok()?;
+    if &event.id.to_hex() == message_id && verify_event(&event) {
+        Some(event)
+    } else {
+        None
+    }
+}
+
+/// True when `msg` is gossip, and therefore subject to [`verified_gossip`]
+/// rather than being passed through unverified.
+fn is_gossip(msg: &PlumTreeMessage) -> bool {
+    matches!(msg, PlumTreeMessage::Gossip { .. })
+}
+
 /// Binds PlumTree gossip protocol with DB event store.
 #[derive(Clone)]
 pub struct GossipSyncBridge {
@@ -42,25 +80,8 @@ impl GossipSyncBridge {
         let (outgoing, verified, my_pubkey) = {
             let mut pt = self.node.write().await;
             let my_pubkey = pt.self_peer_id.clone();
-            // Verify before amplify: a Gossip must carry a signature-valid
-            // event whose id binds the claimed message_id. Anything else is
-            // dropped WITHOUT fan-out — an attacker cannot force replication
-            // of unverified content by choosing an arbitrary message_id, and
-            // dedup keys on the real event id, not the attacker-chosen one.
-            let verified = match &msg {
-                PlumTreeMessage::Gossip {
-                    message_id,
-                    payload_json,
-                    ..
-                } => match serde_json::from_str::<nostr::event::Event>(payload_json.as_ref()) {
-                    Ok(event) if &event.id.to_hex() == message_id && verify_event(&event) => {
-                        Some(event)
-                    }
-                    _ => None,
-                },
-                _ => None,
-            };
-            if matches!(&msg, PlumTreeMessage::Gossip { .. }) && verified.is_none() {
+            let verified = verified_gossip(&msg);
+            if is_gossip(&msg) && verified.is_none() {
                 (Vec::new(), None, my_pubkey)
             } else {
                 let out = pt.handle_incoming(from_peer, msg.clone());
@@ -78,8 +99,16 @@ impl GossipSyncBridge {
                 // Use bridge identity for p-tag-to-me checks: empty
                 // pubkey would drop all gossip DMs (safe) but also
                 // breaks own-DM relay via mesh. Read from node.
-                // Ingest into SQLite database
-                if let Err(e) = crate::ingest::handle(db, &my_pubkey, &event, tx) {
+                // Ingest into SQLite database.
+                //
+                // `handle_verified`, not `handle`: the signature was checked
+                // above so the event could be amplified, and `handle` would
+                // check it again. That repeat is cheap (`verify_event`
+                // memoizes on `sha256(id‖sig)`, ~84 ns vs ~21 µs for a real
+                // Schnorr verification), so this is about not having two
+                // places that assert the same verification contract — see
+                // `ingest::handle_verified`.
+                if let Err(e) = crate::ingest::handle_verified(db, &my_pubkey, &event, tx) {
                     eprintln!("gossip ingest failed: {e}");
                 }
             }
@@ -102,20 +131,8 @@ impl GossipSyncBridge {
             let my_pubkey = pt.self_peer_id.clone();
             let mut verified_events = Vec::new();
             for (from_peer, msg) in messages {
-                let verified = match msg {
-                    PlumTreeMessage::Gossip {
-                        message_id,
-                        payload_json,
-                        ..
-                    } => match serde_json::from_str::<nostr::event::Event>(payload_json.as_ref()) {
-                        Ok(event) if &event.id.to_hex() == message_id && verify_event(&event) => {
-                            Some(event)
-                        }
-                        _ => None,
-                    },
-                    _ => None,
-                };
-                if matches!(msg, PlumTreeMessage::Gossip { .. }) && verified.is_none() {
+                let verified = verified_gossip(msg);
+                if is_gossip(msg) && verified.is_none() {
                     // Unverified gossip: no plumtree state change and no
                     // fan-out (L1).
                     continue;

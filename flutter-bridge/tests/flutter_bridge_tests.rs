@@ -428,6 +428,8 @@ mod ffi_aux_modules;
 mod ffi_coverage;
 #[path = "flutter_bridge_tests/ffi_dating_marketplace.rs"]
 mod ffi_dating_marketplace;
+#[path = "flutter_bridge_tests/ffi_feed_engagement.rs"]
+mod ffi_feed_engagement;
 #[path = "flutter_bridge_tests/ffi_identity.rs"]
 mod ffi_identity;
 #[path = "flutter_bridge_tests/ffi_media_streaming.rs"]
