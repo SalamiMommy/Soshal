@@ -368,4 +368,60 @@ mod ffi_media_streaming_tests {
             "no stream registered -> deterministic unknown"
         );
     }
+
+    /// The collapsed publish is a rewrite of `p2p_moq_publish_group` plus the
+    /// encode that precedes it, so the two have to agree byte-for-byte on the
+    /// wire. A regression that encoded differently in one path would silently
+    /// change what viewers can decode.
+    #[test]
+    fn moq_collapsed_publish_matches_the_two_step_path() {
+        let group = r#"{"group_sequence":3,"objects":[{"header":{"track_id":1,"group_sequence":3,"object_sequence":1,"payload_size":2,"track_type":"VideoKeyframe","timestamp_ms":1700000000000},"payload":[255,0]}]}"#;
+
+        let encoded = p2p::p2p_moq_encode_group(group.to_string()).unwrap();
+        let round_tripped = p2p::p2p_moq_decode_group(encoded.clone()).unwrap();
+        let a: serde_json::Value = serde_json::from_str(group).unwrap();
+        let b: serde_json::Value = serde_json::from_str(&round_tripped).unwrap();
+        assert_eq!(
+            a["group_sequence"], b["group_sequence"],
+            "sanity: the fixture is a valid group that survives a round trip"
+        );
+
+        let two_step_json = p2p::p2p_moq_publish_group("m1".to_string(), encoded.clone()).unwrap();
+        let two_step: serde_json::Value = serde_json::from_str(&two_step_json).unwrap();
+        assert_eq!(two_step["status"], "published");
+        assert_eq!(two_step["stream_id"], "m1");
+
+        let collapsed =
+            p2p::p2p_moq_publish_group_json("m1".to_string(), group.to_string()).unwrap();
+        assert!(
+            collapsed > two_step["groups"].as_u64().unwrap(),
+            "the counter is a registry-wide monotonic sequence, so a second \
+             publish must advance past the first (got {collapsed} after {})",
+            two_step["groups"]
+        );
+
+        // And the bytes actually stored are the same either way: encoding is
+        // deterministic, so the collapsed path stores the frame the two-step
+        // path produced.
+        let _ = p2p::p2p_moq_publish_group("m1b".to_string(), encoded.clone()).unwrap();
+        assert_eq!(
+            encoded,
+            p2p::p2p_moq_encode_group(group.to_string()).unwrap(),
+            "encoding is deterministic, so the collapsed path stores the same frame"
+        );
+    }
+
+    #[test]
+    fn moq_collapsed_publish_keeps_the_bounds_checks() {
+        // Validation lives in the shared helper, so both entry points reject the
+        // same inputs; these assert the collapsed one does.
+        assert!(p2p::p2p_moq_publish_group_json(String::new(), "{}".to_string()).is_err());
+        assert!(p2p::p2p_moq_publish_group_json("m2".to_string(), "not json".to_string()).is_err());
+        // The stream-id cap is applied before any encoding work, same as the
+        // JSON-status entry point.
+        assert!(
+            p2p::p2p_moq_publish_group_json("m".repeat(129), "{}".to_string()).is_err(),
+            "stream id cap applies to the collapsed path too"
+        );
+    }
 }

@@ -1402,12 +1402,14 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
-  WireSyncRust2DartSse wire__crate__ffi__audio__audio_feed_aac(
+  void wire__crate__ffi__audio__audio_feed_aac(
+    int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
     int data_len_,
   ) {
     return _wire__crate__ffi__audio__audio_feed_aac(
+      port_,
       ptr_,
       rust_vec_len_,
       data_len_,
@@ -1417,7 +1419,8 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__audio__audio_feed_aacPtr =
       _lookup<
         ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
+          ffi.Void Function(
+            ffi.Int64,
             ffi.Pointer<ffi.Uint8>,
             ffi.Int32,
             ffi.Int32,
@@ -1426,9 +1429,7 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__audio__audio_feed_aac');
   late final _wire__crate__ffi__audio__audio_feed_aac =
       _wire__crate__ffi__audio__audio_feed_aacPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
   WireSyncRust2DartSse wire__crate__ffi__audio__audio_init_decode(
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -6604,12 +6605,14 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
-  WireSyncRust2DartSse wire__crate__ffi__h264__h264_feed_decode(
+  void wire__crate__ffi__h264__h264_feed_decode(
+    int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
     int data_len_,
   ) {
     return _wire__crate__ffi__h264__h264_feed_decode(
+      port_,
       ptr_,
       rust_vec_len_,
       data_len_,
@@ -6619,7 +6622,8 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__h264__h264_feed_decodePtr =
       _lookup<
         ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
+          ffi.Void Function(
+            ffi.Int64,
             ffi.Pointer<ffi.Uint8>,
             ffi.Int32,
             ffi.Int32,
@@ -6628,16 +6632,16 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__h264__h264_feed_decode');
   late final _wire__crate__ffi__h264__h264_feed_decode =
       _wire__crate__ffi__h264__h264_feed_decodePtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
-  WireSyncRust2DartSse wire__crate__ffi__h264__h264_feed_encode(
+  void wire__crate__ffi__h264__h264_feed_encode(
+    int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
     int data_len_,
   ) {
     return _wire__crate__ffi__h264__h264_feed_encode(
+      port_,
       ptr_,
       rust_vec_len_,
       data_len_,
@@ -6647,7 +6651,8 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__h264__h264_feed_encodePtr =
       _lookup<
         ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
+          ffi.Void Function(
+            ffi.Int64,
             ffi.Pointer<ffi.Uint8>,
             ffi.Int32,
             ffi.Int32,
@@ -6656,9 +6661,7 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__h264__h264_feed_encode');
   late final _wire__crate__ffi__h264__h264_feed_encode =
       _wire__crate__ffi__h264__h264_feed_encodePtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
   WireSyncRust2DartSse wire__crate__ffi__h264__h264_init_decode(
     ffi.Pointer<ffi.Uint8> ptr_,
@@ -9342,13 +9345,14 @@ class RustLibWire implements BaseWire {
       _wire__crate__ffi__minis__minis_watchPtr
           .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
-  WireSyncRust2DartSse
-  wire__crate__ffi__moderation__moderation_ai_classify_media(
+  void wire__crate__ffi__moderation__moderation_ai_classify_media(
+    int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
     int data_len_,
   ) {
     return _wire__crate__ffi__moderation__moderation_ai_classify_media(
+      port_,
       ptr_,
       rust_vec_len_,
       data_len_,
@@ -9358,7 +9362,8 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__moderation__moderation_ai_classify_mediaPtr =
       _lookup<
         ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
+          ffi.Void Function(
+            ffi.Int64,
             ffi.Pointer<ffi.Uint8>,
             ffi.Int32,
             ffi.Int32,
@@ -9369,9 +9374,7 @@ class RustLibWire implements BaseWire {
       );
   late final _wire__crate__ffi__moderation__moderation_ai_classify_media =
       _wire__crate__ffi__moderation__moderation_ai_classify_mediaPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
   WireSyncRust2DartSse
   wire__crate__ffi__moderation__moderation_ai_classify_text(
@@ -9434,13 +9437,14 @@ class RustLibWire implements BaseWire {
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
 
-  WireSyncRust2DartSse
-  wire__crate__ffi__moderation__moderation_compute_pdq_hash(
+  void wire__crate__ffi__moderation__moderation_compute_pdq_hash(
+    int port_,
     ffi.Pointer<ffi.Uint8> ptr_,
     int rust_vec_len_,
     int data_len_,
   ) {
     return _wire__crate__ffi__moderation__moderation_compute_pdq_hash(
+      port_,
       ptr_,
       rust_vec_len_,
       data_len_,
@@ -9450,7 +9454,8 @@ class RustLibWire implements BaseWire {
   late final _wire__crate__ffi__moderation__moderation_compute_pdq_hashPtr =
       _lookup<
         ffi.NativeFunction<
-          WireSyncRust2DartSse Function(
+          ffi.Void Function(
+            ffi.Int64,
             ffi.Pointer<ffi.Uint8>,
             ffi.Int32,
             ffi.Int32,
@@ -9461,9 +9466,7 @@ class RustLibWire implements BaseWire {
       );
   late final _wire__crate__ffi__moderation__moderation_compute_pdq_hash =
       _wire__crate__ffi__moderation__moderation_compute_pdq_hashPtr
-          .asFunction<
-            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
-          >();
+          .asFunction<void Function(int, ffi.Pointer<ffi.Uint8>, int, int)>();
 
   WireSyncRust2DartSse
   wire__crate__ffi__moderation__moderation_create_jury_case(
@@ -12645,6 +12648,36 @@ class RustLibWire implements BaseWire {
       >('frbgen_soshal_flutter_wire__crate__ffi__p2p__p2p_moq_publish_group');
   late final _wire__crate__ffi__p2p__p2p_moq_publish_group =
       _wire__crate__ffi__p2p__p2p_moq_publish_groupPtr
+          .asFunction<
+            WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
+          >();
+
+  WireSyncRust2DartSse wire__crate__ffi__p2p__p2p_moq_publish_group_json(
+    ffi.Pointer<ffi.Uint8> ptr_,
+    int rust_vec_len_,
+    int data_len_,
+  ) {
+    return _wire__crate__ffi__p2p__p2p_moq_publish_group_json(
+      ptr_,
+      rust_vec_len_,
+      data_len_,
+    );
+  }
+
+  late final _wire__crate__ffi__p2p__p2p_moq_publish_group_jsonPtr =
+      _lookup<
+        ffi.NativeFunction<
+          WireSyncRust2DartSse Function(
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >(
+        'frbgen_soshal_flutter_wire__crate__ffi__p2p__p2p_moq_publish_group_json',
+      );
+  late final _wire__crate__ffi__p2p__p2p_moq_publish_group_json =
+      _wire__crate__ffi__p2p__p2p_moq_publish_group_jsonPtr
           .asFunction<
             WireSyncRust2DartSse Function(ffi.Pointer<ffi.Uint8>, int, int)
           >();
@@ -16856,8 +16889,6 @@ const int MAX_DECODE_OUTPUT_PIXELS = 8388608;
 
 
 
-/* frb 2.12.0 codegen splice: stray allocator fragment outside a class body.
-   Removed by hand; see AGENTS.md "KNOWN codegen bug". */
 
 
 

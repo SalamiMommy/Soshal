@@ -83,7 +83,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -74607218;
+  int get rustContentHash => -2125965362;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -117,7 +117,7 @@ abstract class RustLibApi extends BaseApi {
 
   List<Uint8List> crateFfiAudioAudioDrain();
 
-  bool crateFfiAudioAudioFeedAac({required List<int> blob});
+  Future<bool> crateFfiAudioAudioFeedAac({required List<int> blob});
 
   bool crateFfiAudioAudioInitDecode();
 
@@ -742,9 +742,9 @@ abstract class RustLibApi extends BaseApi {
       required int limit,
       required bool onlyApproved});
 
-  List<Uint8List> crateFfiH264H264FeedDecode({required List<int> nal});
+  Future<List<Uint8List>> crateFfiH264H264FeedDecode({required List<int> nal});
 
-  List<Uint8List> crateFfiH264H264FeedEncode({required List<int> bgra});
+  Future<List<Uint8List>> crateFfiH264H264FeedEncode({required List<int> bgra});
 
   bool crateFfiH264H264InitDecode();
 
@@ -1057,7 +1057,7 @@ abstract class RustLibApi extends BaseApi {
 
   Stream<String> crateFfiMinisMinisWatch({required String audience});
 
-  String crateFfiModerationModerationAiClassifyMedia(
+  Future<String> crateFfiModerationModerationAiClassifyMedia(
       {required List<int> imageBytes, required String mimeType});
 
   String crateFfiModerationModerationAiClassifyText({required String content});
@@ -1065,7 +1065,7 @@ abstract class RustLibApi extends BaseApi {
   bool crateFfiModerationModerationBlockUser(
       {required String blockerPubkey, required String targetPubkey});
 
-  String crateFfiModerationModerationComputePdqHash(
+  Future<String> crateFfiModerationModerationComputePdqHash(
       {required List<int> imageBytes});
 
   String crateFfiModerationModerationCreateJuryCase(
@@ -1332,6 +1332,9 @@ abstract class RustLibApi extends BaseApi {
 
   String crateFfiP2PP2PMoqPublishGroup(
       {required String streamId, required List<int> encoded});
+
+  BigInt crateFfiP2PP2PMoqPublishGroupJson(
+      {required String streamId, required String groupJson});
 
   Future<String> crateFfiP2PP2PMoqSubscribeFetch(
       {required String addr,
@@ -1984,14 +1987,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  bool crateFfiAudioAudioFeedAac({required List<int> blob}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+  Future<bool> crateFfiAudioAudioFeedAac({required List<int> blob}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_list_prim_u_8_loose(blob, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__audio__audio_feed_aac(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_bool,
@@ -7416,14 +7419,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  List<Uint8List> crateFfiH264H264FeedDecode({required List<int> nal}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+  Future<List<Uint8List>> crateFfiH264H264FeedDecode({required List<int> nal}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_list_prim_u_8_loose(nal, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__h264__h264_feed_decode(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_list_prim_u_8_strict,
@@ -7441,14 +7444,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  List<Uint8List> crateFfiH264H264FeedEncode({required List<int> bgra}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+  Future<List<Uint8List>> crateFfiH264H264FeedEncode(
+      {required List<int> bgra}) {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_list_prim_u_8_loose(bgra, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__h264__h264_feed_encode(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_list_list_prim_u_8_strict,
@@ -10208,16 +10212,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiModerationModerationAiClassifyMedia(
+  Future<String> crateFfiModerationModerationAiClassifyMedia(
       {required List<int> imageBytes, required String mimeType}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_list_prim_u_8_loose(imageBytes, serializer);
         sse_encode_String(mimeType, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__moderation__moderation_ai_classify_media(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_String,
@@ -10290,15 +10294,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  String crateFfiModerationModerationComputePdqHash(
+  Future<String> crateFfiModerationModerationComputePdqHash(
       {required List<int> imageBytes}) {
-    return handler.executeSync(SyncTask(
-      callFfi: () {
+    return handler.executeNormal(NormalTask(
+      callFfi: (port_) {
         final serializer = SseSerializer(generalizedFrbRustBinding);
         sse_encode_list_prim_u_8_loose(imageBytes, serializer);
         final raw_ = serializer.intoRaw();
         return wire.wire__crate__ffi__moderation__moderation_compute_pdq_hash(
-            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+            port_, raw_.ptr, raw_.rustVecLen, raw_.dataLen);
       },
       codec: SseCodec(
         decodeSuccessData: sse_decode_String,
@@ -12740,6 +12744,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "p2p_moq_publish_group",
         argNames: ["streamId", "encoded"],
+      );
+
+  @override
+  BigInt crateFfiP2PP2PMoqPublishGroupJson(
+      {required String streamId, required String groupJson}) {
+    return handler.executeSync(SyncTask(
+      callFfi: () {
+        final serializer = SseSerializer(generalizedFrbRustBinding);
+        sse_encode_String(streamId, serializer);
+        sse_encode_String(groupJson, serializer);
+        final raw_ = serializer.intoRaw();
+        return wire.wire__crate__ffi__p2p__p2p_moq_publish_group_json(
+            raw_.ptr, raw_.rustVecLen, raw_.dataLen);
+      },
+      codec: SseCodec(
+        decodeSuccessData: sse_decode_u_64,
+        decodeErrorData: sse_decode_String,
+      ),
+      constMeta: kCrateFfiP2Pp2PMoqPublishGroupJsonConstMeta,
+      argValues: [streamId, groupJson],
+      apiImpl: this,
+    ));
+  }
+
+  TaskConstMeta get kCrateFfiP2Pp2PMoqPublishGroupJsonConstMeta =>
+      const TaskConstMeta(
+        debugName: "p2p_moq_publish_group_json",
+        argNames: ["streamId", "groupJson"],
       );
 
   @override

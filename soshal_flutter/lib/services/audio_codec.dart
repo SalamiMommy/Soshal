@@ -78,7 +78,7 @@ class AudioCodec {
   static Future<void> feedAac(List<int> aac) async {
     try {
       final bytes = aac is Uint8List ? aac : Uint8List.fromList(aac);
-      ffi_audio.audioFeedAac(blob: bytes);
+      await ffi_audio.audioFeedAac(blob: bytes);
       error.value = null;
     } catch (e) {
       error.value = 'audio feed failed: $e';

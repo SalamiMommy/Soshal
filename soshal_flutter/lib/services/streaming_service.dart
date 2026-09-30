@@ -310,15 +310,21 @@ class StreamingService extends ChangeNotifier
   /// Like `publishLiveGroup` but never notifies consumers — per-frame
   /// broadcast publishing (video/audio groups) must not rebuild service
   /// listeners at 15–25 Hz. Errors still logged via `setLastError`.
-  Future<Map<String, dynamic>> publishLiveGroupSilent({
+  ///
+  /// Uses the collapsed single-crossing publish: it hands Rust the group JSON
+  /// and gets back the group counter as a number. The two-step form crossed
+  /// the isolate twice and serialized the group in Dart only for Rust to parse
+  /// it straight back, then serialized a status string in Rust for Dart to
+  /// parse and throw away. Every caller discarded that result, so nothing is
+  /// lost here.
+  Future<int> publishLiveGroupSilent({
     required String streamId,
     required Map<String, dynamic> group,
   }) =>
-      guard(() {
-        final encoded = encodeMoqGroup(group);
-        final json =
-            moq.p2PMoqPublishGroup(streamId: streamId, encoded: encoded);
-        return jsonDecode(json) as Map<String, dynamic>;
+      guard(() async {
+        final groups = moq.p2PMoqPublishGroupJson(
+            streamId: streamId, groupJson: jsonEncode(group));
+        return groups.toInt();
       }, notifyOnSuccess: false, notifyOnError: false);
 
   /// Open a MoQ broadcast for `streamId`: publishes a bootstrap control

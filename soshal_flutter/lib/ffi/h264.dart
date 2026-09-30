@@ -19,14 +19,22 @@ bool h264InitEncode(
         width: width, height: height, bitrate: bitrate, fps: fps);
 
 /// Feed one BGRA frame; returns drained `[flag, ...Annex-B]` blobs.
-List<Uint8List> h264FeedEncode({required List<int> bgra}) =>
+///
+/// Runs on the blocking pool, not the UI isolate: this does a full
+/// BGRA→I420 conversion plus an `AMediaCodec` drain inline, and the
+/// broadcaster calls it 15 times a second. Callers `await` each frame in
+/// sequence and the codec state is mutex-guarded, so feed order survives.
+Future<List<Uint8List>> h264FeedEncode({required List<int> bgra}) =>
     RustLib.instance.api.crateFfiH264H264FeedEncode(bgra: bgra);
 
 /// Configure the software AVC decoder (feed Annex-B directly).
 bool h264InitDecode() => RustLib.instance.api.crateFfiH264H264InitDecode();
 
 /// Feed one Annex-B NAL blob; returns JPEG frames drained from the decoder.
-List<Uint8List> h264FeedDecode({required List<int> nal}) =>
+///
+/// Runs on the blocking pool, not the UI isolate — YUV→RGB plus a JPEG encode
+/// per frame, on the viewer's decode loop. See `h264_feed_encode`.
+Future<List<Uint8List>> h264FeedDecode({required List<int> nal}) =>
     RustLib.instance.api.crateFfiH264H264FeedDecode(nal: nal);
 
 /// Start the local DVR (MP4 muxer, Kotlin LiveRecorder). Returns the output

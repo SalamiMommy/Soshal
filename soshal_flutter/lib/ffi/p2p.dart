@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `from_report`, `from_state`, `new`, `running`, `state_mut`, `state`
+// These functions are ignored because they are not marked as `pub`: `from_report`, `from_state`, `new`, `publish_encoded_group`, `running`, `state_mut`, `state`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BlobFetchDto`, `FountainEncodeDto`, `MoqPublishDto`, `MoqSubscribeDto`, `P2pState`, `SwarmHandle`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `from`
 
@@ -81,6 +81,22 @@ Future<Uint8List> p2PQuicFetchChunk(
 /// Encode a MoQ group (JSON `MoqGroup`) into the on-stream binary framing.
 Uint8List p2PMoqEncodeGroup({required String groupJson}) =>
     RustLib.instance.api.crateFfiP2PP2PMoqEncodeGroup(groupJson: groupJson);
+
+/// Parse, encode and publish one MoQ group in a single crossing.
+///
+/// The two-step form — `p2p_moq_encode_group` then `p2p_moq_publish_group` —
+/// crosses the isolate twice and JSON-encodes the group in Dart only for Rust
+/// to parse it straight back, then JSON-encodes a status string in Rust for
+/// Dart to parse and discard. At the broadcaster's 15–25 groups a second that
+/// is two crossings and two wasted serializations per group.
+///
+/// Returns the monotonic group counter as a plain number. The JSON status form
+/// is `p2p_moq_publish_group`; every caller of it discarded the result, so
+/// nothing needs the string.
+BigInt p2PMoqPublishGroupJson(
+        {required String streamId, required String groupJson}) =>
+    RustLib.instance.api.crateFfiP2PP2PMoqPublishGroupJson(
+        streamId: streamId, groupJson: groupJson);
 
 /// Decode a MoQ group from the on-stream binary framing back to JSON
 /// `MoQGroup`. Bounds-checked against hostile input.

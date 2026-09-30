@@ -18,9 +18,16 @@ pub fn h264_init_encode(width: i32, height: i32, bitrate: i32, fps: i32) -> bool
 }
 
 /// Feed one BGRA frame; returns drained `[flag, ...Annex-B]` blobs.
-#[frb(sync, serialize)]
-pub fn h264_feed_encode(bgra: Vec<u8>) -> Vec<Vec<u8>> {
-    codecs::h264::feed_encode(&bgra)
+///
+/// Runs on the blocking pool, not the UI isolate: this does a full
+/// BGRA→I420 conversion plus an `AMediaCodec` drain inline, and the
+/// broadcaster calls it 15 times a second. Callers `await` each frame in
+/// sequence and the codec state is mutex-guarded, so feed order survives.
+#[frb(serialize)]
+pub async fn h264_feed_encode(bgra: Vec<u8>) -> Vec<Vec<u8>> {
+    tokio::task::spawn_blocking(move || codecs::h264::feed_encode(&bgra))
+        .await
+        .unwrap_or_default()
 }
 
 /// Configure the software AVC decoder (feed Annex-B directly).
@@ -30,9 +37,14 @@ pub fn h264_init_decode() -> bool {
 }
 
 /// Feed one Annex-B NAL blob; returns JPEG frames drained from the decoder.
-#[frb(sync, serialize)]
-pub fn h264_feed_decode(nal: Vec<u8>) -> Vec<Vec<u8>> {
-    codecs::h264::feed_decode(&nal)
+///
+/// Runs on the blocking pool, not the UI isolate — YUV→RGB plus a JPEG encode
+/// per frame, on the viewer's decode loop. See `h264_feed_encode`.
+#[frb(serialize)]
+pub async fn h264_feed_decode(nal: Vec<u8>) -> Vec<Vec<u8>> {
+    tokio::task::spawn_blocking(move || codecs::h264::feed_decode(&nal))
+        .await
+        .unwrap_or_default()
 }
 
 /// Start the local DVR (MP4 muxer, Kotlin LiveRecorder). Returns the output

@@ -247,8 +247,18 @@ mod ffi_tests {
         crate::test_util::cleanup(&path);
     }
 
-    #[test]
-    fn test_ai_classify_text_and_media_ffi() {
+    // multi_thread, not the default current_thread: this test opens a
+    // database, and `db_core::block_on` reaches for `block_in_place`, which
+    // panics on a current-thread runtime.
+    //
+    // The test lock is deliberately held across the awaits. It is the
+    // process-wide serializer for the global signer state, and releasing it
+    // mid-test would let another bridge test interleave its
+    // `signer_lock`/`signer_unlock` with this one — the exact cross-module
+    // flake the lock exists to prevent.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_ai_classify_text_and_media_ffi() {
         let _g = crate::test_util::lock();
         let path = crate::test_util::init_db("moderation", "aimod");
 
@@ -274,6 +284,7 @@ mod ffi_tests {
         let clean_bytes = vec![128u8; 512];
         let media_clean =
             moderation::moderation_ai_classify_media(clean_bytes, "image/jpeg".to_string())
+                .await
                 .unwrap();
         assert!(media_clean.contains(r#""passed":true"#));
 
@@ -282,6 +293,7 @@ mod ffi_tests {
             elf_bytes,
             "application/x-executable".to_string(),
         )
+        .await
         .unwrap();
         assert!(media_bad.contains(r#""passed":false"#));
 
@@ -301,7 +313,9 @@ mod ffi_tests {
 
         // 4. PDQ Perceptual Hashing
         let sample_luma = vec![128u8; 64 * 64];
-        let pdq_res = moderation::moderation_compute_pdq_hash(sample_luma).unwrap();
+        let pdq_res = moderation::moderation_compute_pdq_hash(sample_luma)
+            .await
+            .unwrap();
         assert!(pdq_res.contains(r#""hash_hex""#));
         assert!(pdq_res.contains(r#""quality""#));
 

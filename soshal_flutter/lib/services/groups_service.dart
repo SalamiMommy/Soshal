@@ -193,7 +193,8 @@ class GroupsService extends ChangeNotifier
             groupId: groupId,
           ),
         ) as Map<String, dynamic>;
-        _current = SoshalGroup.fromJson(bundle['group'] as Map<String, dynamic>);
+        _current =
+            SoshalGroup.fromJson(bundle['group'] as Map<String, dynamic>);
         _members = (bundle['members'] as List<dynamic>).cast<String>();
         _memberRoles = (bundle['memberRoles'] as List<dynamic>)
             .map((e) => GroupMemberWithRole.fromJson(e as Map<String, dynamic>))

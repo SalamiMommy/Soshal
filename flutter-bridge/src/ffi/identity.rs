@@ -374,7 +374,7 @@ pub fn identity_get_trust_score(
     let users = wot_graph_users()?;
     let mut self_contacts = Vec::new();
     let mut target_contacts = Vec::new();
-    for u in &users {
+    for u in users.iter() {
         if u.pubkey.eq_ignore_ascii_case(&source_pubkey) {
             self_contacts = u.contacts.clone();
         }
@@ -400,17 +400,22 @@ const WOT_GRAPH_TTL: std::time::Duration = std::time::Duration::from_secs(45);
 struct WotGraphSnapshot {
     db_path: String,
     fetched_at: std::time::Instant,
-    users: Vec<wot::WotUser>,
+    /// `Arc` so a cache hit is a refcount bump. This is a whole-graph deep
+    /// clone — one `String` plus one `Vec<String>` per user, on the order of
+    /// 10k allocations for a few hundred contacts — and every consumer here
+    /// only reads. Handing back a `Vec` copy meant paying that on each of the
+    /// four trust/WoT entry points.
+    users: std::sync::Arc<Vec<wot::WotUser>>,
 }
 
 /// Load the WoT contact graph — only `pubkey` + `contact_pubkeys` columns
 /// (repos have no list-all; light raw query mirrors db.rs helpers).
-pub(crate) fn wot_graph_users() -> Result<Vec<wot::WotUser>, String> {
+pub(crate) fn wot_graph_users() -> Result<std::sync::Arc<Vec<wot::WotUser>>, String> {
     let current_db = super::db::db_path()?;
     let mut guard = crate::ffi::util::lock(&WOT_GRAPH_CACHE);
     if let Some(snap) = guard.as_ref() {
         if snap.db_path == current_db && snap.fetched_at.elapsed() < WOT_GRAPH_TTL {
-            return Ok(snap.users.clone());
+            return Ok(std::sync::Arc::clone(&snap.users));
         }
     }
     let users = super::db::with_db_result(|db| {
@@ -433,11 +438,11 @@ pub(crate) fn wot_graph_users() -> Result<Vec<wot::WotUser>, String> {
     *guard = Some(WotGraphSnapshot {
         db_path: current_db,
         fetched_at: std::time::Instant::now(),
-        users,
+        users: std::sync::Arc::new(users),
     });
     guard
         .as_ref()
-        .map(|s| s.users.clone())
+        .map(|s| std::sync::Arc::clone(&s.users))
         .ok_or_else(|| "wot graph cache empty".to_string())
 }
 
@@ -479,7 +484,7 @@ pub(crate) fn resolve_audience_authors(audience: &str) -> Result<Option<Vec<Stri
         return Ok(Some(Vec::new()));
     }
     let users = wot_graph_users()?;
-    let by_distance = wot::get_wot_peers_by_distance(&self_pubkey, &users, level);
+    let by_distance = wot::get_wot_peers_by_distance(&self_pubkey, users.as_slice(), level);
     let mut authors: Vec<String> = Vec::new();
     authors.push(self_pubkey.clone());
     for d in 1..=level {
@@ -512,7 +517,7 @@ pub fn identity_get_wot_status(
     let target_pubkey = target_pubkey.trim().to_ascii_lowercase();
     let viewer_pubkey = viewer_pubkey.trim().to_ascii_lowercase();
     let wot_users = wot_graph_users()?;
-    let by_distance = wot::get_wot_peers_by_distance(&viewer_pubkey, &wot_users, 2);
+    let by_distance = wot::get_wot_peers_by_distance(&viewer_pubkey, wot_users.as_slice(), 2);
     let status = if by_distance
         .get(&1)
         .map(|v| v.iter().any(|pk| pk.eq_ignore_ascii_case(&target_pubkey)))

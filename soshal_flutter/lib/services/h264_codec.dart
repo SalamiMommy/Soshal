@@ -56,7 +56,7 @@ class H264Codec {
   /// each `[flag, ...annexB]` (Uint8List of 1 + N bytes).
   static Future<List<Uint8List>> feedEncode(Uint8List bgra) async {
     try {
-      final blobs = ffi_h264.h264FeedEncode(bgra: bgra);
+      final blobs = await ffi_h264.h264FeedEncode(bgra: bgra);
       error.value = null;
       return blobs;
     } catch (e) {
@@ -77,7 +77,7 @@ class H264Codec {
   /// Feed one Annex-B NAL blob; returns JPEG frames drained from the decoder.
   static Future<List<Uint8List>> feedDecode(Uint8List nal) async {
     try {
-      final jpegs = ffi_h264.h264FeedDecode(nal: nal);
+      final jpegs = await ffi_h264.h264FeedDecode(nal: nal);
       error.value = null;
       return jpegs;
     } catch (e) {

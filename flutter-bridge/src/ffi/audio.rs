@@ -37,9 +37,17 @@ pub fn audio_init_decode() -> bool {
 }
 
 /// Feed one AAC blob (config or frame); decoded PCM plays immediately.
-#[frb(sync, serialize)]
-pub fn audio_feed_aac(blob: Vec<u8>) -> bool {
-    codecs::audio::feed_aac(&blob)
+///
+/// Runs on the blocking pool, not the UI isolate. `feed_aac` ends in
+/// `AAudioStream_write` with a 10-second timeout, so a stalled audio sink
+/// would otherwise freeze the Flutter UI thread for as long as that timeout.
+/// Callers already `await` each frame in sequence, and the codec state lives
+/// behind a mutex, so moving the thread preserves feed order.
+#[frb(serialize)]
+pub async fn audio_feed_aac(blob: Vec<u8>) -> bool {
+    tokio::task::spawn_blocking(move || codecs::audio::feed_aac(&blob))
+        .await
+        .unwrap_or(false)
 }
 
 /// Stop mic, codecs, playback; release everything.

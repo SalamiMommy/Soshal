@@ -98,7 +98,9 @@ class FriendsService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
         final raw = RustLib.instance.api
             .crateFfiIdentityIdentityFetchFollowsUnion(pubkeys: pubkeys);
         final decoded = jsonDecode(raw);
-        return decoded is List ? decoded.whereType<String>().toList() : <String>[];
+        return decoded is List
+            ? decoded.whereType<String>().toList()
+            : <String>[];
       });
 
   /// Add a profile to the in-memory contact list.

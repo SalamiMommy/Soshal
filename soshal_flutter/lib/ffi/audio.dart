@@ -25,7 +25,13 @@ List<Uint8List> audioDrain() => RustLib.instance.api.crateFfiAudioAudioDrain();
 bool audioInitDecode() => RustLib.instance.api.crateFfiAudioAudioInitDecode();
 
 /// Feed one AAC blob (config or frame); decoded PCM plays immediately.
-bool audioFeedAac({required List<int> blob}) =>
+///
+/// Runs on the blocking pool, not the UI isolate. `feed_aac` ends in
+/// `AAudioStream_write` with a 10-second timeout, so a stalled audio sink
+/// would otherwise freeze the Flutter UI thread for as long as that timeout.
+/// Callers already `await` each frame in sequence, and the codec state lives
+/// behind a mutex, so moving the thread preserves feed order.
+Future<bool> audioFeedAac({required List<int> blob}) =>
     RustLib.instance.api.crateFfiAudioAudioFeedAac(blob: blob);
 
 /// Stop mic, codecs, playback; release everything.

@@ -352,6 +352,25 @@ pub fn p2p_moq_encode_group(group_json: String) -> Result<Vec<u8>, String> {
     soshal_streaming_core::moq::encode_group_stream(&group)
 }
 
+/// Parse, encode and publish one MoQ group in a single crossing.
+///
+/// The two-step form — `p2p_moq_encode_group` then `p2p_moq_publish_group` —
+/// crosses the isolate twice and JSON-encodes the group in Dart only for Rust
+/// to parse it straight back, then JSON-encodes a status string in Rust for
+/// Dart to parse and discard. At the broadcaster's 15–25 groups a second that
+/// is two crossings and two wasted serializations per group.
+///
+/// Returns the monotonic group counter as a plain number. The JSON status form
+/// is `p2p_moq_publish_group`; every caller of it discarded the result, so
+/// nothing needs the string.
+#[frb(sync, serialize)]
+pub fn p2p_moq_publish_group_json(stream_id: String, group_json: String) -> Result<u64, String> {
+    let group: soshal_streaming_core::moq::MoqGroup =
+        serde_json::from_str(&group_json).map_err(|e| format!("bad moq group: {e}"))?;
+    let encoded = soshal_streaming_core::moq::encode_group_stream(&group)?;
+    publish_encoded_group(&stream_id, encoded)
+}
+
 /// Decode a MoQ group from the on-stream binary framing back to JSON
 /// `MoQGroup`. Bounds-checked against hostile input.
 #[frb(sync, serialize)]
@@ -369,25 +388,32 @@ struct MoqPublishDto<'a> {
 
 const MAX_MOQ_GROUP_BYTES: usize = 8 * 1024 * 1024;
 
+/// Validate and push an encoded group, returning the monotonic counter. Shared
+/// by the JSON-status and the collapsed-JSON publish paths so the bounds checks
+/// cannot drift apart.
+fn publish_encoded_group(stream_id: &str, encoded: Vec<u8>) -> Result<u64, String> {
+    if stream_id.is_empty() || stream_id.len() > 128 {
+        return Err("bad live stream id".to_string());
+    }
+    if encoded.is_empty() {
+        return Err("cannot publish empty MoQ group".to_string());
+    }
+    if encoded.len() > MAX_MOQ_GROUP_BYTES {
+        return Err("MoQ group exceeds maximum size".to_string());
+    }
+    soshal_network_core::quic::moq_publish_group(stream_id, encoded)
+}
+
 /// Publish one encoded MoQ group into the live registry under `stream_id`.
 /// Bytes are opaque to the transport; the caller encodes with
 /// `p2p_moq_encode_group`. Returns JSON `{"status","stream_id","groups"}`.
 #[frb(sync, serialize)]
 pub fn p2p_moq_publish_group(stream_id: String, encoded: Vec<u8>) -> Result<String, String> {
-    if stream_id.is_empty() || stream_id.len() > 128 {
-        return Err("bad live stream id".to_string()).into();
-    }
-    if encoded.is_empty() {
-        return Err("cannot publish empty MoQ group".to_string()).into();
-    }
-    if encoded.len() > MAX_MOQ_GROUP_BYTES {
-        return Err("MoQ group exceeds maximum size".to_string()).into();
-    }
-    let seq = soshal_network_core::quic::moq_publish_group(&stream_id, encoded).map_err(|e| e)?;
+    let groups = publish_encoded_group(&stream_id, encoded)?;
     serde_json::to_string(&MoqPublishDto {
         status: "published",
         stream_id: &stream_id,
-        groups: seq,
+        groups,
     })
     .map_err(|e| format!("serialize moq publish: {e}"))
 }

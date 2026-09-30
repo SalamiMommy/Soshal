@@ -858,13 +858,13 @@ class RustLibWire implements BaseWire {
           wasmModule.wire__crate__ffi__audio__audio_drain(
               ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__audio__audio_feed_aac(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__audio__audio_feed_aac(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__audio__audio_feed_aac(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__audio__audio_feed_aac(
+          port_, ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__audio__audio_init_decode(
@@ -2310,21 +2310,21 @@ class RustLibWire implements BaseWire {
           wasmModule.wire__crate__ffi__guestbook__guestbook_list(
               ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__h264__h264_feed_decode(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__h264__h264_feed_decode(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__h264__h264_feed_decode(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__h264__h264_feed_decode(
+          port_, ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__h264__h264_feed_encode(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__h264__h264_feed_encode(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__h264__h264_feed_encode(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__h264__h264_feed_encode(
+          port_, ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__h264__h264_init_decode(
@@ -3076,13 +3076,13 @@ class RustLibWire implements BaseWire {
       wasmModule.wire__crate__ffi__minis__minis_watch(
           port_, ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__moderation__moderation_ai_classify_media(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__moderation__moderation_ai_classify_media(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__moderation__moderation_ai_classify_media(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__moderation__moderation_ai_classify_media(
+          port_, ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__moderation__moderation_ai_classify_text(
@@ -3100,13 +3100,13 @@ class RustLibWire implements BaseWire {
           wasmModule.wire__crate__ffi__moderation__moderation_block_user(
               ptr_, rust_vec_len_, data_len_);
 
-  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__moderation__moderation_compute_pdq_hash(
-              PlatformGeneralizedUint8ListPtr ptr_,
-              int rust_vec_len_,
-              int data_len_) =>
-          wasmModule.wire__crate__ffi__moderation__moderation_compute_pdq_hash(
-              ptr_, rust_vec_len_, data_len_);
+  void wire__crate__ffi__moderation__moderation_compute_pdq_hash(
+          NativePortType port_,
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_) =>
+      wasmModule.wire__crate__ffi__moderation__moderation_compute_pdq_hash(
+          port_, ptr_, rust_vec_len_, data_len_);
 
   JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__moderation__moderation_create_jury_case(
@@ -3811,6 +3811,14 @@ class RustLibWire implements BaseWire {
               int rust_vec_len_,
               int data_len_) =>
           wasmModule.wire__crate__ffi__p2p__p2p_moq_publish_group(
+              ptr_, rust_vec_len_, data_len_);
+
+  JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__p2p__p2p_moq_publish_group_json(
+              PlatformGeneralizedUint8ListPtr ptr_,
+              int rust_vec_len_,
+              int data_len_) =>
+          wasmModule.wire__crate__ffi__p2p__p2p_moq_publish_group_json(
               ptr_, rust_vec_len_, data_len_);
 
   void wire__crate__ffi__p2p__p2p_moq_subscribe_fetch(
@@ -5063,11 +5071,8 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
       wire__crate__ffi__audio__audio_drain(PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_, int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__audio__audio_feed_aac(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
+  external void wire__crate__ffi__audio__audio_feed_aac(NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__audio__audio_init_decode(
@@ -6111,17 +6116,11 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int rust_vec_len_,
           int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__h264__h264_feed_decode(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
+  external void wire__crate__ffi__h264__h264_feed_decode(NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__h264__h264_feed_encode(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
+  external void wire__crate__ffi__h264__h264_feed_encode(NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__h264__h264_init_decode(
@@ -6652,11 +6651,11 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
   external void wire__crate__ffi__minis__minis_watch(NativePortType port_,
       PlatformGeneralizedUint8ListPtr ptr_, int rust_vec_len_, int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__moderation__moderation_ai_classify_media(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
+  external void wire__crate__ffi__moderation__moderation_ai_classify_media(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__moderation__moderation_ai_classify_text(
@@ -6670,11 +6669,11 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
           int rust_vec_len_,
           int data_len_);
 
-  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
-      wire__crate__ffi__moderation__moderation_compute_pdq_hash(
-          PlatformGeneralizedUint8ListPtr ptr_,
-          int rust_vec_len_,
-          int data_len_);
+  external void wire__crate__ffi__moderation__moderation_compute_pdq_hash(
+      NativePortType port_,
+      PlatformGeneralizedUint8ListPtr ptr_,
+      int rust_vec_len_,
+      int data_len_);
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__moderation__moderation_create_jury_case(
@@ -7178,6 +7177,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
 
   external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
       wire__crate__ffi__p2p__p2p_moq_publish_group(
+          PlatformGeneralizedUint8ListPtr ptr_,
+          int rust_vec_len_,
+          int data_len_);
+
+  external JSAny? /* flutter_rust_bridge::for_generated::WireSyncRust2DartSse */
+      wire__crate__ffi__p2p__p2p_moq_publish_group_json(
           PlatformGeneralizedUint8ListPtr ptr_,
           int rust_vec_len_,
           int data_len_);

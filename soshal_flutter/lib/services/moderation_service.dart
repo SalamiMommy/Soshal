@@ -527,9 +527,9 @@ class ModerationService extends ChangeNotifier
   /// Classify raw media bytes with the AI media perceptual and chrominance analyzer.
   Future<AiMediaVerdict> aiClassifyMedia(
           Uint8List imageBytes, String mimeType) =>
-      guard(() {
+      guard(() async {
         final json =
-            RustLib.instance.api.crateFfiModerationModerationAiClassifyMedia(
+            await RustLib.instance.api.crateFfiModerationModerationAiClassifyMedia(
           imageBytes: imageBytes,
           mimeType: mimeType,
         );
@@ -541,7 +541,7 @@ class ModerationService extends ChangeNotifier
   Future<PdqHashResult?> computePdqHash(Uint8List imageBytes) async {
     try {
       final json =
-          RustLib.instance.api.crateFfiModerationModerationComputePdqHash(
+          await RustLib.instance.api.crateFfiModerationModerationComputePdqHash(
         imageBytes: imageBytes,
       );
       final map = jsonDecode(json) as Map<String, dynamic>;

@@ -281,16 +281,26 @@ pub fn moderation_ai_classify_text(content: String) -> Result<String, String> {
 }
 
 /// Classify raw media bytes with the AI media perceptual and chrominance analyzer.
-#[frb(sync, serialize)]
-pub fn moderation_ai_classify_media(
+///
+/// Runs on the blocking pool: this is SHA-256 over the whole buffer, an image
+/// decode (capped 4096²), a separable resize to 96² and a full CNN forward
+/// pass, all inline. Note this is not on a hot path today — nothing in the UI
+/// calls `aiClassifyMedia` yet — so the win is prospective, but it becomes a
+/// multi-hundred-millisecond UI stall the moment image moderation is wired in.
+#[frb(serialize)]
+pub async fn moderation_ai_classify_media(
     image_bytes: Vec<u8>,
     mime_type: String,
 ) -> Result<String, String> {
-    Ok(soshal_moderation_core::media::check_media_buffer_ai_json(
-        &image_bytes,
-        &mime_type,
-        &[],
-    ))
+    tokio::task::spawn_blocking(move || {
+        Ok(soshal_moderation_core::media::check_media_buffer_ai_json(
+            &image_bytes,
+            &mime_type,
+            &[],
+        ))
+    })
+    .await
+    .map_err(|e| format!("classify join: {e}"))?
 }
 
 /// 2-Tier Hybrid text evaluation (Tier 1 N-Gram -> Tier 2 RoBERTa).
@@ -306,12 +316,20 @@ pub fn moderation_hybrid_classify_text(
 }
 
 /// Compute 256-bit Meta PDQ perceptual image hash and evaluate against threat blocklist.
-#[frb(sync, serialize)]
-pub fn moderation_compute_pdq_hash(image_bytes: Vec<u8>) -> Result<String, String> {
-    match soshal_moderation_core::media::compute_image_pdq_hash(&image_bytes) {
-        Some(res) => serde_json::to_string(&res).map_err(|e| format!("json encode error: {e}")),
-        None => Err("failed to decode image or extract PDQ hash".to_string()),
-    }
+///
+/// Runs on the blocking pool: it decodes the image and runs a DCT-based
+/// perceptual hash over it. Uncalled from the UI today; see the note on
+/// `moderation_ai_classify_media`.
+#[frb(serialize)]
+pub async fn moderation_compute_pdq_hash(image_bytes: Vec<u8>) -> Result<String, String> {
+    tokio::task::spawn_blocking(
+        move || match soshal_moderation_core::media::compute_image_pdq_hash(&image_bytes) {
+            Some(res) => serde_json::to_string(&res).map_err(|e| format!("json encode error: {e}")),
+            None => Err("failed to decode image or extract PDQ hash".to_string()),
+        },
+    )
+    .await
+    .map_err(|e| format!("pdq join: {e}"))?
 }
 
 /// Create a FROST threshold jury case for community moderation.
