@@ -53,7 +53,7 @@ nostr = { version = "0.45.1", features = ["os-rng", "nip04", "nip47", "nip44"] }
 nostr-sdk = { version = "0.45.1" }
 hex = "0.4"
 base64 = "0.22"
-sha2 = "0.10"
+sha2 = "0.11"
 hmac = "0.12"
 regex = "1"
 rayon = "1.10"
