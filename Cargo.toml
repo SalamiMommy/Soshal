@@ -192,6 +192,19 @@ twox-hash = { version = "1.6.3", default-features = false }
 [profile.dev]
 opt-level = 1
 
+# ...but *dependencies* are a different trade. serde_json, sha2, blake3, libsql
+# and the crypto/decoder stack are where the actual per-event and per-frame work
+# happens, and at opt-level=1 they are an order of magnitude slower than they
+# need to be. This raises only third-party crates to opt-level=3; every
+# `soshal-*` crate keeps inheriting `opt-level = 1` from [profile.dev] above, so
+# workspace-crate rebuild times are unchanged.
+#
+# Deliberately NOT setting `panic`/`overflow-checks` here: the test harness
+# needs unwinding, and `overflow-checks` is enforced in release by policy
+# (see [profile.release] and the bridge-release note below).
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
 opt-level = 3
 lto = true

@@ -36,7 +36,20 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Docs (deny warnings)
         run: cargo doc --workspace --no-deps -- -D warnings
-      - run: cargo install cargo-audit --version 0.22.2 --locked
+      # cargo-audit is a small tool, but `--locked` compiles its whole dep tree
+      # from source (~1-2 min). It gets its OWN cache keyed only on the pinned
+      # tool version, not on Cargo.lock — otherwise every dependency bump in
+      # this repo would throw the binary away and rebuild it from scratch.
+      - name: Cache cargo-audit binary
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: ${{ runner.os }}-cargo-audit-0.22.2
+      - name: Install cargo-audit (cached)
+        run: |
+          if [ ! -x "$HOME/.cargo/bin/cargo-audit" ]; then
+            cargo install cargo-audit --version 0.22.2 --locked
+          fi
       - run: cargo audit
 
   coverage:
@@ -44,6 +57,12 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.8
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+      # The coverage build is instrumented, so it does not share objects with
+      # the plain check/test/clippy build — but it is still the same 34-crate
+      # tree, and llvm-cov flags are stable across runs. Without sccache this
+      # job recompiles everything on every push.
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@d651010b8da762cde178750d8eda7b5febfe147a # v0.0.9
       - name: Cache cargo
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
@@ -52,10 +71,19 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
+      # Same reasoning as rust-check: key the tool binary on its own pinned
+      # version so a dependency bump in this repo does not discard it.
+      - name: Cache cargo-llvm-cov binary
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cargo/bin/cargo-llvm-cov
+          key: ${{ runner.os }}-cargo-llvm-cov-0.8.7
       - name: Install cargo-llvm-cov
         run: |
           rustup component add llvm-tools-preview
-          cargo install cargo-llvm-cov --version 0.8.7 --locked
+          if [ ! -x "$HOME/.cargo/bin/cargo-llvm-cov" ]; then
+            cargo install cargo-llvm-cov --version 0.8.7 --locked
+          fi
       - name: Coverage gate
         run: cargo llvm-cov --workspace --lcov --output-path lcov.info --ignore-filename-regex frb_generated --fail-under-lines 80
 
