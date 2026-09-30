@@ -686,10 +686,11 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
 
   /// Heart-like toggle button (feed parity): single-tap ❤️ with count.
   Widget _heartButton(String targetId, GroupsService api) {
-    final hearts =
-        api.reactionsFor(targetId).where((r) => r.emoji == '❤️').toList();
-    final count = hearts.fold(0, (s, r) => s + r.count);
-    final reacted = hearts.any((r) => r.reacted);
+    // One tally lookup instead of a filter-then-fold-then-any over every cached
+    // reaction for this target.
+    final heart = api.reactionTallies(targetId)['❤️'];
+    final count = heart?.count ?? 0;
+    final reacted = heart?.reacted ?? false;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -713,19 +714,22 @@ class _GroupThreadsTabState extends State<GroupThreadsTab>
   /// toggle directly, the ＋ chip opens the full emoji picker.
   Widget _reactionRow(String targetId, String replyId, GroupsService api,
       {List<String> quick = _quickEmojis}) {
+    // See the note at the loop below for why this is computed once per row.
+    final tallies = api.reactionTallies(targetId);
     return Wrap(
       spacing: 4,
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        // Hoisted out of the loop below. It used to be inside, so a four-chip row
+        // ran four full scans of every cached reaction for this target, and a
+        // reply id misses the direct map lookup and scans every thread's list —
+        // so the cost was per-chip times per-thread on every visible row.
         for (final emoji in quick)
           Builder(builder: (context) {
-            final rs = api
-                .reactionsFor(targetId)
-                .where((r) => r.emoji == emoji)
-                .toList();
-            final count = rs.fold(0, (s, r) => s + r.count);
-            final reacted = rs.any((r) => r.reacted);
+            final tally = tallies[emoji];
+            final count = tally?.count ?? 0;
+            final reacted = tally?.reacted ?? false;
             return FilterChip(
               avatar: Text(emoji, style: const TextStyle(fontSize: 12)),
               label: Text('$count'),

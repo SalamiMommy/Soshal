@@ -370,6 +370,192 @@ void main() {
       expect(groups.roomReactionsFor('m-1'), isEmpty);
     });
 
+    // ─── reaction tallies (6.2) ───────────────────────────────────────────
+    //
+    // `group_tabs.dart` used to call `reactionsFor` once per emoji chip and
+    // filter the result each time, so a four-chip row ran four scans of every
+    // cached reaction. These pin the hoisted version's output, which is the only
+    // part of the optimization a test can actually observe — the scan count is
+    // not visible from Dart.
+
+    test('roomReactionTallies sums counts and ors the reacted flag', () async {
+      final groups = GroupsService();
+      // Two summaries for the same emoji on one message. The tally has to add
+      // them rather than let the later one win, and the flag has to stick if
+      // either says the viewer reacted.
+      api.stubString(
+        'crateFfiGroupsGroupsRoomsReactions',
+        jsonEncode([
+          {'message_id': 'm-1', 'emoji': '👍', 'count': 3, 'reacted': false},
+          {'message_id': 'm-1', 'emoji': '👍', 'count': 4, 'reacted': true},
+          {'message_id': 'm-1', 'emoji': '❤️', 'count': 1, 'reacted': true},
+          {'message_id': 'm-2', 'emoji': '🔥', 'count': 9, 'reacted': false},
+        ]),
+      );
+      await groups.fetchRoomReactions('g-1', 'room-alpha');
+
+      final tallies = groups.roomReactionTallies('m-1');
+      expect(tallies['👍']!.count, 7, reason: '3 + 4 must not collapse to 4');
+      expect(tallies['👍']!.reacted, isTrue,
+          reason: 'the flag is or-ed, so a later unreacted entry cannot clear it');
+      expect(tallies['❤️']!.count, 1);
+      expect(tallies.containsKey('🔥'), isFalse,
+          reason: 'a different message must not leak into this tally');
+
+      // An unknown message has no emojis at all, not a zero-filled one. The
+      // chip row relies on absence meaning "no reaction", so a zero entry would
+      // be indistinguishable from a real one in a count-only read.
+      expect(groups.roomReactionTallies('m-nope'), isEmpty);
+    });
+
+    test('room reaction index is rebuilt when a second room is fetched',
+        () async {
+      final groups = GroupsService();
+      api.stubString(
+        'crateFfiGroupsGroupsRoomsReactions',
+        jsonEncode([
+          {'message_id': 'm-1', 'emoji': '👍', 'count': 3, 'reacted': true},
+        ]),
+      );
+      await groups.fetchRoomReactions('g-1', 'room-alpha');
+      expect(groups.roomReactionsFor('m-1'), hasLength(1));
+
+      // A second room must not drop the first room's messages from the index.
+      // The index is rebuilt from scratch on each fetch, so this is the case
+      // that catches a stale-index bug.
+      api.stubString(
+        'crateFfiGroupsGroupsRoomsReactions',
+        jsonEncode([
+          {'message_id': 'm-9', 'emoji': '🔥', 'count': 2, 'reacted': false},
+        ]),
+      );
+      await groups.fetchRoomReactions('g-1', 'room-beta');
+
+      expect(groups.roomReactionsFor('m-1'), hasLength(1),
+          reason: 'room-alpha is still cached');
+      expect(groups.roomReactionsFor('m-9'), hasLength(1));
+
+      // And re-fetching room-alpha with no reactions must empty it rather than
+      // leave the previous summary visible.
+      api.stubString('crateFfiGroupsGroupsRoomsReactions', '[]');
+      await groups.fetchRoomReactions('g-1', 'room-alpha');
+      expect(groups.roomReactionsFor('m-1'), isEmpty);
+    });
+
+    test('the message index is its own list, not an alias of the room summary',
+        () async {
+      final groups = GroupsService();
+      api.stubString(
+        'crateFfiGroupsGroupsRoomsReactions',
+        jsonEncode([
+          {'message_id': 'm-1', 'emoji': '👍', 'count': 3, 'reacted': false},
+        ]),
+      );
+      // Hold on to the list the bridge hand-back produced.
+      final fetched =
+          await groups.fetchRoomReactions('g-1', 'room-alpha');
+
+      // Mutating the source list after the fact must not reach the index. If the
+      // index aliased it, a later rebuild would pick up the injected entry and
+      // the count would silently drift.
+      fetched.add(RoomReaction(
+        messageId: 'm-1',
+        emoji: 'injected',
+        count: 999,
+        reacted: true,
+      ));
+
+      // Force a rebuild from the mutated source. The index is built from
+      // `_reactionsByRoom`, which holds that same list, so a stale index would
+      // show only '👍' here.
+      api.stubString(
+        'crateFfiGroupsGroupsRoomsReactions',
+        jsonEncode([
+          {'message_id': 'm-1', 'emoji': '👍', 'count': 3, 'reacted': false},
+        ]),
+      );
+      await groups.fetchRoomReactions('g-1', 'room-alpha');
+
+      expect(groups.roomReactionsFor('m-1'), hasLength(1),
+          reason: 'the injected entry was written into the previous fetch\'s '
+              'list, and the reindex rebuilt from a freshly parsed one');
+    });
+
+    test('thread reaction tallies group a thread and its replies', () async {
+      final groups = GroupsService();
+      // One thread's summary holds reactions for the thread itself and for one
+      // of its replies. None of that is keyed in the cache map by reply id --
+      // which is exactly why a reply can only be found by scanning.
+      api.stubString(
+        'crateFfiGroupsGroupsThreadsReactions',
+        jsonEncode([
+          {
+            'thread_id': 't-1',
+            'reply_id': '',
+            'emoji': '🔥',
+            'count': 4,
+            'reacted': false,
+          },
+          {
+            'thread_id': 't-1',
+            'reply_id': 'r-1',
+            'emoji': '👍',
+            'count': 2,
+            'reacted': true,
+          },
+          {
+            'thread_id': 't-1',
+            'reply_id': 'r-1',
+            'emoji': '👍',
+            'count': 3,
+            'reacted': false,
+          },
+        ]),
+      );
+      await groups.fetchReactions('t-1', 'pk-me');
+
+      final threadTally = groups.reactionTallies('t-1');
+      expect(threadTally['🔥']!.count, 4);
+
+      // CHARACTERIZATION, and this is a pre-existing bug, not intended
+      // behaviour: `reactionsFor('t-1')` hits the direct map lookup and returns
+      // the whole stored summary, which includes the reply's reactions — even
+      // though `ThreadReaction.matches` documents the thread row as covering
+      // only empty-`replyId` entries. So a reply's 👍 is counted on the thread
+      // row *and* on the reply row. That is the behaviour this optimization had
+      // to preserve, and it is pinned here so a future fix has to update it
+      // consciously rather than discover it as a count regression.
+      expect(threadTally['👍']!.count, 5,
+          reason: 'reply reactions currently leak into the thread tally');
+
+      // The reply id is not a key in the cache, so this exercises the scan.
+      final replyTally = groups.reactionTallies('r-1');
+      expect(replyTally['👍']!.count, 5);
+      expect(replyTally['👍']!.reacted, isTrue);
+      expect(replyTally.containsKey('🔥'), isFalse);
+
+      // A second thread cached under its own key must not leak into the first
+      // thread's tally, and its direct hit must win over any scan.
+      api.stubString(
+        'crateFfiGroupsGroupsThreadsReactions',
+        jsonEncode([
+          {
+            'thread_id': 't-2',
+            'reply_id': '',
+            'emoji': '🔥',
+            'count': 7,
+            'reacted': true,
+          },
+        ]),
+      );
+      await groups.fetchReactions('t-2', 'pk-me');
+
+      expect(groups.reactionTallies('t-2')['🔥']!.count, 7);
+      expect(groups.reactionTallies('t-1')['🔥']!.count, 4,
+          reason: 't-2 must not leak into t-1 even though t-1 now needs the '
+              'scan, because the direct hit for t-2 is a separate key');
+    });
+
     test('reactToRoomMessage passes args to bridge', () async {
       final groups = GroupsService();
       api.stubBool('crateFfiGroupsGroupsRoomsReact', true);

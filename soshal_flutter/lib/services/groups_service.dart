@@ -26,6 +26,11 @@ class GroupsService extends ChangeNotifier
   List<GroupThreadReply> _replies = [];
   final Map<String, List<ThreadReaction>> _reactionsByThread = {};
   final Map<String, List<RoomReaction>> _reactionsByRoom = {};
+  /// Index of [_reactionsByRoom] by message id, maintained by
+  /// [_reindexRoomReactions]. A room can hold many messages, and the summaries
+  /// are stored per room, so without this every rendered message row scanned
+  /// every cached room.
+  final Map<String, List<RoomReaction>> _reactionsByMessage = {};
   List<GroupVoiceChannel> _voiceChannels = [];
   List<GroupVoicePresence> _presence = [];
 
@@ -78,6 +83,7 @@ class GroupsService extends ChangeNotifier
     _replies = [];
     _reactionsByThread.clear();
     _reactionsByRoom.clear();
+    _reactionsByMessage.clear();
     _voiceChannels = [];
     _presence = [];
     clearLastError();
@@ -85,6 +91,13 @@ class GroupsService extends ChangeNotifier
   }
 
   /// Emoji reactions for a target (thread or reply id).
+  ///
+  /// Fast path first, then the scan. The scan is still needed and is not merely
+  /// a fallback for missing entries: `fetchReactions` stores one summary list
+  /// per *thread*, and that list holds reactions for the thread **and** for each
+  /// of its replies, keyed by nothing in this map. So a reply id is only ever
+  /// findable by scanning. [group_tabs.dart] calls this once per emoji chip, so
+  /// the scan is multiplied by the chip count per visible row.
   List<ThreadReaction> reactionsFor(String targetId) {
     final direct = _reactionsByThread[targetId];
     if (direct != null) return direct;
@@ -97,8 +110,37 @@ class GroupsService extends ChangeNotifier
     return out;
   }
 
+  /// Reaction totals for one target, keyed by emoji.
+  ///
+  /// Hoisting the scan out of the caller's per-emoji loop is the point of this:
+  /// the caller needs a count and a reacted flag per emoji, and deriving those
+  /// from a map turns five full scans of every cached reaction into one.
+  ///
+  /// A target can legitimately have more than one entry for the same emoji, so
+  /// counts sum rather than overwrite. `reacted` is or-ed for the same reason.
+  /// An emoji with no reactions is absent from the map; callers that need to know
+  /// "seen and zero" must not infer it from absence, since the map only carries
+  /// emojis that have at least one cached summary.
+  Map<String, ReactionTally> reactionTallies(String targetId) {
+    final out = <String, ReactionTally>{};
+    for (final r in reactionsFor(targetId)) {
+      final prev = out[r.emoji];
+      out[r.emoji] = prev == null
+          ? ReactionTally(r.count, r.reacted)
+          : prev.plus(r.count, r.reacted);
+    }
+    return out;
+  }
+
   /// Emoji reactions for a room message.
+  ///
+  /// No fast path, unlike [reactionsFor]: `fetchRoomReactions` stores its summary
+  /// keyed by **room id**, and `RoomReaction` carries a `messageId` with no
+  /// lookup of its own, so every message in every cached room is scanned. The
+  /// index below makes that unnecessary.
   List<RoomReaction> roomReactionsFor(String messageId) {
+    final direct = _reactionsByMessage[messageId];
+    if (direct != null) return direct;
     final out = <RoomReaction>[];
     for (final list in _reactionsByRoom.values) {
       for (final r in list) {
@@ -106,6 +148,32 @@ class GroupsService extends ChangeNotifier
       }
     }
     return out;
+  }
+
+  /// Reaction totals for one room message, keyed by emoji. See
+  /// [reactionTallies].
+  Map<String, ReactionTally> roomReactionTallies(String messageId) {
+    final out = <String, ReactionTally>{};
+    for (final r in roomReactionsFor(messageId)) {
+      final prev = out[r.emoji];
+      out[r.emoji] = prev == null
+          ? ReactionTally(r.count, r.reacted)
+          : prev.plus(r.count, r.reacted);
+    }
+    return out;
+  }
+
+  /// Rebuild [_reactionsByMessage] from [_reactionsByRoom].
+  ///
+  /// Only [fetchRoomReactions] and [resetForAccountSwitch] write either map, and
+  /// both go through here, so the index cannot drift from its source.
+  void _reindexRoomReactions() {
+    _reactionsByMessage.clear();
+    for (final list in _reactionsByRoom.values) {
+      for (final r in list) {
+        (_reactionsByMessage[r.messageId] ??= <RoomReaction>[]).add(r);
+      }
+    }
   }
 
   /// Reactive stream of groups for [userPubkey], updating live when groups change.
@@ -521,6 +589,7 @@ class GroupsService extends ChangeNotifier
             .map((e) => RoomReaction.fromJson(e as Map<String, dynamic>))
             .toList();
         _reactionsByRoom[roomId] = list;
+        _reindexRoomReactions();
         return list;
       }, onNotify: notifyDeferred);
 
@@ -990,6 +1059,20 @@ class GroupThread {
 
 /// An emoji reaction summary row: per-target (thread or reply) counts with
 /// the viewer's own reaction flag.
+/// Count and viewer-reacted flag for one emoji on one target.
+///
+/// A target can hold more than one summary for the same emoji, so totals are
+/// summed and the flag is or-ed rather than overwritten.
+class ReactionTally {
+  final int count;
+  final bool reacted;
+
+  const ReactionTally(this.count, this.reacted);
+
+  ReactionTally plus(int otherCount, bool otherReacted) =>
+      ReactionTally(count + otherCount, reacted || otherReacted);
+}
+
 class ThreadReaction {
   final String threadId;
   final String replyId;

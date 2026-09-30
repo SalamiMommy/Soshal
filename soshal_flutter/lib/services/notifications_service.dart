@@ -120,6 +120,18 @@ class NotificationService extends ChangeNotifier
     _notificationSub?.cancel();
     _notificationSub = watchNotifications(pubkey, limit: limit).listen((items) {
       final capped = items.length > 100 ? items.sublist(0, 100) : items;
+      // This is the hot path: the watch stream re-parses on every tick, so an
+      // unchanged payload arrives as entirely fresh instances. Without the
+      // equality guard it replaced the lists and notified unconditionally, and
+      // every `Selector` in `notifications_screen.dart` rebuilt — a `Selector`
+      // whose whole job is to not rebuild when the contents did not change.
+      // The other two entry points (`fetchNotifications`, `fetchByType`) already
+      // guarded this way; this one did not.
+      if (_sameNotifications(_notifications, capped)) {
+        _isLoading = false;
+        clearLastError();
+        return;
+      }
       _notifications = capped;
       _unread = _notifications.where((n) => !n.read).toList();
       _unreadCount = _unread.length;
@@ -435,7 +447,11 @@ class NotificationService extends ChangeNotifier
   bool _sameNotifications(List<AppNotification> a, List<AppNotification> b) {
     if (a.length != b.length) return false;
     for (var i = 0; i < a.length; i++) {
-      if (a[i].id != b[i].id || a[i].read != b[i].read) return false;
+      // Full value equality, not just id + read. This is the guard that decides
+      // whether to skip a notify, so a field it ignores is a change the UI is
+      // never told about — the same `fromName` edit that `operator ==` has to
+      // catch, since this is what the `Selector` comparison now rests on.
+      if (a[i] != b[i]) return false;
     }
     return true;
   }
@@ -475,6 +491,41 @@ class AppNotification {
     required this.read,
     required this.actionUrl,
   });
+
+  /// Value equality over **every** field.
+  ///
+  /// This exists for the `Selector` in `notifications_screen.dart`, which gates its
+  /// rebuild on `listEquals`. Without it that comparison is identity-based, and
+  /// the notification watch stream re-parses fresh instances on every tick — so
+  /// an unchanged payload never compared equal and the whole list rebuilt each
+  /// time. `subscribeToNotifications` is the hot path: it assigns `_notifications`
+  /// straight from `parseNotifications` with no equality guard, unlike
+  /// `fetchNotifications` and `fetchByType`, which both check `_sameNotifications`
+  /// first.
+  ///
+  /// Covering every field, rather than the `id` + `read` pair that
+  /// `_sameNotifications` compares, is the safety requirement: any field left out
+  /// would be a change the `Selector` silently refuses to rebuild for. That
+  /// failure is invisible in a list-count assertion, since the row count does not
+  /// change when a field like `fromName` does.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AppNotification &&
+          other.id == id &&
+          other.notificationType == notificationType &&
+          other.fromPubkey == fromPubkey &&
+          other.fromName == fromName &&
+          other.fromAvatar == fromAvatar &&
+          other.contentPreview == contentPreview &&
+          other.eventId == eventId &&
+          other.createdAt == createdAt &&
+          other.read == read &&
+          other.actionUrl == actionUrl;
+
+  @override
+  int get hashCode => Object.hash(id, notificationType, fromPubkey, fromName,
+      fromAvatar, contentPreview, eventId, createdAt, read, actionUrl);
 
   factory AppNotification.fromJson(Map<String, dynamic> json) {
     return AppNotification(

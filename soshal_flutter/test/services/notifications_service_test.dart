@@ -1,5 +1,7 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:async';
+import 'dart:convert' show jsonDecode;
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soshal_flutter/services/notifications_service.dart';
 
@@ -217,6 +219,198 @@ void main() {
       await pumpEventQueue();
       // Should remain empty because subscription was cancelled
       expect(notif.notifications.isEmpty, true);
+    });
+
+    // ─── value equality (6.3) ─────────────────────────────────────────────
+    //
+    // `notifications_screen.dart` gates its rebuild on
+    // `Selector.shouldRebuild: (a, b) => !listEquals(a, b)`, so these pin what
+    // that comparison is actually able to see.
+
+    test('two notifications with identical content are equal', () {
+      final a = AppNotification.fromJson(
+          jsonDecode(notifJson('n-1', 'like')) as Map<String, dynamic>);
+      final b = AppNotification.fromJson(
+          jsonDecode(notifJson('n-1', 'like')) as Map<String, dynamic>);
+
+      // Two separate parse passes -- exactly what the watch stream produces on
+      // every tick.
+      expect(identical(a, b), isFalse);
+      expect(a, equals(b));
+      expect(a.hashCode, equals(b.hashCode));
+      expect(listEquals([a], [b]), isTrue,
+          reason: 'this is the comparison the Selector makes');
+    });
+
+    test('every field participates in equality', () {
+      // A field missing from `operator ==` is a change the Selector would
+      // silently refuse to rebuild for, and the row count does not change, so no
+      // list-length assertion would ever catch it. Hence one case per field.
+      final base = AppNotification.fromJson(
+          jsonDecode(notifJson('n-1', 'like')) as Map<String, dynamic>);
+
+      final variants = <String, AppNotification>{
+        'id': AppNotification(
+            id: 'other', notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey, fromName: base.fromName,
+            fromAvatar: base.fromAvatar,
+            contentPreview: base.contentPreview, eventId: base.eventId,
+            createdAt: base.createdAt, read: base.read, actionUrl: base.actionUrl),
+        'notificationType': AppNotification(
+            id: base.id, notificationType: 'other',
+            fromPubkey: base.fromPubkey, fromName: base.fromName,
+            fromAvatar: base.fromAvatar,
+            contentPreview: base.contentPreview, eventId: base.eventId,
+            createdAt: base.createdAt, read: base.read, actionUrl: base.actionUrl),
+        'fromPubkey': AppNotification(
+            id: base.id, notificationType: base.notificationType,
+            fromPubkey: 'other', fromName: base.fromName,
+            fromAvatar: base.fromAvatar,
+            contentPreview: base.contentPreview, eventId: base.eventId,
+            createdAt: base.createdAt, read: base.read, actionUrl: base.actionUrl),
+        'fromName': AppNotification(
+            id: base.id, notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey, fromName: 'other',
+            fromAvatar: base.fromAvatar,
+            contentPreview: base.contentPreview, eventId: base.eventId,
+            createdAt: base.createdAt, read: base.read, actionUrl: base.actionUrl),
+        'fromAvatar': AppNotification(
+            id: base.id, notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey, fromName: base.fromName,
+            fromAvatar: 'other', contentPreview: base.contentPreview,
+            eventId: base.eventId, createdAt: base.createdAt, read: base.read,
+            actionUrl: base.actionUrl),
+        'contentPreview': AppNotification(
+            id: base.id, notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey, fromName: base.fromName,
+            fromAvatar: base.fromAvatar, contentPreview: 'other',
+            eventId: base.eventId, createdAt: base.createdAt, read: base.read,
+            actionUrl: base.actionUrl),
+        'eventId': AppNotification(
+            id: base.id, notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey, fromName: base.fromName,
+            fromAvatar: base.fromAvatar,
+            contentPreview: base.contentPreview, eventId: 'other',
+            createdAt: base.createdAt, read: base.read, actionUrl: base.actionUrl),
+        'createdAt': AppNotification(
+            id: base.id, notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey, fromName: base.fromName,
+            fromAvatar: base.fromAvatar,
+            contentPreview: base.contentPreview, eventId: base.eventId,
+            createdAt: 1, read: base.read, actionUrl: base.actionUrl),
+        'read': AppNotification(
+            id: base.id, notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey, fromName: base.fromName,
+            fromAvatar: base.fromAvatar,
+            contentPreview: base.contentPreview, eventId: base.eventId,
+            createdAt: base.createdAt, read: !base.read,
+            actionUrl: base.actionUrl),
+        'actionUrl': AppNotification(
+            id: base.id, notificationType: base.notificationType,
+            fromPubkey: base.fromPubkey, fromName: base.fromName,
+            fromAvatar: base.fromAvatar,
+            contentPreview: base.contentPreview, eventId: base.eventId,
+            createdAt: base.createdAt, read: base.read, actionUrl: 'other'),
+      };
+
+      for (final entry in variants.entries) {
+        expect(entry.value, isNot(equals(base)),
+            reason: 'a change to ${entry.key} must be visible to the Selector');
+        expect(listEquals([base], [entry.value]), isFalse,
+            reason: 'the Selector must rebuild when ${entry.key} changes');
+      }
+    });
+
+    test('a watch tick with unchanged content notifies nobody', () async {
+      final notif = NotificationService();
+      final controller = StreamController<String>();
+      addTearDown(controller.close);
+      api.stub('crateFfiNotificationsNotificationsWatch',
+          (_) => controller.stream);
+
+      var notified = 0;
+      notif.addListener(() => notified++);
+      notif.subscribeToNotifications('me', limit: 50);
+
+      final payload = '[${notifJson('live-1', 'like')}]';
+      controller.add(payload);
+      await pumpEventQueue();
+      expect(notified, 1, reason: 'the first tick is real content');
+      final first = notif.notifications;
+
+      // Same payload, re-sent. The stream re-parses into fresh instances, so
+      // without the guard the Selector compared identity and rebuilt a list
+      // whose contents had not moved at all.
+      controller.add(payload);
+      await pumpEventQueue();
+      controller.add(payload);
+      await pumpEventQueue();
+
+      expect(notified, 1,
+          reason: 'identical content on the watch stream is not a change');
+      expect(identical(notif.notifications, first), isTrue,
+          reason: 'and the list itself is left alone');
+      expect(notif.unreadCount, 1);
+    });
+
+    test('a watch tick that changes one field still notifies', () async {
+      final notif = NotificationService();
+      final controller = StreamController<String>();
+      addTearDown(controller.close);
+      api.stub('crateFfiNotificationsNotificationsWatch',
+          (_) => controller.stream);
+
+      var notified = 0;
+      notif.addListener(() => notified++);
+      notif.subscribeToNotifications('me', limit: 50);
+
+      controller.add('[${notifJson('live-1', 'like')}]');
+      await pumpEventQueue();
+      expect(notified, 1);
+
+      // Same id, same read state, edited body. An equality check that compared
+      // only id + read -- which is what `_sameNotifications` used to do -- would
+      // swallow this and leave the row showing stale text.
+      controller.add(
+        '[{"id":"live-1","notification_type":"like",'
+        '"from_pubkey":"pk-live-1","from_name":"Renamed",'
+        '"from_avatar":"av-live-1","content_preview":"edited",'
+        '"event_id":"ev-live-1","created_at":1700000000,"read":false,'
+        '"action_url":"soshal://n/live-1"}]',
+      );
+      await pumpEventQueue();
+
+      expect(notified, 2,
+          reason: 'a content edit is a change, id and read state or not');
+      expect(notif.lastError, isNull,
+          reason: 'the payload was a well-formed list, so this is a real '
+              'content change and not the parse-error path');
+      expect(notif.notifications.single.fromName, 'Renamed');
+      expect(notif.notifications.single.contentPreview, 'edited');
+    });
+
+    test('a watch tick that only reorders is a change, and a shrink too',
+        () async {
+      final notif = NotificationService();
+      final controller = StreamController<String>();
+      addTearDown(controller.close);
+      api.stub('crateFfiNotificationsNotificationsWatch',
+          (_) => controller.stream);
+
+      var notified = 0;
+      notif.addListener(() => notified++);
+      notif.subscribeToNotifications('me', limit: 50);
+
+      controller
+        ..add('[${notifJson('a', 'like')}, ${notifJson('b', 'reply')}]')
+        ..add('[${notifJson('b', 'reply')}, ${notifJson('a', 'like')}]');
+      await pumpEventQueue();
+      expect(notified, 2,
+          reason: 'position is content here -- the list is ordered newest-first');
+
+      controller.add('[${notifJson('a', 'like')}]');
+      await pumpEventQueue();
+      expect(notified, 3, reason: 'a shorter list is a change');
     });
   });
 }
