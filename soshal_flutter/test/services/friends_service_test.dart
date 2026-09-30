@@ -272,5 +272,143 @@ void main() {
       expect(fofFiltered.map((i) => i['pk']),
           ['my-pk', 'pk-friend-1', 'pk-fof-1']);
     });
+
+    // ─── notification precision ────────────────────────────────────────────
+    //
+    // `notifyListeners` on this service used to fire three times per graph load
+    // (its own explicit notify, `guard`'s, and the nested `fetchSuggestions`),
+    // and once more for every cache hit — with twelve screens rebuilding through
+    // `filterList`, a navigation that hit the cache still rebuilt twelve whole
+    // subtrees. These pin the contract that replaced it.
+
+    void stubGraph({List<String> follows = const [], List<String> sugg = const []}) {
+      api.stub('crateFfiIdentityIdentityFetchFollows',
+          (_) => jsonEncode(follows));
+      api.stub('crateFfiIdentityIdentityFetchFollowsUnion',
+          (_) => jsonEncode(sugg));
+      api.stubListString('crateFfiSocialSocialFriendSuggestions', sugg);
+    }
+
+    test('a cache-hit loadAudienceGraph notifies nobody', () async {
+      final friends = FriendsService();
+      stubGraph(follows: ['pk-friend-1']);
+
+      await friends.loadAudienceGraph('my-pk', force: true);
+      var notified = 0;
+      friends.addListener(() => notified++);
+
+      // Second load for the same account, already cached. This is what every
+      // screen's `initState` does on navigation.
+      await friends.loadAudienceGraph('my-pk');
+      await friends.loadAudienceGraph('my-pk');
+
+      expect(notified, 0,
+          reason: 'a cache hit hands back the identical graph, so it is not a '
+              'change; it must not rebuild the audience-filtered screens');
+    });
+
+    test('a real loadAudienceGraph notifies exactly once', () async {
+      final friends = FriendsService();
+      stubGraph(follows: ['pk-friend-1']);
+
+      var notified = 0;
+      friends.addListener(() => notified++);
+      await friends.loadAudienceGraph('my-pk', force: true);
+
+      expect(notified, 1,
+          reason: 'the body notifies explicitly and `guard` is told not to '
+              'notify on success; anything more is a duplicate rebuild');
+    });
+
+    test('a repeated fetchSuggestions with the same content is not a change',
+        () async {
+      final friends = FriendsService();
+      // A *fresh* list per call, like the real bridge: it decodes a new list out
+      // of the returned JSON every time. `api.stubListString` hands back one
+      // shared instance, which would make an identity comparison accidentally
+      // hold and let this exact regression through the suite.
+      final handedOut = <List<String>>[];
+      api.stub('crateFfiSocialSocialFriendSuggestions', (_) {
+        final fresh = List<String>.of(const ['pk-1', 'pk-2']);
+        handedOut.add(fresh);
+        return fresh;
+      });
+
+      await friends.fetchSuggestions();
+      final revision = friends.audienceRevision;
+
+      await friends.fetchSuggestions();
+      await friends.fetchSuggestions();
+
+      expect(handedOut.length, 3);
+      expect(
+          handedOut
+              .skip(1)
+              .every((l) => !identical(l, handedOut.first)),
+          isTrue,
+          reason: 'guard against the stub going back to sharing one instance, '
+              'which would make this test pass for the wrong reason');
+
+      expect(friends.audienceRevision, revision,
+          reason: 'the graph has identical contents, so the audience filters '
+              'render identically and must not be rebuilt');
+    });
+
+    test('fetchSuggestions with different content does bump the revision',
+        () async {
+      final friends = FriendsService();
+      api.stubListString(
+          'crateFfiSocialSocialFriendSuggestions', const ['pk-1']);
+      await friends.fetchSuggestions();
+      final revision = friends.audienceRevision;
+
+      api.stubListString(
+          'crateFfiSocialSocialFriendSuggestions', const ['pk-1', 'pk-2']);
+      await friends.fetchSuggestions();
+
+      expect(friends.audienceRevision, greaterThan(revision));
+      expect(friends.suggestions, ['pk-1', 'pk-2']);
+    });
+
+    test('audienceRevision tracks contact edits and account switch', () async {
+      final friends = FriendsService();
+      final start = friends.audienceRevision;
+
+      friends.addContact(profile('pk-1', 'alice'));
+      final afterAdd = friends.audienceRevision;
+      expect(afterAdd, greaterThan(start));
+
+      // A duplicate add is a no-op: it returns before mutating, so it must not
+      // bump the revision either.
+      friends.addContact(profile('pk-1', 'alice'));
+      expect(friends.audienceRevision, afterAdd);
+
+      friends.removeContact('pk-1');
+      final afterRemove = friends.audienceRevision;
+      expect(afterRemove, greaterThan(afterAdd));
+
+      // Removing an absent contact changes nothing.
+      friends.removeContact('pk-9');
+      expect(friends.audienceRevision, afterRemove);
+
+      friends.resetForAccountSwitch();
+      expect(friends.audienceRevision, greaterThan(afterRemove));
+    });
+
+    test('a non-graph failure still notifies so the error banner appears',
+        () async {
+      final friends = FriendsService();
+      api.stub('crateFfiRelationsRelationsSendFriendRequest',
+          (_) => throw Exception('relay refused'));
+
+      var notified = 0;
+      friends.addListener(() => notified++);
+      await expectLater(friends.sendFriendRequest('pk-9'), throwsException);
+
+      expect(notified, 1,
+          reason: 'suppressing the success notify must not suppress the error '
+              'one, or a failed request would leave no banner');
+      expect(friends.lastError, contains('relay refused'));
+    });
   });
 }

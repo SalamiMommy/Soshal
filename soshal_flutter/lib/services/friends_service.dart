@@ -1,5 +1,6 @@
 // ignore_for_file: invalid_use_of_internal_member
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:soshal_flutter/frb_generated.dart';
@@ -37,13 +38,35 @@ enum AudienceFilter {
 /// Friend suggestions, friend requests, and an in-memory local contact list.
 /// The contact list is kept in memory only (no persistence) until the
 /// backend-gated contact store lands.
-class FriendsService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
+class FriendsService extends ChangeNotifier
+    with LastErrorMixin, ServiceGuard, DeferredNotify {
   List<String> _suggestions = [];
   bool _suggestionsLoaded = false;
   final List<ProfileInfo> _contacts = [];
   Set<String> _friendPubkeys = {};
   Set<String> _fofPubkeys = {};
   String? _loadedForPubkey;
+
+  /// Bumped whenever the audience graph's *contents* change.
+  ///
+  /// This is the service's own record of "a notification means something changed",
+  /// which it otherwise does not: `ServiceGuard.guard` notifies on completion of
+  /// every guarded call — success, failure, or a no-op — so a single
+  /// `loadAudienceGraph` used to fire four notifications (the guarded
+  /// `fetchFollows`, the guarded `fetchSuggestions`, the guarded
+  /// `fetchFollowsUnion`, and its own), and every cache hit fired a fifth that
+  /// changed nothing at all. With twelve screens watching through `filterList`,
+  /// each of those rebuilt twelve whole subtrees.
+  ///
+  /// Those notifications are now suppressed at the source instead (see
+  /// [loadAudienceGraph]), which is the actual fix — the screens still `watch`
+  /// the service, because `select` cannot be used here. It is worth keeping the
+  /// counter as an observable assertion of that contract rather than as a
+  /// selection key: a caller or test can check that a notification-worthy
+  /// operation really did change the graph, independently of whether anything
+  /// rebuilt.
+  int _audienceRevision = 0;
+  int get audienceRevision => _audienceRevision;
 
   List<String> get suggestions => _suggestions;
   bool get suggestionsLoaded => _suggestionsLoaded;
@@ -60,17 +83,36 @@ class FriendsService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
     _suggestionsLoaded = false;
     _contacts.clear();
     clearLastError();
+    _audienceRevision++;
     notifyListeners();
   }
 
   /// Load friend suggestions from the bridge (pubkey list from the social
   /// contact graph). Empty when nothing to suggest yet.
-  Future<List<String>> fetchSuggestions() => guard(() {
-        _suggestions =
-            RustLib.instance.api.crateFfiSocialSocialFriendSuggestions();
-        _suggestionsLoaded = true;
-        return _suggestions;
-      });
+  Future<List<String>> fetchSuggestions() =>
+      guard(_fetchSuggestionsUnguarded);
+
+  /// Body of [fetchSuggestions], without the [guard] wrapper.
+  ///
+  /// Split out because [loadAudienceGraph] calls this as one step of building the
+  /// graph, and a `guard` notification at that point is pure noise: it rebuilds
+  /// every audience-filtered screen against a `_fofPubkeys` that has not been
+  /// assigned yet. The wrapper is right for a caller asking for suggestions; it
+  /// is wrong for an internal step that swallows its own result.
+  List<String> _fetchSuggestionsUnguarded() {
+    final next = RustLib.instance.api.crateFfiSocialSocialFriendSuggestions();
+    // Only a real content change is a graph change. The bridge returns a
+    // fresh list each call, so an identity check would always say "changed";
+    // the suggestions are small, and an exact comparison is the only way to
+    // keep a repeated no-op refresh from rebuilding every audience-filtered
+    // screen.
+    if (!listEquals(next, _suggestions)) {
+      _suggestions = next;
+      _audienceRevision++;
+    }
+    _suggestionsLoaded = true;
+    return _suggestions;
+  }
 
   /// Send a friend request to `pubkey`. Returns true when accepted.
   Future<bool> sendFriendRequest(String pubkey) => guard(() {
@@ -103,33 +145,69 @@ class FriendsService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
             : <String>[];
       });
 
+  /// Unguarded bodies of [fetchFollows] and [fetchFollowsUnion], for
+  /// [loadAudienceGraph]'s internal use. See
+  /// [_fetchSuggestionsUnguarded] for why the wrapper is bypassed there.
+  String _fetchFollowsUnguarded(String pubkey) =>
+      RustLib.instance.api.crateFfiIdentityIdentityFetchFollows(pubkey: pubkey);
+
+  List<String> _fetchFollowsUnionUnguarded(List<String> pubkeys) {
+    final raw = RustLib.instance.api
+        .crateFfiIdentityIdentityFetchFollowsUnion(pubkeys: pubkeys);
+    final decoded = jsonDecode(raw);
+    return decoded is List
+        ? decoded.whereType<String>().toList()
+        : <String>[];
+  }
+
   /// Add a profile to the in-memory contact list.
   void addContact(ProfileInfo profile) {
     if (_contacts.any((c) => c.pubkey == profile.pubkey)) return;
     _contacts.add(profile);
     _friendPubkeys.add(profile.pubkey);
+    _audienceRevision++;
     clearLastError();
     notifyListeners();
   }
 
   /// Remove a contact from the in-memory list.
   void removeContact(String pubkey) {
+    final before = _contacts.length;
     _contacts.removeWhere((c) => c.pubkey == pubkey);
     _friendPubkeys.remove(pubkey);
+    if (_contacts.length != before) _audienceRevision++;
     notifyListeners();
   }
 
   /// Load and cache the user's direct friends and friends-of-friends graph.
+  ///
+  /// This fires exactly one notification, and only when the graph it builds
+  /// differs from the one it already had. It used to fire four: the guarded
+  /// `fetchFollows`, the guarded `fetchSuggestions`, the guarded
+  /// `fetchFollowsUnion`, and its own — three of them before `_fofPubkeys` was
+  /// even assigned, so each rebuilt the twelve audience-filtered screens against
+  /// half-updated state. The nested calls therefore go through the unguarded
+  /// bodies, and `guard` is told not to notify on success. The error path still
+  /// notifies, so the error banner still appears.
+  ///
+  /// A nested failure no longer sets `lastError` either. That is the better
+  /// behaviour, not a regression: the result is swallowed here, so a graph load
+  /// that overall succeeded should not raise an error banner for a step that
+  /// failed and was handled.
   Future<void> loadAudienceGraph(String myPubkey, {bool force = false}) =>
       guard(() async {
         if (!force &&
             _loadedForPubkey == myPubkey &&
             _friendPubkeys.isNotEmpty) {
+          // Cache hit. The body returns without notifying, but `guard` would
+          // notify on the way out, and eight screens call this from `initState`
+          // — so every navigation to one of them rebuilt the whole screen to be
+          // handed the identical graph it already had.
           return;
         }
         final follows = <String>{};
         try {
-          final raw = await fetchFollows(myPubkey);
+          final raw = _fetchFollowsUnguarded(myPubkey);
           final decoded = jsonDecode(raw);
           if (decoded is List) {
             follows.addAll(decoded.whereType<String>());
@@ -143,8 +221,7 @@ class FriendsService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
 
         final fof = <String>{};
         try {
-          final sugg = await fetchSuggestions();
-          fof.addAll(sugg);
+          fof.addAll(_fetchSuggestionsUnguarded());
         } catch (_) {}
 
         // Traverse first-degree follows to expand friends of friends. One
@@ -153,13 +230,21 @@ class FriendsService extends ChangeNotifier with LastErrorMixin, ServiceGuard {
         // full UI-isolate block. The batch merges the lists in the same
         // first-occurrence order, so `fof` ends up identical either way.
         try {
-          fof.addAll(await fetchFollowsUnion(follows.take(25).toList()));
+          fof.addAll(_fetchFollowsUnionUnguarded(follows.take(25).toList()));
         } catch (_) {}
         fof.remove(myPubkey);
         _fofPubkeys = fof;
         _loadedForPubkey = myPubkey;
-        notifyListeners();
-      });
+        _audienceRevision++;
+        // `notifyDeferred`, not `notifyListeners`. All three bridge calls here
+        // are `#[frb(sync)]`, so this body no longer has a single `await` and
+        // runs to completion synchronously — eight screens reach it from
+        // `initState`, so a direct notify would fire mid-build and trip the
+        // "setState() or markNeedsBuild() called during build" assertion. The old
+        // version was accidentally safe only because `await fetchFollows`
+        // suspended before the notify; removing the awaits removed that.
+        notifyDeferred();
+      }, notifyOnSuccess: false);
 
   /// Check whether an author matches the given audience filter.
   bool matchesAudience(
