@@ -150,8 +150,8 @@ fn query_notifications_internal(
     let rows: Vec<NotificationRow> = soshal_db_core::query::query_capacity(
         &conn,
         "SELECT id, pubkey, type, event_id, from_pubkey, content, created_at, is_read \
-         FROM notifications WHERE LOWER(pubkey) = ?1 \
-         AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE LOWER(i.pubkey) = ?1 AND (i.kind = notifications.type OR i.kind = 'user' OR i.kind = 'thread' OR i.kind = 'all') AND ((LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND i.event_id = '') OR (LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, '')) AND i.from_pubkey = '') OR (LOWER(i.from_pubkey) = LOWER(COALESCE(notifications.from_pubkey, '')) AND LOWER(i.event_id) = LOWER(COALESCE(notifications.event_id, ''))))) \
+         FROM notifications WHERE pubkey = ?1 \
+         AND NOT EXISTS (SELECT 1 FROM ignored_notifications i WHERE i.pubkey = ?1 AND (i.kind = notifications.type OR i.kind = 'user' OR i.kind = 'thread' OR i.kind = 'all') AND ((i.from_pubkey = COALESCE(notifications.from_pubkey, '') AND i.event_id = '') OR (i.event_id = COALESCE(notifications.event_id, '') AND i.from_pubkey = '') OR (i.from_pubkey = COALESCE(notifications.from_pubkey, '') AND i.event_id = COALESCE(notifications.event_id, '')))) \
          ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
         libsql::params![user_pubkey, limit, offset],
         limit as usize,

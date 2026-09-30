@@ -702,7 +702,7 @@ pub fn identity_fetch_follows(pubkey: String) -> Result<String, String> {
 /// one `identity_fetch_follows` round-trip each — 25 blocking FFI calls and 25
 /// `get_by_pubkey` queries, on the Dart UI isolate, every time the audience
 /// graph was built (feed, dating and events screen open all trigger it). This
-/// collapses that to one `WHERE LOWER(pubkey) IN (json_each(?))` query and one
+/// collapses that to one `WHERE pubkey IN (json_each(?))` query and one
 /// array back. Unknown pubkeys contribute nothing, matching the single-pubkey
 /// fn's `[]` behaviour for an unknown key.
 #[frb(sync, serialize)]

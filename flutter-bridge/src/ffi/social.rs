@@ -91,7 +91,7 @@ fn self_contact_list(me: &str) -> Result<Vec<String>, String> {
         let conn = db.conn()?;
         let found: Option<String> = soshal_db_core::query::query_first(
             &conn,
-            "SELECT contact_pubkeys FROM users WHERE LOWER(pubkey) = ?1",
+            "SELECT contact_pubkeys FROM users WHERE pubkey = ?1",
             libsql::params![me.as_str()],
             |r| r.get(0),
         )?;
@@ -115,7 +115,7 @@ fn other_contact_lists(me: &str) -> Result<Vec<(String, String)>, String> {
         soshal_db_core::query::query(
             &conn,
             "SELECT pubkey, contact_pubkeys FROM users \
-             WHERE LOWER(pubkey) != ?1 AND contact_pubkeys IS NOT NULL \
+             WHERE pubkey != ?1 AND contact_pubkeys IS NOT NULL \
              AND contact_pubkeys != '[]' AND contact_pubkeys != '' LIMIT 5000",
             libsql::params![me.as_str()],
             |r| {

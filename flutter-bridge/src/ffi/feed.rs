@@ -197,9 +197,9 @@ fn feed_engagement_counters(
                             (SELECT COUNT(*) FROM reactions r WHERE r.event_id = p.id),
                             (SELECT COUNT(*) FROM posts rp WHERE rp.root_id = p.id AND rp.kind = 1 AND rp.is_deleted = 0),
                             p.reposts_count,
-                            EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND LOWER(rl.pubkey) = LOWER(?2))
+                            EXISTS(SELECT 1 FROM reactions rl WHERE rl.event_id = p.id AND rl.pubkey = ?2)
                      FROM posts p
-                     WHERE p.id IN (SELECT value FROM json_each(?1))",
+                     WHERE p.id IN (SELECT LOWER(value) FROM json_each(?1))",
                 )
                 .await
                 .map_err(|e| e.to_string())?;

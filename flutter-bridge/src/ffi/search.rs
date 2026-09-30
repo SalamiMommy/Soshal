@@ -78,15 +78,15 @@ fn run_search(
                  CASE WHEN p.kind = 0 THEN COALESCE(u.display_name, u.name, '') ELSE '' END \
                  FROM posts_fts f \
                  JOIN posts p ON f.rowid = p.rowid \
-                 LEFT JOIN users u ON LOWER(u.pubkey) = LOWER(p.pubkey) \
+                 LEFT JOIN users u ON u.pubkey = p.pubkey \
                  WHERE p.is_deleted = 0 AND posts_fts MATCH ?1 AND (?2 IS NULL OR p.kind = ?2) \
-                 AND LOWER(p.pubkey) IN (SELECT LOWER(value) FROM json_each(?4)) ORDER BY rank DESC, p.created_at DESC LIMIT ?3"
+                 AND p.pubkey IN (SELECT LOWER(value) FROM json_each(?4)) ORDER BY rank DESC, p.created_at DESC LIMIT ?3"
             } else {
                 "SELECT p.id, p.pubkey, p.content, p.kind, p.created_at, \
                  CASE WHEN p.kind = 0 THEN COALESCE(u.display_name, u.name, '') ELSE '' END \
                  FROM posts_fts f \
                  JOIN posts p ON f.rowid = p.rowid \
-                 LEFT JOIN users u ON LOWER(u.pubkey) = LOWER(p.pubkey) \
+                 LEFT JOIN users u ON u.pubkey = p.pubkey \
                  WHERE p.is_deleted = 0 AND posts_fts MATCH ?1 AND (?2 IS NULL OR p.kind = ?2) \
                  ORDER BY rank DESC, p.created_at DESC LIMIT ?3"
             };

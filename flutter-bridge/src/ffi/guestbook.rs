@@ -47,7 +47,7 @@ fn sender_name_of(sender_pubkey: &str) -> Option<String> {
         let conn = db.conn()?;
         soshal_db_core::query::query_first(
             &conn,
-            "SELECT name FROM users WHERE LOWER(pubkey) = LOWER(?1)",
+            "SELECT name FROM users WHERE pubkey = ?1",
             libsql::params![norm_pk.as_str()],
             |r| r.get(0),
         )

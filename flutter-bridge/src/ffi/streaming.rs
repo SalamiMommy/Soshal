@@ -199,7 +199,7 @@ pub fn streaming_fetch_live(limit: i32, audience: String) -> Result<String, Stri
         let sql = if authors_json.is_some() {
             "SELECT id, pubkey, content, created_at, tags_json FROM posts \
              WHERE kind = ?1 AND is_deleted = 0 \
-             AND LOWER(pubkey) IN (SELECT LOWER(value) FROM json_each(?3)) \
+             AND pubkey IN (SELECT LOWER(value) FROM json_each(?3)) \
              ORDER BY created_at DESC LIMIT ?2"
         } else {
             "SELECT id, pubkey, content, created_at, tags_json FROM posts \
@@ -243,7 +243,7 @@ pub fn streaming_fetch_followed_live(user_pubkey: String) -> Result<String, Stri
         let conn = db.conn()?;
         let sql = "SELECT p.id, p.pubkey, p.content, p.created_at, p.tags_json FROM posts p \
                    WHERE p.kind = ?1 AND p.is_deleted = 0 \
-                   AND LOWER(p.pubkey) IN (SELECT LOWER(value) FROM json_each((SELECT contact_pubkeys FROM users WHERE LOWER(pubkey) = ?2))) \
+                   AND p.pubkey IN (SELECT LOWER(value) FROM json_each((SELECT contact_pubkeys FROM users WHERE pubkey = ?2))) \
                    ORDER BY p.created_at DESC LIMIT 100";
         let rows = soshal_db_core::query::query(
             &conn,
@@ -445,7 +445,7 @@ pub fn streaming_fetch_stories(user_pubkey: String) -> Result<String, String> {
     let rows = super::db::db_query_json(
         &format!(
             "SELECT id, pubkey, content, created_at, tags_json, 0 AS views FROM posts \
-             WHERE kind = {KIND_STORY} AND LOWER(pubkey) = ?1 AND is_deleted = 0 \
+             WHERE kind = {KIND_STORY} AND pubkey = ?1 AND is_deleted = 0 \
              ORDER BY created_at DESC LIMIT 50"
         ),
         &[normalized_pk],
@@ -474,10 +474,10 @@ pub fn streaming_fetch_followed_stories(audience: String) -> Result<String, Stri
         Some(a) => {
             if a.len() == 1 {
                 params.push(a[0].to_ascii_lowercase());
-                " AND LOWER(p.pubkey) = ?1"
+                " AND p.pubkey = ?1"
             } else {
                 params.push(serde_json::to_string(a).map_err(|e| format!("authors: {e}"))?);
-                " AND LOWER(p.pubkey) IN (SELECT LOWER(value) FROM json_each(?1))"
+                " AND p.pubkey IN (SELECT LOWER(value) FROM json_each(?1))"
             }
         }
         None => "",

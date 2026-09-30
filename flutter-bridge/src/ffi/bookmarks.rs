@@ -64,8 +64,12 @@ pub fn bookmarks_delete(id: String) -> Result<bool, String> {
             }
             let found: Option<String> = soshal_db_core::query::query_first(
                 &conn,
-                "SELECT id FROM bookmarks WHERE LOWER(pubkey) = LOWER(?1) AND (LOWER(id) = LOWER(?2) OR LOWER(event_id) = LOWER(?3))",
-                libsql::params![active_pk.as_str(), id.as_str(), target_evt],
+                "SELECT id FROM bookmarks WHERE pubkey = ?1 AND (id = ?2 OR event_id = ?3)",
+                libsql::params![
+                    active_pk.as_str(),
+                    id.trim().to_ascii_lowercase(),
+                    target_evt.trim().to_ascii_lowercase(),
+                ],
                 |r| r.get(0),
             )?;
             if let Some(exact_id) = found {
@@ -74,8 +78,11 @@ pub fn bookmarks_delete(id: String) -> Result<bool, String> {
         }
         let found: Option<String> = soshal_db_core::query::query_first(
             &conn,
-            "SELECT id FROM bookmarks WHERE LOWER(id) = LOWER(?1) OR LOWER(event_id) = LOWER(?2)",
-            libsql::params![id.as_str(), target_evt],
+            "SELECT id FROM bookmarks WHERE id = ?1 OR event_id = ?2",
+            libsql::params![
+                id.trim().to_ascii_lowercase(),
+                target_evt.trim().to_ascii_lowercase(),
+            ],
             |r| r.get(0),
         )?;
         if let Some(exact_id) = found {

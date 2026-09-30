@@ -32,12 +32,12 @@ pub fn minis_fetch(audience: String) -> Result<String, String> {
         Some(a) => {
             if a.len() == 1 {
                 params.push(a[0].trim().to_ascii_lowercase());
-                " AND LOWER(pubkey) = ?1"
+                " AND pubkey = ?1"
             } else {
                 let lower_a: Vec<String> =
                     a.iter().map(|s| s.trim().to_ascii_lowercase()).collect();
                 params.push(serde_json::to_string(&lower_a).map_err(|e| format!("authors: {e}"))?);
-                " AND LOWER(pubkey) IN (SELECT value FROM json_each(?1))"
+                " AND pubkey IN (SELECT value FROM json_each(?1))"
             }
         }
         None => "",
