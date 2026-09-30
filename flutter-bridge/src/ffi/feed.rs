@@ -1050,12 +1050,16 @@ mod tests {
         tags_json: &str,
     ) {
         db::insert_test_user(pubkey);
+        // Store the key the way `PostRepo` does — lowercase — so the row
+        // satisfies the `posts.pubkey -> users.pubkey` foreign key that
+        // `insert_test_user` just wrote.
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         db::db_execute_params(
             "INSERT OR IGNORE INTO posts (id, pubkey, content, kind, created_at, tags_json, sync_status, is_deleted) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'synced', 0)",
             &[
                 id.to_string(),
-                pubkey.to_string(),
+                norm_pk,
                 content.to_string(),
                 kind.to_string(),
                 created_at.to_string(),

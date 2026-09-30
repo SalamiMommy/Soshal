@@ -1330,10 +1330,14 @@ pub(crate) fn reset_db_global() {
 /// users(pubkey) succeed under the now-enforced FK pragma.
 #[cfg(test)]
 pub(crate) fn insert_test_user(pubkey: &str) {
+    // Spell the key the way the app stores it: `UserRepo::upsert` lowercases
+    // `users.pubkey`, and that column is the foreign key target for posts,
+    // messages, group_members and the rest.
+    let norm = pubkey.trim().to_ascii_lowercase();
     db_execute_params(
         "INSERT OR IGNORE INTO users (pubkey, npub, created_at, updated_at, contact_pubkeys, relay_list, follower_count) \
          VALUES (?1, ?2, 1000, 1000, '[]', '[]', 0)",
-        &[pubkey.to_string(), format!("npub_{pubkey}")],
+        &[norm.clone(), format!("npub_{norm}")],
     )
     .unwrap();
 }

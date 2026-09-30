@@ -773,14 +773,16 @@ fn user_upsert_in_and_get_by_pubkey_in() {
         let conn = db.conn().unwrap();
         soshal_db_core::query::query_first(
             &conn,
-            "SELECT follower_count FROM users WHERE pubkey = 'pkTx'",
+            // Raw SQL here, so it has to spell the key the way it is stored:
+            // `UserRepo::upsert` lowercases `pubkey` on write.
+            "SELECT follower_count FROM users WHERE pubkey = 'pktx'",
             (),
             |r| r.get(0),
         )
         .unwrap()
         .unwrap()
     };
-    assert_eq!(follower_count, 2, "counts other users following pkTx");
+    assert_eq!(follower_count, 2, "counts other users following pktx");
 }
 
 #[test]

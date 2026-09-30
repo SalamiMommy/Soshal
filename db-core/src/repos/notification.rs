@@ -16,11 +16,11 @@ impl<'a> NotificationRepo<'a> {
             )));
         }
         let conn = self.db.conn()?;
-        let norm_pk = n.pubkey.trim();
+        let norm_pk = n.pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
-            params![norm_pk],
+            params![norm_pk.as_str()],
         )?;
         let norm_event_id = n.event_id.as_deref().map(|s| s.trim().to_ascii_lowercase());
         let norm_from_pk = n
@@ -32,7 +32,7 @@ impl<'a> NotificationRepo<'a> {
             "INSERT INTO notifications (id, pubkey, type, event_id, from_pubkey, content, created_at, is_read) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET is_read = CASE WHEN notifications.is_read = 1 THEN 1 ELSE excluded.is_read END, content = CASE WHEN excluded.created_at > notifications.created_at THEN excluded.content ELSE notifications.content END, created_at = CASE WHEN excluded.created_at > notifications.created_at THEN excluded.created_at ELSE notifications.created_at END, event_id = CASE WHEN excluded.created_at > notifications.created_at THEN excluded.event_id ELSE notifications.event_id END",
             params![
                 n.id.as_str(),
-                norm_pk,
+                norm_pk.as_str(),
                 n.type_.as_str(),
                 norm_event_id.as_deref(),
                 norm_from_pk.as_deref(),
@@ -43,7 +43,7 @@ impl<'a> NotificationRepo<'a> {
         )?;
         self.db.notify_change(
             crate::change_bus::Table::Notifications,
-            Some(norm_pk.to_string()),
+            Some(norm_pk.clone()),
         );
         Ok(())
     }
@@ -83,7 +83,7 @@ impl<'a> NotificationRepo<'a> {
             if crate::repos::limits::notification_too_big(n.content.as_deref().unwrap_or("")) {
                 continue; // oversized notification payload: skip
             }
-            let norm_pk = n.pubkey.trim();
+            let norm_pk = n.pubkey.trim().to_ascii_lowercase();
             let norm_event_id = n.event_id.as_deref().map(|s| s.trim().to_ascii_lowercase());
             let norm_from_pk = n
                 .from_pubkey
@@ -91,12 +91,12 @@ impl<'a> NotificationRepo<'a> {
                 .map(|s| s.trim().to_ascii_lowercase());
             tx.execute(
                 "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
-                params![norm_pk],
+                params![norm_pk.as_str()],
             )
             .await?;
             stmt.run(params![
                 n.id.as_str(),
-                norm_pk,
+                norm_pk.as_str(),
                 n.type_.as_str(),
                 norm_event_id.as_deref(),
                 norm_from_pk.as_deref(),

@@ -61,16 +61,16 @@ impl<'a> GroupRepo<'a> {
         joined_at: i64,
     ) -> Result<(), crate::error::DbError> {
         let conn = self.db.conn()?;
-        let trimmed_pk = pubkey.trim();
+        let trimmed_pk = pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "DELETE FROM group_members WHERE group_id = ?1 AND LOWER(pubkey) = LOWER(?2)",
-            params![group_id, trimmed_pk],
+            params![group_id, trimmed_pk.as_str()],
         )?;
         crate::query::execute(
             &conn,
             "INSERT OR REPLACE INTO group_members (group_id, pubkey, role, joined_at) VALUES (?1,?2,?3,?4)",
-            params![group_id, trimmed_pk, role, joined_at],
+            params![group_id, trimmed_pk.as_str(), role, joined_at],
         )?;
         let norm_pk = pubkey.trim().to_ascii_lowercase();
         self.db

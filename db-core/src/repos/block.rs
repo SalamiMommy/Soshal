@@ -9,18 +9,18 @@ impl<'a> BlockRepo<'a> {
     soshal_repo_new!();
 
     pub fn upsert(&self, b: &BlockRow) -> Result<(), crate::error::DbError> {
-        let norm_pk = b.pubkey.trim();
-        let norm_blocked = b.blocked_pubkey.trim();
+        let norm_pk = b.pubkey.trim().to_ascii_lowercase();
+        let norm_blocked = b.blocked_pubkey.trim().to_ascii_lowercase();
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM blocks WHERE LOWER(pubkey)=LOWER(?1) AND LOWER(blocked_pubkey)=LOWER(?2)",
-            params![norm_pk, norm_blocked],
+            "DELETE FROM blocks WHERE pubkey=?1 AND blocked_pubkey=?2",
+            params![norm_pk.as_str(), norm_blocked.as_str()],
         )?;
         crate::query::execute(
             &conn,
             "INSERT INTO blocks (pubkey, blocked_pubkey, created_at) VALUES (?1,?2,?3) ON CONFLICT(pubkey,blocked_pubkey) DO NOTHING",
-            params![norm_pk, norm_blocked, b.created_at],
+            params![norm_pk.as_str(), norm_blocked.as_str(), b.created_at],
         )?;
         self.db
             .notify_change(crate::change_bus::Table::Blocks, Some(norm_pk.to_string()));
@@ -33,7 +33,7 @@ impl<'a> BlockRepo<'a> {
         let conn = self.db.conn()?;
         Ok(crate::query::query_first(
             &conn,
-            "SELECT 1 FROM blocks WHERE LOWER(pubkey)=LOWER(?1) AND LOWER(blocked_pubkey)=LOWER(?2)",
+            "SELECT 1 FROM blocks WHERE pubkey=?1 AND blocked_pubkey=?2",
             params![norm_pk.as_str(), norm_blocked.as_str()],
             |_| Ok(true),
         )?
@@ -46,7 +46,7 @@ impl<'a> BlockRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM blocks WHERE LOWER(pubkey)=LOWER(?1) AND LOWER(blocked_pubkey)=LOWER(?2)",
+            "DELETE FROM blocks WHERE pubkey=?1 AND blocked_pubkey=?2",
             params![norm_pk.as_str(), norm_blocked.as_str()],
         )?;
         self.db
@@ -59,7 +59,7 @@ impl<'a> BlockRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT blocked_pubkey FROM blocks WHERE LOWER(pubkey)=LOWER(?1) ORDER BY created_at DESC",
+            "SELECT blocked_pubkey FROM blocks WHERE pubkey=?1 ORDER BY created_at DESC",
             params![norm_pk.as_str()],
             |r| r.get::<String>(0),
         )
@@ -70,7 +70,7 @@ impl<'a> BlockRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM blocks WHERE LOWER(pubkey)=LOWER(?1)",
+            "DELETE FROM blocks WHERE pubkey=?1",
             params![norm_pk.as_str()],
         )?;
         Ok(())

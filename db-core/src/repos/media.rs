@@ -26,11 +26,15 @@ impl<'a> MediaRepo<'a> {
     ) -> Result<Vec<MediaRow>, crate::error::DbError> {
         let limit = crate::repos::clamp_limit(limit);
         let offset = offset.max(0);
+        // This predicate never folded case, so it only ever matched when the
+        // caller happened to pass the stored spelling exactly. Now that
+        // `media_blobs.pubkey` is written lowercase, the bind has to be too.
+        let norm_pk = pubkey.trim().to_ascii_lowercase();
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
             "SELECT id, pubkey, url, file_hash, file_size, mime_type, created_at, blob_hash FROM media_blobs WHERE pubkey = ?1 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
-            params![pubkey, limit, offset],
+            params![norm_pk.as_str(), limit, offset],
             Self::map_row,
         )
     }
@@ -41,8 +45,8 @@ impl<'a> MediaRepo<'a> {
             &conn,
             "INSERT INTO media_blobs (id, pubkey, url, file_hash, file_size, mime_type, created_at, blob_hash) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET url=excluded.url, file_hash=excluded.file_hash, file_size=excluded.file_size, mime_type=excluded.mime_type, blob_hash=excluded.blob_hash",
             params![
-                row.id.as_str(),
-                row.pubkey.as_str(),
+                row.id.trim().to_ascii_lowercase(),
+                row.pubkey.trim().to_ascii_lowercase(),
                 row.url.as_str(),
                 row.file_hash.as_deref(),
                 row.file_size,

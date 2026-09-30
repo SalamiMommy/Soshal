@@ -65,11 +65,11 @@ impl<'a> MessageRepo<'a> {
             )));
         }
         let conn = self.db.conn()?;
-        let norm_pk = msg.pubkey.trim();
+        let norm_pk = msg.pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
             "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
-            params![norm_pk],
+            params![norm_pk.as_str()],
         )?;
         crate::query::execute(
             &conn,
@@ -77,7 +77,7 @@ impl<'a> MessageRepo<'a> {
             params![
                 msg.id.as_str(),
                 msg.conversation_id.as_str(),
-                norm_pk,
+                norm_pk.as_str(),
                 msg.content.as_str(),
                 msg.created_at,
                 msg.tags_json.as_str(),
@@ -87,10 +87,8 @@ impl<'a> MessageRepo<'a> {
             ],
         )?;
         self.touch_conversation(&conn, &msg.conversation_id, msg.created_at)?;
-        self.db.notify_change(
-            crate::change_bus::Table::Messages,
-            Some(norm_pk.to_string()),
-        );
+        self.db
+            .notify_change(crate::change_bus::Table::Messages, Some(norm_pk.clone()));
         Ok(())
     }
 
@@ -130,10 +128,10 @@ impl<'a> MessageRepo<'a> {
                 if crate::repos::limits::row_too_big(&msg.content, &msg.tags_json) {
                     continue; // relay content too large: skip, never store
                 }
-                let norm_pk = msg.pubkey.trim();
+                let norm_pk = msg.pubkey.trim().to_ascii_lowercase();
                 tx.execute(
                     "INSERT OR IGNORE INTO users (pubkey, npub) VALUES (?1, '')",
-                    params![norm_pk],
+                    params![norm_pk.as_str()],
                 )
                 .await?;
                 tx.execute(
@@ -141,7 +139,7 @@ impl<'a> MessageRepo<'a> {
                     params![
                         msg.id.as_str(),
                         msg.conversation_id.as_str(),
-                        norm_pk,
+                        norm_pk.as_str(),
                         msg.content.as_str(),
                         msg.created_at,
                         msg.tags_json.as_str(),

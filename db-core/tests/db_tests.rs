@@ -128,7 +128,7 @@ fn test_v7_fts_trigger_replaces_and_deletes() {
     let conn = db.conn().unwrap();
 
     soshal_db_core::block_on(conn.execute(
-        "INSERT INTO posts (id, pubkey, content, created_at) VALUES ('ev1', 'pkFts', 'hello world', 1)",
+        "INSERT INTO posts (id, pubkey, content, created_at) VALUES ('ev1', 'pkfts', 'hello world', 1)",
         (),
     ))
     .unwrap();
@@ -190,7 +190,7 @@ fn test_v6_purges_orphan_fts_rows() {
     {
         let conn = db.conn().unwrap();
         soshal_db_core::block_on(conn.execute(
-            "INSERT INTO posts (rowid, id, pubkey, content, created_at) VALUES (1, 'live1', 'pkLive', 'kept', 1)",
+            "INSERT INTO posts (rowid, id, pubkey, content, created_at) VALUES (1, 'live1', 'pklive', 'kept', 1)",
             (),
         ))
         .unwrap();
@@ -2596,7 +2596,7 @@ fn test_case_insensitivity_and_normalization_regression() {
     assert!(block_repo.is_blocked("USER_ALPHA", "USER_BETA").unwrap());
     assert_eq!(
         block_repo.list("USER_ALPHA").unwrap(),
-        vec!["User_Beta".to_string()]
+        vec!["user_beta".to_string()]
     );
     block_repo.delete("USER_ALPHA", "USER_BETA").unwrap();
     assert!(!block_repo.is_blocked("USER_ALPHA", "USER_BETA").unwrap());

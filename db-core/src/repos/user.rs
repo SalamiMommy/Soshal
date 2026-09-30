@@ -22,7 +22,7 @@ impl<'a> UserRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query_first(
             &conn,
-            "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE LOWER(pubkey) = LOWER(?1)",
+            "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE pubkey = ?1",
             params![norm_pk.as_str()],
             Self::map_row,
         )
@@ -43,7 +43,7 @@ impl<'a> UserRepo<'a> {
             let norm = pubkeys[0].trim().to_ascii_lowercase();
             let exists: Option<String> = crate::query::query_first(
                 &conn,
-                "SELECT pubkey FROM users WHERE LOWER(pubkey) = LOWER(?1)",
+                "SELECT pubkey FROM users WHERE pubkey = ?1",
                 params![norm.as_str()],
                 |row| row.get::<String>(0),
             )?;
@@ -61,7 +61,7 @@ impl<'a> UserRepo<'a> {
         let json = serde_json::to_string(&norm_pubkeys).unwrap_or_else(|_| "[]".to_string());
         crate::query::query_fold(
             &conn,
-            "SELECT pubkey FROM users WHERE LOWER(pubkey) IN (SELECT value FROM json_each(?1))",
+            "SELECT pubkey FROM users WHERE pubkey IN (SELECT LOWER(value) FROM json_each(?1))",
             params![json.as_str()],
             std::collections::HashSet::with_capacity(pubkeys.len()),
             |mut set, row| {
@@ -94,7 +94,7 @@ impl<'a> UserRepo<'a> {
         let json = serde_json::to_string(&norm_pubkeys).unwrap_or_else(|_| "[]".to_string());
         crate::query::query_fold(
             &conn,
-            "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE LOWER(pubkey) IN (SELECT value FROM json_each(?1))",
+            "SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE pubkey IN (SELECT LOWER(value) FROM json_each(?1))",
             params![json.as_str()],
             std::collections::HashMap::with_capacity(pubkeys.len()),
             |mut map, row| {
@@ -112,7 +112,7 @@ impl<'a> UserRepo<'a> {
     ) -> Result<Option<UserRow>, crate::error::DbError> {
         let norm_pk = pubkey.trim().to_ascii_lowercase();
         let stmt = tx
-            .prepare("SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE LOWER(pubkey) = LOWER(?1)")
+            .prepare("SELECT pubkey, npub, name, display_name, about, picture, banner, nip05, lud16, created_at, updated_at, metadata_json, contact_pubkeys, relay_list, follower_count FROM users WHERE pubkey = ?1")
             .await?;
         let mut rows = stmt.query(params![norm_pk.as_str()]).await?;
         match rows.next().await? {
@@ -140,7 +140,7 @@ impl<'a> UserRepo<'a> {
         tx: &libsql::Transaction,
         row: &UserRow,
     ) -> Result<(), crate::error::DbError> {
-        let norm_pk = row.pubkey.trim();
+        let norm_pk = row.pubkey.trim().to_ascii_lowercase();
         tx.execute(
             USER_UPSERT_SQL,
             params![
@@ -173,7 +173,7 @@ impl<'a> UserRepo<'a> {
         crate::query::with_tx(&conn, |tx| async move {
             let stmt = tx.prepare(USER_UPSERT_SQL).await?;
             for user in users {
-                let norm_pk = user.pubkey.trim();
+                let norm_pk = user.pubkey.trim().to_ascii_lowercase();
                 stmt.run(params![
                     norm_pk,
                     user.npub.as_str(),
@@ -226,7 +226,7 @@ impl<'a> UserRepo<'a> {
     ) -> Result<(), crate::error::DbError> {
         let norm_pk = pubkey.trim().to_ascii_lowercase();
         tx.execute(
-            "UPDATE users SET follower_count = MAX(0, follower_count + ?2) WHERE LOWER(pubkey) = LOWER(?1)",
+            "UPDATE users SET follower_count = MAX(0, follower_count + ?2) WHERE pubkey = ?1",
             params![norm_pk.as_str(), delta],
         )
         .await?;
@@ -296,7 +296,7 @@ impl<'a> UserRepo<'a> {
                 stmt.reset();
             }
             stmt = tx
-                .prepare("UPDATE users SET follower_count = ?2 WHERE LOWER(pubkey) = LOWER(?1)")
+                .prepare("UPDATE users SET follower_count = ?2 WHERE pubkey = ?1")
                 .await?;
             for (pk, n) in &counts {
                 stmt.run(params![pk.as_str(), *n]).await?;
