@@ -58,9 +58,24 @@ case "$HOST" in
     ANDROID_ARGS=()
     if [[ "$RELEASE" -eq 1 ]]; then ANDROID_ARGS+=(--release); fi
     if [[ "$SPLIT_PER_ABI" -eq 1 ]]; then ANDROID_ARGS+=(--split-per-abi); fi
-    "$PROJECT_ROOT/builds/android/build.sh" "${ANDROID_ARGS[@]}"
+    # Android and Linux are independent (separate target dirs, separate
+    # toolchains, separate output folders), so run them concurrently instead
+    # of paying android-then-linux serially. The Android leg already builds
+    # its three ABIs in parallel, so this overlaps two whole builds.
+    echo "==[ android + linux (parallel) ]=="
+    "$PROJECT_ROOT/builds/android/build.sh" "${ANDROID_ARGS[@]}" &
+    android_pid=$!
     echo "==[ linux ]=="
-    "$PROJECT_ROOT/builds/linux/build.sh"
+    "$PROJECT_ROOT/builds/linux/build.sh" &
+    linux_pid=$!
+    # Surface whichever leg failed; `wait` alone would only report the last.
+    rc=0
+    wait "$android_pid" || rc=$?
+    wait "$linux_pid" || rc=$?
+    if (( rc != 0 )); then
+      echo "ERROR: parallel build failed (android+linux), see above" >&2
+      exit "$rc"
+    fi
     ;;
   MINGW*|MSYS*)
     # --- Windows (Git Bash / MSYS2 host only) ---

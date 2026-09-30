@@ -200,6 +200,22 @@ panic = "abort"
 strip = true
 overflow-checks = true
 
+# Release profile for the Flutter FFI bridge cdylib specifically. The bridge
+# is built once per Android ABI (arm64-v8a, x86_64, armeabi-v7a) plus the Linux
+# host, and full-LTO + codegen-units=1 is the dominant cost in that loop —
+# every one of the four builds pays single-CGU full-LTO codegen.
+#
+# Thin LTO still cross-crates inlines (which is what actually matters for the
+# crypto and FFI boundary paths) but parallelizes codegen across units. The
+# trade is a somewhat larger / slower .so, so `builds/android/build.sh` enforces
+# an APK size budget to catch a regression rather than shipping it silently.
+# `panic`, `strip`, and `overflow-checks` are inherited unchanged from release
+# and must stay that way: overflow checks are deliberately on in release.
+[profile.bridge-release]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 # flutter_rust_bridge attribute macros expand `#[cfg(frb_expand)]` sections;

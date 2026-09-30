@@ -28,6 +28,10 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications uses java.time APIs that predate its
+        // declared minSdk, so D8 must back-port them. Without this the AAR
+        // metadata check fails for every variant.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -86,6 +90,11 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Back-port library backing `isCoreLibraryDesugaringEnabled` above.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
 
 // Reticulum daemon (rnsd) Python stack. rnspure = rns without the hard

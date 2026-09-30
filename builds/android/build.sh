@@ -272,7 +272,9 @@ ensure_opus() {
 build_abi() {
   local abi="$1" cc="${CLANG[$abi]}" triple="${TRIPLE[$abi]}" libdir="${LIBDIR[$abi]}"
   local cache="$TARGETS_DIR/so-$abi"
-  local so="$cache/$triple/release/libsoshal_flutter_bridge.so"
+  # Cargo names the output dir after the *profile*, not after "release" —
+  # `--profile bridge-release` lands in `bridge-release/`.
+  local so="$cache/$triple/$CARGO_PROFILE/libsoshal_flutter_bridge.so"
   echo "  bridge: $abi"
   ensure_opus "$abi" "${OPUSHOST[$abi]}" "$NDK_BIN/$cc"
   # audiopus_sys' build.rs doesn't rerun on env change — force a fresh link
@@ -283,9 +285,43 @@ build_abi() {
   "CC_${triple}=$NDK_BIN/$cc" \
   RUSTFLAGS="-C linker=$NDK_BIN/$cc -L native=$SYSROOT/usr/lib/$libdir/24 -L native=$SYSROOT/usr/lib/$libdir/26" \
   OPUS_LIB_DIR="$OPUS_DIR/$abi/lib" LIBOPUS_STATIC=1 OPUS_NO_PKG=1 \
-    cargo build -p "$BRIDGE" --release --target "$triple" --target-dir "$cache"
+    cargo build -p "$BRIDGE" --profile "$CARGO_PROFILE" --jobs "$CARGO_BUILD_JOBS" \
+      --target "$triple" --target-dir "$cache"
+  # A missing .so must abort here. The size arithmetic below silently
+  # evaluates to nothing when `stat` fails (bash does not treat an empty
+  # operand as a fatal error under `set -e`), which let a mis-pathed build
+  # carry on and package an APK with no bridge at all.
+  if [[ ! -f "$so" ]]; then
+    echo "  ERROR: $abi bridge .so not found at $so" >&2
+    echo "         (cargo --profile '$CARGO_PROFILE' did not produce it — check the build log above)" >&2
+    return 1
+  fi
+  # Thin LTO buys build time with .so size; enforce the budget per ABI so a
+  # regression fails here instead of shipping in a silently larger APK.
+  local so_mib=$(( $(stat -c%s "$so") / 1024 / 1024 ))
+  if (( so_mib > MAX_BRIDGE_SO_MIB )); then
+    echo "  ERROR: $abi bridge .so is ${so_mib}MiB, over the ${MAX_BRIDGE_SO_MIB}MiB budget" >&2
+    echo "         (profile=$CARGO_PROFILE; raise MAX_BRIDGE_SO_MIB deliberately or" >&2
+    echo "          set CARGO_PROFILE=release for the smaller full-LTO build)" >&2
+    return 1
+  fi
+  echo "  bridge: $abi ${so_mib}MiB (profile=$CARGO_PROFILE)"
   cp "$so" "$JNI_LIBS/$abi/"
 }
+
+# Cargo profile for the bridge cdylib. `bridge-release` (thin LTO, 16 codegen
+# units) is the default because the bridge is built once per ABI and full-LTO
+# single-CGU codegen dominates that loop. Set CARGO_PROFILE=release to opt back
+# into full LTO (smaller/slower .so, much longer build).
+CARGO_PROFILE="${CARGO_PROFILE:-bridge-release}"
+# Per-ABI rustc concurrency. With PARALLEL_ABI=1 three cargo builds run at once,
+# so an uncapped nproc would spawn ~3x nproc rustc processes and thrash memory
+# under LTO codegen. Override when the machine has more headroom.
+CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-10}"
+# Size budget for a single bridge .so, in MiB. The thin-LTO profile trades .so
+# size for build time; this fails the build rather than silently shipping a
+# regression. Raise deliberately, don't delete.
+MAX_BRIDGE_SO_MIB="${MAX_BRIDGE_SO_MIB:-40}"
 
 # Rust compile cache: sccache speeds up repeated bridge builds a lot
 # (3 ABIs share most codegen). Auto-enabled when installed; disable with
@@ -305,9 +341,12 @@ ensure_freenet
 ensure_reticulum
 bundle_daemons
 
-# Build Rust bridge for all ABIs (serial by default — parallel ABI builds
-# triple peak memory; opt in with PARALLEL_ABI=1 when the machine can take it).
-if [[ "${PARALLEL_ABI:-0}" == "1" ]]; then
+# Build Rust bridge for all ABIs. Parallel by default: the three cargo builds
+# write to separate target dirs and share only the (read-mostly) cargo registry
+# + sccache. Peak memory is bounded by CARGO_BUILD_JOBS per ABI rather than by
+# nproc, so this does not thrash. Set PARALLEL_ABI=0 to force serial.
+if [[ "${PARALLEL_ABI:-1}" == "1" ]]; then
+  abi_pids=()
   for abi in arm64-v8a x86_64 armeabi-v7a; do
     if [[ "$abi" == armeabi-v7a ]]; then
       export CC_GNU=1   # secp256k1-sys/aws-lc-sys probe arm-linux-androideabi-clang
@@ -315,8 +354,19 @@ if [[ "${PARALLEL_ABI:-0}" == "1" ]]; then
       unset CC_GNU
     fi
     build_abi "$abi" &
+    abi_pids+=($!)
   done
-  wait
+  # A bare `wait` returns 0 no matter how the children exited, so a failed ABI
+  # would sail through into Gradle and package an APK with a missing or stale
+  # bridge. Wait on each PID instead and fail on the first non-zero status.
+  abi_failed=0
+  for pid in "${abi_pids[@]}"; do
+    wait "$pid" || abi_failed=1
+  done
+  if (( abi_failed )); then
+    echo "  ERROR: at least one ABI bridge build failed" >&2
+    exit 1
+  fi
 else
   for abi in arm64-v8a x86_64 armeabi-v7a; do
     if [[ "$abi" == armeabi-v7a ]]; then
