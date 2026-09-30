@@ -46,8 +46,8 @@ impl<'a> PollRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, question, options, expires_at, closed, created_at FROM polls WHERE LOWER(pubkey)=LOWER(?1) ORDER BY created_at DESC LIMIT ?2",
-            params![pubkey, limit],
+            "SELECT id, pubkey, question, options, expires_at, closed, created_at FROM polls WHERE pubkey=?1 ORDER BY created_at DESC LIMIT ?2",
+            params![pubkey.trim().to_ascii_lowercase(), limit],
             Self::map_poll,
         )
     }
@@ -77,8 +77,8 @@ impl<'a> PollRepo<'a> {
         let conn = self.db.conn()?;
         Ok(crate::query::query_first(
             &conn,
-            "SELECT 1 FROM poll_votes WHERE poll_id=?1 AND LOWER(voter_pubkey)=LOWER(?2)",
-            params![poll_id, voter],
+            "SELECT 1 FROM poll_votes WHERE poll_id=?1 AND voter_pubkey=?2",
+            params![poll_id, voter.trim().to_ascii_lowercase()],
             |_| Ok(true),
         )?
         .is_some())

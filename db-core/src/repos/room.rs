@@ -123,7 +123,7 @@ impl<'a> GroupRoomRepo<'a> {
         let deleted = crate::query::execute(
             &conn,
             "DELETE FROM group_room_reactions
-             WHERE message_id = ?1 AND LOWER(pubkey) = ?2 AND emoji = ?3",
+             WHERE message_id = ?1 AND pubkey = ?2 AND emoji = ?3",
             params![message_id, norm_pk.as_str(), emoji],
         )?;
         if deleted > 0 {
@@ -157,7 +157,7 @@ impl<'a> GroupRoomRepo<'a> {
         crate::query::query(
             &conn,
             "SELECT r.message_id, r.emoji, COUNT(*) AS cnt,
-                    MAX(CASE WHEN LOWER(r.pubkey) = ?3 THEN 1 ELSE 0 END) AS reacted
+                    MAX(CASE WHEN r.pubkey = ?3 THEN 1 ELSE 0 END) AS reacted
              FROM group_room_reactions r
              WHERE r.group_id = ?1 AND r.room_id = ?2
              GROUP BY r.message_id, r.emoji

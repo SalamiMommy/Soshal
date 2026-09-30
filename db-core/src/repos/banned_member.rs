@@ -24,8 +24,8 @@ impl<'a> BannedMemberRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM banned_members WHERE group_id=?1 AND LOWER(pubkey)=LOWER(?2)",
-            params![group_id, pubkey.trim()],
+            "DELETE FROM banned_members WHERE group_id=?1 AND pubkey=?2",
+            params![group_id, pubkey.trim().to_ascii_lowercase()],
         )?;
         Ok(())
     }
@@ -34,8 +34,8 @@ impl<'a> BannedMemberRepo<'a> {
         let conn = self.db.conn()?;
         Ok(crate::query::query_first(
             &conn,
-            "SELECT 1 FROM banned_members WHERE group_id=?1 AND LOWER(pubkey)=LOWER(?2)",
-            params![group_id, pubkey.trim()],
+            "SELECT 1 FROM banned_members WHERE group_id=?1 AND pubkey=?2",
+            params![group_id, pubkey.trim().to_ascii_lowercase()],
             |_| Ok(true),
         )?
         .is_some())

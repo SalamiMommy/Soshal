@@ -83,10 +83,10 @@ impl<'a> EscrowRepo<'a> {
         crate::query::query(
             &conn,
             "SELECT id, listing_id, buyer_pubkey, seller_pubkey, amount_msats, currency, status, escrow_note, created_at, updated_at
-             FROM escrows WHERE LOWER(buyer_pubkey)=?1
+             FROM escrows WHERE buyer_pubkey=?1
              UNION ALL
              SELECT id, listing_id, buyer_pubkey, seller_pubkey, amount_msats, currency, status, escrow_note, created_at, updated_at
-             FROM escrows WHERE LOWER(seller_pubkey)=?1 AND LOWER(buyer_pubkey) != ?1
+             FROM escrows WHERE seller_pubkey=?1 AND buyer_pubkey != ?1
              ORDER BY created_at DESC",
             params![norm_pk.as_str()],
             row_to_escrow,

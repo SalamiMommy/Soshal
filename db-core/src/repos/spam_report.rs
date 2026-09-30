@@ -41,7 +41,7 @@ impl<'a> SpamReportRepo<'a> {
         let norm_target = target_pubkey.trim().to_ascii_lowercase();
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, target_id, target_pubkey, reason, tags, created_at FROM spam_reports WHERE LOWER(target_pubkey)=?1 ORDER BY created_at DESC LIMIT ?2",
+            "SELECT id, pubkey, target_id, target_pubkey, reason, tags, created_at FROM spam_reports WHERE target_pubkey=?1 ORDER BY created_at DESC LIMIT ?2",
             params![norm_target.as_str(), limit],
             Self::map_row,
         )

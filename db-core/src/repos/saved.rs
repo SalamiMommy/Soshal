@@ -167,7 +167,7 @@ impl<'a> MusicloudPlaylistRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::query(
             &conn,
-            "SELECT p.id, p.pubkey, p.title, p.is_private, p.created_at, COUNT(t.track_id) FROM musicloud_playlists p LEFT JOIN musicloud_playlist_tracks t ON t.playlist_id = p.id WHERE LOWER(p.pubkey)=LOWER(?1) GROUP BY p.id ORDER BY p.created_at DESC LIMIT ?2",
+            "SELECT p.id, p.pubkey, p.title, p.is_private, p.created_at, COUNT(t.track_id) FROM musicloud_playlists p LEFT JOIN musicloud_playlist_tracks t ON t.playlist_id = p.id WHERE p.pubkey=?1 GROUP BY p.id ORDER BY p.created_at DESC LIMIT ?2",
             params![norm_pk.as_str(), limit],
             Self::map_playlist_row,
         )

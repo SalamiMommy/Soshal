@@ -29,7 +29,7 @@ impl<'a> StoryReactionRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM story_reactions WHERE story_id=?1 AND LOWER(pubkey)=LOWER(?2) AND emoji=?3",
+            "DELETE FROM story_reactions WHERE story_id=?1 AND pubkey=?2 AND emoji=?3",
             params![story_id.trim(), norm_pk.as_str(), emoji.trim()],
         )?;
         Ok(())
@@ -60,7 +60,7 @@ impl<'a> StoryReactionRepo<'a> {
         let conn = self.db.conn()?;
         Ok(crate::query::query_first(
             &conn,
-            "SELECT 1 FROM story_reactions WHERE story_id=?1 AND LOWER(pubkey)=LOWER(?2) AND emoji=?3",
+            "SELECT 1 FROM story_reactions WHERE story_id=?1 AND pubkey=?2 AND emoji=?3",
             params![story_id.trim(), norm_pk.as_str(), emoji.trim()],
             |_| Ok(true),
         )?

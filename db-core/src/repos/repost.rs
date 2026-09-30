@@ -47,7 +47,7 @@ impl<'a> RepostRepo<'a> {
         let norm_eid = event_id.trim().to_ascii_lowercase();
         Ok(crate::query::query_first(
             &conn,
-            "SELECT COUNT(*) FROM reposts WHERE LOWER(event_id) = ?1",
+            "SELECT COUNT(*) FROM reposts WHERE event_id = ?1",
             params![norm_eid.as_str()],
             |row| row.get(0),
         )?

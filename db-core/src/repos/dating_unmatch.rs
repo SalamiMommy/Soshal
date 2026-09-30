@@ -26,7 +26,7 @@ impl<'a> DatingUnmatchRepo<'a> {
         let conn = self.db.conn()?;
         Ok(crate::query::query_first(
             &conn,
-            "SELECT 1 FROM dating_unmatches WHERE LOWER(actor_pubkey)=LOWER(?1) AND LOWER(pubkey)=LOWER(?2)",
+            "SELECT 1 FROM dating_unmatches WHERE actor_pubkey=?1 AND pubkey=?2",
             params![norm_actor.as_str(), norm_pk.as_str()],
             |_| Ok(true),
         )?
@@ -39,7 +39,7 @@ impl<'a> DatingUnmatchRepo<'a> {
         let conn = self.db.conn()?;
         crate::query::execute(
             &conn,
-            "DELETE FROM dating_unmatches WHERE LOWER(actor_pubkey)=LOWER(?1) AND LOWER(pubkey)=LOWER(?2)",
+            "DELETE FROM dating_unmatches WHERE actor_pubkey=?1 AND pubkey=?2",
             params![norm_actor.as_str(), norm_pk.as_str()],
         )?;
         Ok(())

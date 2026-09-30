@@ -58,7 +58,7 @@ impl<'a> ZapRepo<'a> {
         let clean_id = event_id.trim().to_ascii_lowercase();
         Ok(crate::query::query_first(
             &conn,
-            "SELECT COALESCE(SUM(amount),0) FROM zaps WHERE LOWER(event_id) = LOWER(?1)",
+            "SELECT COALESCE(SUM(amount),0) FROM zaps WHERE event_id = ?1",
             params![clean_id.as_str()],
             |row| row.get(0),
         )?

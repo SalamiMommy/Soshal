@@ -40,9 +40,9 @@ impl<'a> GuestbookRepo<'a> {
         let limit = crate::repos::clamp_limit(limit);
         let conn = self.db.conn()?;
         let sql = if only_approved {
-            "SELECT id, profile_pubkey, sender_pubkey, sender_name, sender_avatar, content, created_at, signature, approved FROM guestbook_entries WHERE LOWER(profile_pubkey)=LOWER(?1) AND approved=1 ORDER BY created_at DESC LIMIT ?2"
+            "SELECT id, profile_pubkey, sender_pubkey, sender_name, sender_avatar, content, created_at, signature, approved FROM guestbook_entries WHERE profile_pubkey=?1 AND approved=1 ORDER BY created_at DESC LIMIT ?2"
         } else {
-            "SELECT id, profile_pubkey, sender_pubkey, sender_name, sender_avatar, content, created_at, signature, approved FROM guestbook_entries WHERE LOWER(profile_pubkey)=LOWER(?1) ORDER BY created_at DESC LIMIT ?2"
+            "SELECT id, profile_pubkey, sender_pubkey, sender_name, sender_avatar, content, created_at, signature, approved FROM guestbook_entries WHERE profile_pubkey=?1 ORDER BY created_at DESC LIMIT ?2"
         };
         crate::query::query(
             &conn,

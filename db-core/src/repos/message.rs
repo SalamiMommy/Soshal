@@ -47,7 +47,7 @@ impl<'a> MessageRepo<'a> {
         let norm_id = id.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
-            "UPDATE messages SET is_deleted = 1 WHERE LOWER(id) = ?1",
+            "UPDATE messages SET is_deleted = 1 WHERE id = ?1",
             params![norm_id.as_str()],
         )?;
         self.db

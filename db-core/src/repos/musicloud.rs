@@ -61,7 +61,7 @@ impl<'a> MusicloudRepo<'a> {
         let norm_pk = pubkey.trim().to_ascii_lowercase();
         crate::query::query(
             &conn,
-            "SELECT id, pubkey, audio_url, title, duration, text_overlay, thumbnail, likes, liked, bookmarked, audience, blob_hash, media_size, hashtags, d, created_at FROM musiclouds WHERE LOWER(pubkey)=?1 ORDER BY created_at DESC LIMIT ?2",
+            "SELECT id, pubkey, audio_url, title, duration, text_overlay, thumbnail, likes, liked, bookmarked, audience, blob_hash, media_size, hashtags, d, created_at FROM musiclouds WHERE pubkey=?1 ORDER BY created_at DESC LIMIT ?2",
             params![norm_pk.as_str(), limit],
             Self::map_row,
         )

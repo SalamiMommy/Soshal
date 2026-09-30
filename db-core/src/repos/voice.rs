@@ -130,7 +130,7 @@ impl<'a> GroupVoiceRepo<'a> {
         let norm_pk = pubkey.trim().to_ascii_lowercase();
         crate::query::execute(
             &conn,
-            "DELETE FROM group_voice_presence WHERE channel_id = ?1 AND LOWER(pubkey) = ?2",
+            "DELETE FROM group_voice_presence WHERE channel_id = ?1 AND pubkey = ?2",
             params![channel_id, norm_pk.as_str()],
         )?;
         Ok(())
