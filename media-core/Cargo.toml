@@ -11,6 +11,7 @@ serde_json = { workspace = true }
 reqwest = { workspace = true }
 fastcdc = { workspace = true }
 blake3 = { workspace = true }
+rayon = { workspace = true }
 memmap2 = { workspace = true }
 image = { workspace = true }
 soshal-crypto-core = { path = "../crypto-core" }

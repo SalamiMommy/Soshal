@@ -7,6 +7,7 @@ edition = "2021"
 hex = { workspace = true }
 image = { workspace = true }
 mp4parse = { workspace = true }
+rayon = { workspace = true }
 regex = { workspace = true }
 glob = { workspace = true }
 rust_h264 = { workspace = true }
@@ -23,6 +24,16 @@ soshal-crypto-core = { path = "../crypto-core" }
 [target.'cfg(not(target_arch = "arm"))'.dependencies]
 rav1d-safe = { workspace = true }
 
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "video_nn"
+harness = false
+
+[[bench]]
+name = "text_check"
+harness = false
 
 [lints]
 workspace = true

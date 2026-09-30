@@ -15,7 +15,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::SystemTime;
 
+use rayon::prelude::*;
+
 use crate::chunking::{store_reader_with_data, ChunkManifest, ChunkRef};
+
+/// Overlapping-chunk count at which `blob_slice` switches from a serial map to
+/// a rayon one. Below this the thread hand-off costs more than the disk-backed
+/// mmap lookups it would overlap.
+const PARALLEL_SLICE_CHUNKS: usize = 4;
 
 fn is_valid_hash(hash: &str) -> bool {
     hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())
@@ -595,6 +602,12 @@ impl ChunkStore {
     /// Returns the byte slice [offset, offset+len) of a stored blob, assembled
     /// from its chunks (which are verified on read). `None` if any chunk is
     /// missing or the manifest is invalid — never serves corrupt ranges.
+    ///
+    /// `is_valid()` guarantees the manifest's chunks tile `[0, total_size)`
+    /// contiguously and without overlap, so a complete assembly is always
+    /// exactly `len` bytes. The length check therefore catches the one
+    /// reachable failure: a chunk whose stored bytes are shorter than the
+    /// manifest declares, which would otherwise hand back a short read.
     pub fn blob_slice(
         &self,
         manifest: &ChunkManifest,
@@ -608,31 +621,61 @@ impl ChunkStore {
         if end > manifest.total_size as usize {
             return None;
         }
-        let mut out = Vec::with_capacity(len);
-        let mut pos = offset;
-        for c in &manifest.chunks {
-            let c_start = c.offset as usize;
-            let c_end = c_start + c.len;
-            if c_end <= offset {
-                continue;
-            }
-            if c_start >= end {
-                break;
-            }
-            let mmap = self.get_mmap_cached(&c.blake3)?;
-            let chunk = mmap.as_ref();
-            let from = offset.saturating_sub(c_start);
-            let to = (end - c_start).min(chunk.len());
-            if from > to {
-                return None;
-            }
-            out.extend_from_slice(&chunk[from..to]);
-            pos += to - from;
+        // The chunks overlapping [offset, end) are identified serially (pure
+        // arithmetic over the manifest), then mapped in parallel. Each map is
+        // independent — `get_mmap_cached` is `&self` and guards its own caches
+        // — and a large range read otherwise paid a serialized disk-backed
+        // mmap fault per chunk. Result order is preserved by collecting into a
+        // `Vec` in manifest order, so the assembled bytes are byte-identical.
+        let overlapping: Vec<&ChunkRef> = manifest
+            .chunks
+            .iter()
+            .take_while(|c| (c.offset as usize) < end)
+            .filter(|c| c.offset as usize + c.len > offset)
+            .collect();
+        if overlapping.is_empty() {
+            return None;
         }
-        if pos < end {
+        let pieces: Vec<Option<Vec<u8>>> = if overlapping.len() >= PARALLEL_SLICE_CHUNKS {
+            overlapping
+                .par_iter()
+                .map(|c| self.slice_piece(c, offset, end))
+                .collect()
+        } else {
+            overlapping
+                .iter()
+                .map(|c| self.slice_piece(c, offset, end))
+                .collect()
+        };
+        let mut out = Vec::with_capacity(len);
+        for piece in pieces {
+            out.extend_from_slice(&piece?);
+        }
+        if out.len() != len {
             return None;
         }
         Some(out)
+    }
+
+    /// The part of one chunk that falls inside `[offset, end)`, or `None` if
+    /// the chunk is missing/malformed. Split out of `blob_slice` so the serial
+    /// and rayon paths share one implementation and cannot diverge.
+    fn slice_piece(&self, c: &ChunkRef, offset: usize, end: usize) -> Option<Vec<u8>> {
+        let mmap = self.get_mmap_cached(&c.blake3)?;
+        let chunk = mmap.as_ref();
+        let c_start = c.offset as usize;
+        let c_end = c_start + c.len;
+        // `overlapping` is pre-filtered, but re-check the bounds so a manifest
+        // that lies about its own geometry still cannot panic the slicing.
+        if c_end <= offset || c_start >= end {
+            return Some(Vec::new());
+        }
+        let from = offset.saturating_sub(c_start);
+        let to = (end - c_start).min(chunk.len());
+        if from > to {
+            return None;
+        }
+        Some(chunk[from..to].to_vec())
     }
 }
 
@@ -751,6 +794,72 @@ mod tests {
         assert_eq!(tail, &data[data.len() - 5..]);
         assert!(store.blob_slice(&m, data.len() - 1, 2).is_none());
         assert!(store.blob_slice(&m, 0, 0).is_none());
+    }
+
+    /// The rayon path must be reached for a multi-chunk range *and* return
+    /// exactly the requested bytes. The first assertion guards against the
+    /// threshold drifting above the chunk count of a realistic blob, which
+    /// would leave the parallel branch silently untested.
+    #[test]
+    fn blob_slice_parallel_path_returns_exact_range() {
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas-parallel"));
+        // Pseudo-random bytes so FastCDC finds its natural boundaries instead of
+        // running to MAX_CHUNK on every segment (a low-entropy buffer produces
+        // few, huge chunks and would not reach the rayon threshold).
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let data: Vec<u8> = (0..12 * 1024 * 1024)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                (state >> 24) as u8
+            })
+            .collect();
+        let m = store.store_reader(std::io::Cursor::new(&data)).unwrap();
+        assert!(
+            m.chunks.len() >= PARALLEL_SLICE_CHUNKS,
+            "fixture must have >= {PARALLEL_SLICE_CHUNKS} chunks to reach the rayon branch, got {}",
+            m.chunks.len()
+        );
+        for (offset, len) in [
+            (0usize, data.len()),
+            (1000, 700 * 1024),
+            (0, PARALLEL_SLICE_CHUNKS * 4096),
+            (5_000_000, 1_000_000),
+            (data.len() - 1, 1),
+        ] {
+            let got = store
+                .blob_slice(&m, offset, len)
+                .unwrap_or_else(|| panic!("range {offset}+{len} should resolve"));
+            assert_eq!(got.len(), len, "range {offset}+{len} wrong length");
+            assert_eq!(
+                got,
+                &data[offset..offset + len],
+                "range {offset}+{len} wrong bytes"
+            );
+        }
+    }
+
+    /// A manifest is rejected by `is_valid()` unless its chunks tile
+    /// `[0, total_size)` contiguously, so the only reachable short-assembly is
+    /// a chunk whose stored bytes are shorter than declared. That must surface
+    /// as `None`, never as a truncated buffer.
+    #[test]
+    fn blob_slice_refuses_short_stored_chunk() {
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas-short"));
+        let data: Vec<u8> = (0..512 * 1024).map(|i| (i % 251) as u8).collect();
+        let honest = store.store_reader(std::io::Cursor::new(&data)).unwrap();
+        // Truncate the last chunk on disk while the manifest keeps declaring
+        // its full length, and bump total_size so `is_valid()` still passes.
+        let last = honest.chunks.last().expect("at least one chunk");
+        let path = store.chunk_path(&last.blake3);
+        let mut on_disk = fs::read(&path).unwrap();
+        on_disk.truncate(on_disk.len() - 1);
+        fs::write(&path, &on_disk).unwrap();
+        assert!(
+            store.blob_slice(&honest, 0, data.len()).is_none(),
+            "a short stored chunk must be refused, not served truncated"
+        );
     }
 
     #[test]

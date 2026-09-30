@@ -31,6 +31,8 @@
 use std::collections::HashSet;
 use std::io::Cursor;
 
+use rayon::prelude::*;
+
 use mp4parse::{
     read_mp4, CodecType, MediaContext, SampleEntry, Track, TrackType, VideoCodecSpecific,
 };
@@ -44,6 +46,11 @@ use crate::image_nn::{self, ImageNnScores};
 
 /// Maximum number of sampled frames per video (bounded decode cost).
 pub const MAX_VIDEO_FRAMES: usize = 16;
+/// Sampled-frame count at which per-frame decode + classify is worth handing
+/// to rayon. Each frame costs milliseconds, so crossing this threshold pays
+/// for the scheduling; below it the serial loop is cheaper. Matches the
+/// threshold style of the other rayon call sites in this workspace.
+const PARALLEL_FRAME_THRESHOLD: usize = 4;
 /// Maximum pixel dimension of a decoded frame we will classify.
 pub const MAX_FRAME_DIM: usize = 4096;
 /// Maximum number of track samples we will materialize.
@@ -475,7 +482,11 @@ pub fn classify_video_mp4(bytes: &[u8]) -> Option<VideoFramesVerdict> {
     }
     let chosen = select_samples(&samples);
     let attempted = chosen.len();
-    let mut stats = Vec::new();
+
+    // Resolve sample byte ranges first, serially: the bounds check is pure
+    // arithmetic and its `?` bails the whole video on an overflowing table.
+    // Keeping it out of the parallel closure preserves that exact semantics.
+    let mut ranges: Vec<&[u8]> = Vec::with_capacity(chosen.len());
     for s in &chosen {
         let start = s.offset as u64;
         let end = start.checked_add(s.size as u64)?;
@@ -486,21 +497,48 @@ pub fn classify_video_mp4(bytes: &[u8]) -> Option<VideoFramesVerdict> {
         if slice.len() > MAX_SAMPLE_BYTES {
             continue;
         }
-        let yuv = match codec {
-            VideoCodec::H264 => decode_h264_sample(&config, slice),
-            #[cfg(not(target_arch = "arm"))]
-            VideoCodec::Av1 => decode_av1_sample(&config, slice),
-        };
-        if let Some(yuv) = yuv {
-            if let Some(stat) = classify_frame(&yuv) {
-                stats.push(stat);
-            }
-        }
+        ranges.push(slice);
     }
+
+    // Decode + classify per frame is the expensive part (~6.5 ms/frame at
+    // 1080p, measured — see `benches/video_nn.rs`), and each frame is
+    // independent: `decode_h264_sample` builds a fresh `H264Decoder` per
+    // sample, `decode_av1_sample` pins `threads = 1` so `decode()` is
+    // synchronous, the image NN model is a `&'static` behind `OnceLock`, and
+    // `select_samples` only picks sync samples, so there is no reference-chain
+    // ordering to preserve. Rayon below a threshold would cost more in task
+    // overhead than it saves, so short clips stay on the serial path — the
+    // same gate the other rayon call sites in this workspace use.
+    let stats = classify_ranges(&ranges, codec, &config, PARALLEL_FRAME_THRESHOLD);
     if stats.is_empty() {
         return None;
     }
     Some(VideoFramesVerdict::aggregate(&stats, attempted))
+}
+
+/// Decodes and classifies each sample range, in parallel once there are at
+/// least `threshold` of them. Every frame is independent (see the call site
+/// for why), so both paths must agree exactly — `parallel_matches_serial`
+/// pins that.
+fn classify_ranges(
+    ranges: &[&[u8]],
+    codec: VideoCodec,
+    config: &[u8],
+    threshold: usize,
+) -> Vec<FrameStat> {
+    let classify_slice = |slice: &&[u8]| -> Option<FrameStat> {
+        let yuv = match codec {
+            VideoCodec::H264 => decode_h264_sample(config, slice),
+            #[cfg(not(target_arch = "arm"))]
+            VideoCodec::Av1 => decode_av1_sample(config, slice),
+        };
+        classify_frame(&yuv?)
+    };
+    if ranges.len() >= threshold {
+        ranges.par_iter().filter_map(classify_slice).collect()
+    } else {
+        ranges.iter().filter_map(classify_slice).collect()
+    }
 }
 
 #[cfg(test)]
@@ -713,6 +751,69 @@ mod tests {
         let v = v.expect("h264 fixture should classify");
         assert!(v.frames_classified >= 1, "{v:?}");
         assert!(v.exposure_max >= 0.0 && v.exposure_max <= 1.0);
+    }
+
+    /// The fixture has 4 H.264 keyframes, so `classify_video_mp4` takes the
+    /// rayon path — this asserts the parallel branch is actually reached
+    /// rather than silently falling through to the serial one.
+    #[test]
+    fn h264_fixture_exercises_the_parallel_path() {
+        let (codec, config) = fixture_codec(H264_FIXTURE).expect("h264 fixture parses");
+        assert_eq!(codec, VideoCodec::H264);
+        let ctx = read_mp4(&mut Cursor::new(H264_FIXTURE)).expect("demux");
+        let track = ctx
+            .tracks
+            .iter()
+            .find(|t| t.track_type == TrackType::Video)
+            .expect("video track");
+        let samples = build_sample_table(track).expect("sample table");
+        let chosen = select_samples(&samples);
+        assert!(
+            chosen.len() >= PARALLEL_FRAME_THRESHOLD,
+            "fixture must have >= {PARALLEL_FRAME_THRESHOLD} sampled frames to reach the \
+             rayon branch, got {}",
+            chosen.len()
+        );
+        // And the shared helper must agree across both dispatch modes.
+        let ranges: Vec<&[u8]> = chosen
+            .iter()
+            .map(|s| &H264_FIXTURE[s.offset..s.offset + s.size])
+            .collect();
+        let parallel = classify_ranges(&ranges, codec, &config, 0);
+        let serial = classify_ranges(&ranges, codec, &config, usize::MAX);
+        assert!(!parallel.is_empty());
+        assert_eq!(parallel.len(), serial.len());
+        for (p, s) in parallel.iter().zip(serial.iter()) {
+            assert_eq!(p.exposure.to_bits(), s.exposure.to_bits());
+            assert_eq!(p.gore_chrom.to_bits(), s.gore_chrom.to_bits());
+            assert_eq!(
+                p.nn.as_ref().map(|n| n.juvenile.to_bits()),
+                s.nn.as_ref().map(|n| n.juvenile.to_bits())
+            );
+        }
+    }
+
+    /// Extracts the codec + its config blob from a fixture, mirroring the
+    /// dispatch `classify_video_mp4` performs.
+    fn fixture_codec(bytes: &[u8]) -> Option<(VideoCodec, Vec<u8>)> {
+        let ctx = read_mp4(&mut Cursor::new(bytes)).ok()?;
+        let track = ctx
+            .tracks
+            .iter()
+            .find(|t| t.track_type == TrackType::Video)?;
+        let stsd = track.stsd.as_ref()?;
+        let entry = stsd.descriptions.iter().find_map(|d| match d {
+            SampleEntry::Video(v) => Some(v),
+            _ => None,
+        })?;
+        match &entry.codec_specific {
+            VideoCodecSpecific::AVCConfig(avcc) => Some((VideoCodec::H264, avcc.to_vec())),
+            #[cfg(not(target_arch = "arm"))]
+            VideoCodecSpecific::AV1Config(cfg) => {
+                Some((VideoCodec::Av1, cfg.config_obus().to_vec()))
+            }
+            _ => None,
+        }
     }
 
     #[test]
