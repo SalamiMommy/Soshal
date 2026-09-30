@@ -1603,6 +1603,13 @@ where
     }
 }
 
+/// Minimum wall time between opportunistic idle-connection sweeps. A sweep
+/// walks every pooled connection, and `fetch_chunk` calls it once per chunk, so
+/// an unthrottled sweep made each fetch cost O(pool size). Well below the 60 s
+/// idle threshold it is called with, so a stale connection's retention bound
+/// goes from 60 s to at most 60 s + this interval.
+const IDLE_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15);
+
 /// Reusable QUIC client for bulk chunk fetches: one endpoint and one
 /// connection per peer, reused across chunks — the swarm download path avoids
 /// a fresh socket + full TLS handshake per chunk.
@@ -1611,6 +1618,10 @@ pub struct QuicChunkPool {
     conns: std::sync::Mutex<
         std::collections::HashMap<SocketAddr, (quinn::Connection, std::time::Instant)>,
     >,
+    /// Timestamp of the last idle sweep. Held under its own mutex (not
+    /// `conns`) so the throttle check never blocks on the connection map, and
+    /// `try_lock` there so a fetch never waits behind a sweep.
+    sweep_gate: std::sync::Mutex<std::time::Instant>,
 }
 
 impl QuicChunkPool {
@@ -1625,6 +1636,9 @@ impl QuicChunkPool {
         Ok(Self {
             endpoint,
             conns: std::sync::Mutex::new(std::collections::HashMap::new()),
+            // Zeroed so the first fetch performs a sweep immediately, matching
+            // the old unconditional behavior on the first call.
+            sweep_gate: std::sync::Mutex::new(std::time::Instant::now() - IDLE_SWEEP_INTERVAL),
         })
     }
 
@@ -1668,16 +1682,33 @@ impl QuicChunkPool {
     /// Close and drop connections idle for longer than `idle`, so a pool that
     /// outlives a swarm download (e.g. cached app-wide) does not hold open
     /// sockets to transient peers forever. Called opportunistically on fetch.
+    ///
+    /// Amortized: the sweep is O(live connections) and `fetch_chunk` runs once
+    /// per chunk, so doing it on every call made the pool scan grow linearly
+    /// with the number of in-flight swarm workers. `last_sweep` throttles it to
+    /// at most one sweep per `IDLE_SWEEP_INTERVAL` while still bounding how long
+    /// a stale connection can be retained.
     fn evict_idle(&self, idle: std::time::Duration) {
-        if let Ok(mut guard) = self.conns.lock() {
+        // A concurrent sweep may already be running; skipping rather than
+        // waiting keeps the fetch path free of sweep contention. Losing a
+        // sweep is harmless — the next interval re-checks.
+        let Ok(mut guard) = self.sweep_gate.try_lock() else {
+            return;
+        };
+        if guard.elapsed() < IDLE_SWEEP_INTERVAL {
+            return;
+        }
+        *guard = std::time::Instant::now();
+
+        if let Ok(mut conns) = self.conns.lock() {
             let now = std::time::Instant::now();
-            let stale: Vec<SocketAddr> = guard
+            let stale: Vec<SocketAddr> = conns
                 .iter()
                 .filter(|(_, (_, last))| now.saturating_duration_since(*last) > idle)
                 .map(|(a, _)| *a)
                 .collect();
             for a in stale {
-                guard.remove(&a);
+                conns.remove(&a);
             }
         }
     }

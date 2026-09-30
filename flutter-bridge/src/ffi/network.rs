@@ -62,13 +62,19 @@ pub(super) fn resolved_kind() -> (TransportKind, bool) {
     }
     #[cfg(not(test))]
     {
-        transport_mode().resolve(
-            reticulum_started(),
-            super::util::cached_tcp_probe("127.0.0.1", 7509)
-                || super::relay::mesh_backend_up(TransportKind::Freenet),
-            super::util::cached_tcp_probe("127.0.0.1", 7656)
-                || super::relay::mesh_backend_up(TransportKind::I2p),
-        )
+        // Probe both daemon ports concurrently. Each probe is a 500 ms blocking
+        // connect, so probing them in sequence meant a dead Freenet node cost
+        // its full timeout before I2P was even considered. Probed together,
+        // wall time is the slowest single probe rather than the sum. A backend
+        // already known up short-circuits its probe entirely, and the
+        // per-endpoint cache means a warm call does no I/O at all.
+        let (freenet, i2p) = super::util::cached_tcp_probe_pair(
+            ("127.0.0.1", 7509u16),
+            ("127.0.0.1", 7656u16),
+            super::relay::mesh_backend_up(TransportKind::Freenet),
+            super::relay::mesh_backend_up(TransportKind::I2p),
+        );
+        transport_mode().resolve(reticulum_started(), freenet, i2p)
     }
 }
 
@@ -182,22 +188,42 @@ pub async fn network_init_relays(relay_urls: Vec<String>) -> Result<String, Stri
         builder = builder.proxy(Proxy::all(addr));
     }
     let client = builder.build();
-    let mut added = 0usize;
+    // Add relays concurrently. `add_relay` parses the URL and spawns the
+    // connection, so awaiting them one at a time serialized N of those on the
+    // boot path. Parse first (cheap, and a parse failure must still surface as
+    // a hard error), then add them all and surface the first failure.
+    let mut targets = Vec::with_capacity(relay_urls.len());
     for url in &relay_urls {
-        if let Ok(target) = nostr::types::RelayUrl::parse(url) {
-            match client.add_relay(target).await {
-                Ok(_) => added += 1,
-                Err(e) => return Err(format!("failed to add relay {url}: {e}")).into(),
-            }
-        } else {
+        match nostr::types::RelayUrl::parse(url) {
+            Ok(target) => targets.push((url, target)),
             // Policy accepted the URL but nostr-sdk cannot parse it (e.g.
             // IDN/punycode host that RelayUrl rejects). Surfacing the error
             // beats silently skipping: the caller sees why their relay set
             // was not initialized instead of a vague partial-initialize.
-            return Err(format!(
-                "relay URL passed policy but failed RelayUrl parse: {url}"
-            ))
-            .into();
+            Err(_) => {
+                return Err(format!(
+                    "relay URL passed policy but failed RelayUrl parse: {url}"
+                ))
+                .into();
+            }
+        }
+    }
+    let add_results = futures_util::future::join_all(
+        targets
+            .iter()
+            // `add_relay` returns an `AddRelay` builder that implements
+            // `IntoFuture`, not `Future` — convert before joining.
+            .map(|(_, target)| {
+                use std::future::IntoFuture;
+                client.add_relay(target.clone()).into_future()
+            }),
+    )
+    .await;
+    let mut added = 0usize;
+    for ((url, _), res) in targets.iter().zip(add_results) {
+        match res {
+            Ok(_) => added += 1,
+            Err(e) => return Err(format!("failed to add relay {url}: {e}")).into(),
         }
     }
     if added == 0 {
@@ -1101,13 +1127,14 @@ pub fn network_reticulum_announce(pubkey: String) -> Result<bool, String> {
         let guard = node.lock().unwrap_or_else(|e| e.into_inner());
         guard.known_peers()
     };
-    let mut sent = 0usize;
-    for peer in &peers {
-        let guard = node.lock().unwrap_or_else(|e| e.into_inner());
-        if guard.send_packet(*peer, &announce).is_ok() {
-            sent += 1;
-        }
-    }
+    // One node lock for the whole fan-out, not one per peer. `send_packet`
+    // takes `&self` and manages its own internal stat locks, so there is no
+    // reason to re-acquire the node lock for every destination.
+    let guard = node.lock().unwrap_or_else(|e| e.into_inner());
+    let sent = peers
+        .iter()
+        .filter(|peer| guard.send_packet(**peer, &announce).is_ok())
+        .count();
     if sent == 0 {
         return Err(format!(
             "Reticulum running (destination {}) but announce reached 0 peers",

@@ -242,48 +242,86 @@ pub fn fetch_blob_from_peer(
         let mut hasher = blake3::Hasher::new();
         let mut written: u64 = 0;
         let quic_addr = peer.quic_addr();
-        for (batch_start, batch) in manifest.chunks.chunks(CONCURRENT_CHUNKS).enumerate() {
-            let start = batch_start * CONCURRENT_CHUNKS;
-            let batch_results: Vec<Result<Vec<u8>, String>> = std::thread::scope(|s| {
-                let mut handles = Vec::with_capacity(batch.len());
-                for chr in batch {
-                    handles.push(s.spawn(move || {
-                        fetch_chunk_bytes(*peer, key, my_pubkey, quic_addr, chr.clone())
-                    }));
-                }
-                handles
-                    .into_iter()
-                    .map(|h| {
-                        h.join()
-                            .unwrap_or_else(|_| Err("chunk thread panic".to_string()))
+        // Fetch every chunk through a shared work queue rather than in serial
+        // rounds of CONCURRENT_CHUNKS. Batching kept each round's per-chunk
+        // round-trips overlapped but left the rounds themselves sequential, so
+        // a 64-chunk blob paid 8 full round-trip latencies back to back. A
+        // worker pool pulling from one atomic cursor keeps the total in-flight
+        // count at CONCURRENT_CHUNKS while leaving no idle gap between rounds.
+        //
+        // Fetching is the only parallel part: the store/write/hash work below
+        // stays strictly in manifest order, because the whole-blob BLAKE3 is a
+        // rolling hash over that exact sequence. Workers therefore only produce
+        // `(index, bytes)` pairs; each worker accumulates its own vector and the
+        // results are merged by index after the scope closes.
+        let total_chunks = manifest.chunks.len();
+        let cursor = std::sync::atomic::AtomicUsize::new(0);
+        let workers = CONCURRENT_CHUNKS.min(total_chunks.max(1));
+        // Borrow the manifest (not move) so the same refs serve both the
+        // workers and the in-order write pass below.
+        let chunks = &manifest.chunks[..];
+        let fetched: Vec<(usize, Result<Vec<u8>, String>)> = std::thread::scope(|s| {
+            let handles: Vec<_> = (0..workers)
+                .map(|_| {
+                    let cursor = &cursor;
+                    s.spawn(move || {
+                        let mut mine: Vec<(usize, Result<Vec<u8>, String>)> = Vec::new();
+                        loop {
+                            let idx = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            if idx >= total_chunks {
+                                break;
+                            }
+                            let chr = chunks[idx].clone();
+                            let res = fetch_chunk_bytes(*peer, key, my_pubkey, quic_addr, chr);
+                            mine.push((idx, res));
+                        }
+                        mine
                     })
-                    .collect()
-            });
-            for (bi, res) in batch_results.into_iter().enumerate() {
-                let chr = &manifest.chunks[start + bi];
-                let bytes = res?;
-                if bytes.len() != chr.len {
-                    return Err(format!(
-                        "chunk {} short ({} != {})",
-                        chr.blake3,
-                        bytes.len(),
-                        chr.len
-                    ));
-                }
-                // Dedupe is normal (same clip via two peers / earlier run):
-                // only the first writer stores; the whole-blob BLAKE3 check
-                // still guards us.
-                let stored = absorbed.put_trusted(&chr.blake3, &bytes);
-                if stored {
-                    newly_absorbed.push(chr.blake3.clone());
-                } else if !absorbed.contains(&chr.blake3) {
-                    return Err(format!("chunk {} store failed", chr.blake3));
-                }
-                file.write_all(&bytes)
-                    .map_err(|e| format!("write {tmp_path}: {e}"))?;
-                hasher.update(&bytes);
-                written += bytes.len() as u64;
+                })
+                .collect();
+            handles
+                .into_iter()
+                .filter_map(|h| h.join().ok())
+                .flatten()
+                .collect()
+        });
+        // Restore manifest order: the rolling blob hash depends on it.
+        let mut by_index: Vec<Option<Result<Vec<u8>, String>>> =
+            (0..total_chunks).map(|_| None).collect();
+        for (idx, res) in fetched {
+            if let Some(slot) = by_index.get_mut(idx) {
+                *slot = Some(res);
             }
+        }
+
+        for (bi, res) in by_index.into_iter().enumerate() {
+            let chr = &manifest.chunks[bi];
+            let bytes = match res {
+                Some(res) => res?,
+                // A worker thread panicked: its slot never resolved.
+                None => return Err("chunk thread panic".to_string()),
+            };
+            if bytes.len() != chr.len {
+                return Err(format!(
+                    "chunk {} short ({} != {})",
+                    chr.blake3,
+                    bytes.len(),
+                    chr.len
+                ));
+            }
+            // Dedupe is normal (same clip via two peers / earlier run):
+            // only the first writer stores; the whole-blob BLAKE3 check
+            // still guards us.
+            let stored = absorbed.put_trusted(&chr.blake3, &bytes);
+            if stored {
+                newly_absorbed.push(chr.blake3.clone());
+            } else if !absorbed.contains(&chr.blake3) {
+                return Err(format!("chunk {} store failed", chr.blake3));
+            }
+            file.write_all(&bytes)
+                .map_err(|e| format!("write {tmp_path}: {e}"))?;
+            hasher.update(&bytes);
+            written += bytes.len() as u64;
         }
 
         // 3) Whole-blob verification + CAS absorb + atomic rename.

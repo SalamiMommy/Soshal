@@ -286,14 +286,22 @@ pub async fn search_remote_global(
     let limit_clamped = limit.clamp(1, 100);
     let filter = Filter::new().search(query).limit(limit_clamped as usize);
     let client = Client::builder().build();
-    let mut added = 0usize;
-    for url in &relays {
-        if let Ok(target) = nostr::types::RelayUrl::parse(url) {
-            if client.add_relay(target).await.is_ok() {
-                added += 1;
-            }
-        }
-    }
+    // Add relays concurrently rather than awaiting each in turn — this is
+    // ahead of an 8 s-bounded `fetch_events`, so relay setup latency is
+    // directly on the user's search latency. Unparseable URLs are skipped
+    // here (as before) and simply do not count toward `added`.
+    let add_results = futures_util::future::join_all(relays.iter().filter_map(|url| {
+        let target = nostr::types::RelayUrl::parse(url).ok()?;
+        // Borrow the client, don't move it: the same client is used for
+        // `connect()` and `fetch_events` below.
+        let client = &client;
+        Some(async move {
+            use std::future::IntoFuture;
+            client.add_relay(target).into_future().await
+        })
+    }))
+    .await;
+    let added = add_results.iter().filter(|r| r.is_ok()).count();
     if added == 0 {
         return Err("no relays could be added".to_string()).into();
     }

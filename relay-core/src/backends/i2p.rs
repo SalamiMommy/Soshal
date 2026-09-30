@@ -159,12 +159,27 @@ impl MeshBackend for I2pBackend {
                 })
                 .collect()
         };
-        let mut failed = Vec::new();
-        for (dest, mut stream) in snapshot {
-            let _ = stream
-                .write_all(&frame)
-                .map_err(|_| failed.push(dest.clone()));
-        }
+        // Write to every peer concurrently. `write_all` is blocking with a
+        // 30 s write timeout, so writing serially meant one unresponsive peer
+        // stalled delivery to every other peer for up to that timeout — and
+        // this runs on the mesh relay poll thread, so it also delayed ingest.
+        // Scoped threads (not tasks) because the streams are blocking
+        // `std::net::TcpStream`s. Each iteration owns a `try_clone`d fd, so
+        // the clones are independent and the peer map is not borrowed here.
+        let failed: Vec<String> = std::thread::scope(|s| {
+            let handles: Vec<_> = snapshot
+                .into_iter()
+                .map(|(dest, mut stream)| {
+                    let frame = frame.clone();
+                    s.spawn(move || stream.write_all(&frame).err().map(|_| dest))
+                })
+                .collect();
+            handles
+                .into_iter()
+                .filter_map(|h| h.join().ok())
+                .flatten()
+                .collect()
+        });
         if !failed.is_empty() {
             let mut peers = self.peers.lock().unwrap_or_else(|e| e.into_inner());
             for dest in &failed {

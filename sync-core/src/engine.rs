@@ -184,7 +184,9 @@ fn ingest_batch(
 
 /// Build the relay client from config (validated URLs + optional SOCKS proxy).
 pub async fn build_client(cfg: &SyncConfig) -> Result<Client, String> {
-    let mut relays = Vec::new();
+    // Phase 1 (sync, no I/O): parse and policy-check every URL, keeping the
+    // host/port needed for the DNS pass in phase 2.
+    let mut candidates: Vec<(nostr::types::RelayUrl, String, u16)> = Vec::new();
     for url in &cfg.relays {
         let (valid, _) = soshal_common_core::url::is_valid_relay_url(url);
         if !valid {
@@ -202,11 +204,29 @@ pub async fn build_client(cfg: &SyncConfig) -> Result<Client, String> {
         let port = parsed
             .port()
             .unwrap_or(if parsed.scheme() == "wss" { 443 } else { 80 });
+        candidates.push((target, host, port));
+    }
+
+    // Phase 2: resolve-and-check every candidate concurrently. DNS was the
+    // dominant cost here and it ran one hostname at a time, so a 50-relay
+    // config paid 50 sequential resolutions before the client even existed.
+    // Joining makes wall time the slowest single resolution instead.
+    let lookups = futures_util::future::join_all(candidates.iter().map(|(_, host, port)| {
+        // Own the host: `lookup_host` borrows it for the returned iterator's
+        // lifetime, which outlives the borrowed `&String`.
+        let host = host.clone();
+        let port = *port;
+        async move { tokio::net::lookup_host((host, port)).await }
+    }))
+    .await;
+
+    let mut relays = Vec::new();
+    for ((target, _, _), lookup) in candidates.into_iter().zip(lookups) {
         // Resolve-and-check only when DNS answers: a hostname that resolves
         // to private/loopback addresses is dropped (SSRF). An unresolvable
         // hostname (DNS failure) is kept best-effort — the relay simply fails
         // to connect and the engine idles, which must stay possible offline.
-        match tokio::net::lookup_host((host, port)).await {
+        match lookup {
             Ok(addrs) => {
                 let any_public = addrs
                     .into_iter()
@@ -235,11 +255,16 @@ pub async fn build_client(cfg: &SyncConfig) -> Result<Client, String> {
         builder = builder.proxy(nostr_sdk::proxy::Proxy::all(addr));
     }
     let client = builder.build();
-    for target in &relays {
-        client
-            .add_relay(target.clone())
-            .await
-            .map_err(|e| format!("add relay {target}: {e}"))?;
+    // Add relays concurrently: each `add_relay` parses and spawns a connection,
+    // so awaiting them one at a time serialized that work across all relays.
+    // `AddRelay` implements `IntoFuture`, so convert before joining.
+    let add_results = futures_util::future::join_all(relays.iter().map(|target| {
+        use std::future::IntoFuture;
+        client.add_relay(target.clone()).into_future()
+    }))
+    .await;
+    for (target, res) in relays.iter().zip(add_results) {
+        res.map_err(|e| format!("add relay {target}: {e}"))?;
     }
     let _ = client.connect().await;
     Ok(client)

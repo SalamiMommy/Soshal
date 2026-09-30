@@ -600,6 +600,9 @@ fn watchdog_loop() {
             break;
         }
         let daemons: Vec<&'static str> = DAEMONS.to_vec();
+        // Outcomes are collected first so the respawn grace window below can be
+        // a single sleep for the whole sweep instead of one per daemon.
+        let mut pending: Vec<(&'static str, SpawnOutcome)> = Vec::with_capacity(daemons.len());
         for name in daemons {
             if WATCHDOG_STOP.load(Ordering::Relaxed) {
                 break;
@@ -636,13 +639,27 @@ fn watchdog_loop() {
                     .map(|s| s())
                     .unwrap_or(SpawnOutcome::Failed)
             };
+            pending.push((name, outcome));
+        }
+
+        // Grace window, once for the whole sweep rather than once per daemon.
+        // It used to sit inside the loop, so three dead daemons meant three
+        // consecutive 5 s sleeps (15 s per watchdog pass) before the next
+        // sweep could even start. All candidates are already spawned by now, so
+        // a single wait covers them all.
+        let spawned_any = pending
+            .iter()
+            .any(|(_, o)| matches!(o, SpawnOutcome::Spawned));
+        if spawned_any && !WATCHDOG_STOP.load(Ordering::Relaxed) {
+            // A process that execs but exits immediately (bad binary, missing
+            // runtime) still made spawn() succeed, so verify the daemons
+            // actually came up before counting any respawn as a win.
+            std::thread::sleep(std::time::Duration::from_secs(5));
+        }
+
+        for (name, outcome) in pending {
             match outcome {
                 SpawnOutcome::Spawned => {
-                    // Grace window: a process that execs but exits immediately
-                    // (bad binary, missing runtime) still made spawn() succeed,
-                    // so verify it actually came up before counting the
-                    // respawn as a win.
-                    std::thread::sleep(std::time::Duration::from_secs(5));
                     let now_live = is_running(name)
                         || (name == "i2pd" && port_open(I2PD_SAM_PORT))
                         || (name == "freenet" && port_open(FREENET_API_PORT))

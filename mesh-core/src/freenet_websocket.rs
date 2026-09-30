@@ -12,6 +12,7 @@ use freenet_stdlib::prelude::{
     StateSummary as FnetStateSummary, WrappedContract as FnetWrappedContract,
     WrappedState as FnetWrappedState,
 };
+use futures_util::stream::FuturesUnordered;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -24,6 +25,12 @@ use tokio_tungstenite::{client_async, tungstenite::Message, WebSocketStream};
 /// Per-phase bound for Freenet node connections (TCP connect, TLS handshake,
 /// WS upgrade). Prevents hangs on unreachable nodes.
 const WS_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Happy-eyeballs stagger: how long after the previous attempt starts before the
+/// next resolved address is tried in parallel. A hostname with a dead A-record
+/// alongside a good one used to cost a full `WS_CONNECT_TIMEOUT` per dead
+/// address, paid strictly before the good one was even tried.
+const CONNECT_STAGGER: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// The freenet-core node serves the client WebSocket API only on this path
 /// (both v1 and v2 exist; v2 is current). A bare `ws://host:port` root URL
@@ -213,76 +220,115 @@ impl FreenetWebSocketClient {
         // user contexts and must not be reused here.
         // Every phase (TCP connect, TLS handshake, WS upgrade) is bounded —
         // an unreachable node must fail fast instead of hanging the caller.
-        let mut last_err: Option<String> = None;
-        for addr in &pinned {
-            let mut request = ws_url
-                .as_str()
-                .into_client_request()
-                .map_err(|e| format!("WebSocket request build failed: {e}"))?;
+        //
+        // The request and TLS server name do not depend on which address we end
+        // up using, so build them once here rather than per address. A `?` here
+        // still fails the whole connect exactly as it did inside the old loop.
+        let mut request = ws_url
+            .as_str()
+            .into_client_request()
+            .map_err(|e| format!("WebSocket request build failed: {e}"))?;
+        request.headers_mut().insert(
+            HeaderName::from_static(ENCODING_PROTOCOL_HEADER),
+            HeaderValue::from_static(ENCODING_PROTOCOL_NATIVE),
+        );
+        if !self.auth_token.is_empty() {
             request.headers_mut().insert(
-                HeaderName::from_static(ENCODING_PROTOCOL_HEADER),
-                HeaderValue::from_static(ENCODING_PROTOCOL_NATIVE),
+                HeaderName::from_static("authorization"),
+                HeaderValue::from_str(&format!("Bearer {}", self.auth_token))
+                    .map_err(|e| format!("Authorization header build failed: {e}"))?,
             );
-            if !self.auth_token.is_empty() {
-                request.headers_mut().insert(
-                    HeaderName::from_static("authorization"),
-                    HeaderValue::from_str(&format!("Bearer {}", self.auth_token))
-                        .map_err(|e| format!("Authorization header build failed: {e}"))?,
-                );
-            }
+        }
+        let server_name = tls_connector
+            .as_ref()
+            .map(|_| {
+                rustls::pki_types::ServerName::try_from(hostname.clone())
+                    .map_err(|e| format!("invalid TLS hostname: {e}"))
+            })
+            .transpose()?;
 
-            match tokio::time::timeout(WS_CONNECT_TIMEOUT, tokio::net::TcpStream::connect(addr))
-                .await
-            {
-                Ok(Ok(stream)) => {
-                    let prepared: Result<Box<dyn WebSocketStreamTrait>, String> =
-                        match &tls_connector {
-                            Some(conn) => {
-                                let name =
-                                    rustls::pki_types::ServerName::try_from(hostname.clone())
-                                        .map_err(|e| format!("invalid TLS hostname: {e}"))?;
-                                match tokio::time::timeout(
-                                    WS_CONNECT_TIMEOUT,
-                                    conn.connect(name, stream),
-                                )
-                                .await
-                                {
-                                    Ok(Ok(s)) => Ok(Box::new(s) as _),
-                                    Ok(Err(e)) => Err(format!("TLS handshake failed: {e}")),
-                                    Err(_) => Err("TLS handshake timed out".to_string()),
-                                }
-                            }
-                            None => Ok(Box::new(stream) as _),
-                        };
-                    match prepared {
-                        Ok(stream) => {
-                            match tokio::time::timeout(
-                                WS_CONNECT_TIMEOUT,
-                                client_async(request, stream),
-                            )
-                            .await
-                            {
-                                Ok(Ok((ws, _))) => {
-                                    let mut socket_guard = self.socket.lock().await;
-                                    *socket_guard = Some(ws);
-                                    return Ok(());
-                                }
-                                Ok(Err(e)) => {
-                                    last_err = Some(format!("WebSocket handshake failed: {e}"))
-                                }
-                                Err(_) => {
-                                    last_err = Some("WebSocket handshake timed out".to_string())
-                                }
-                            }
-                        }
-                        Err(e) => last_err = Some(e),
-                    }
+        // Happy-eyeballs across the verified addresses: the first is tried
+        // immediately and the rest follow at a fixed stagger, so a dead
+        // A-record no longer blocks the good one for a full timeout. The first
+        // attempt to complete a full TCP -> TLS -> WS handshake wins; the
+        // others are dropped (cancelled) as soon as we return.
+        let mut attempts = FuturesUnordered::new();
+        for (i, addr) in pinned.iter().enumerate() {
+            let addr = *addr;
+            let connector = tls_connector.as_ref();
+            // Uniform `async move` wrapper so every entry has the same opaque
+            // type — `FuturesUnordered` holds exactly one concrete future type.
+            let stagger = if i == 0 {
+                std::time::Duration::ZERO
+            } else {
+                CONNECT_STAGGER
+            };
+            // Clone per iteration so the `async move` blocks each own their copy
+            // and still share the same concrete future type.
+            let request = request.clone();
+            let server_name = server_name.clone();
+            attempts.push(async move {
+                if !stagger.is_zero() {
+                    tokio::time::sleep(stagger).await;
                 }
-                Ok(Err(e)) => last_err = Some(format!("TCP connect to {addr} failed: {e}")),
-                Err(_) => last_err = Some(format!("TCP connect to {addr} timed out")),
+                // `self` is borrowed across the stagger wait; it outlives the
+                // future, which is dropped when we return on the first success.
+                self.connect_addr(addr, request, server_name, connector)
+                    .await
+            });
+        }
+
+        let mut last_err: Option<String> = None;
+        while let Some(res) = attempts.next().await {
+            match res {
+                Ok(ws) => {
+                    let mut socket_guard = self.socket.lock().await;
+                    *socket_guard = Some(ws);
+                    return Ok(());
+                }
+                Err(e) => last_err = Some(e),
             }
         }
         Err(last_err.unwrap_or_else(|| "WebSocket connection failed".to_string()))
+    }
+
+    /// One full connection attempt against a single verified address: TCP
+    /// connect, optional TLS handshake, then the WebSocket upgrade. Every phase
+    /// is individually bounded by `WS_CONNECT_TIMEOUT`.
+    async fn connect_addr(
+        &self,
+        addr: std::net::SocketAddr,
+        request: tokio_tungstenite::tungstenite::handshake::client::Request,
+        server_name: Option<rustls::pki_types::ServerName<'static>>,
+        tls_connector: Option<&tokio_rustls::TlsConnector>,
+    ) -> Result<WebSocketStream<BoxedStream>, String> {
+        let stream =
+            match tokio::time::timeout(WS_CONNECT_TIMEOUT, tokio::net::TcpStream::connect(addr))
+                .await
+            {
+                Ok(Ok(s)) => s,
+                Ok(Err(e)) => return Err(format!("TCP connect to {addr} failed: {e}")),
+                Err(_) => return Err(format!("TCP connect to {addr} timed out")),
+            };
+        let stream: BoxedStream = match tls_connector {
+            Some(conn) => {
+                let name = server_name.ok_or_else(|| "invalid TLS hostname".to_string())?;
+                match tokio::time::timeout(WS_CONNECT_TIMEOUT, conn.connect(name, stream)).await {
+                    Ok(Ok(s)) => Box::new(s) as _,
+                    Ok(Err(e)) => return Err(format!("TLS handshake failed: {e}")),
+                    Err(_) => return Err("TLS handshake timed out".to_string()),
+                }
+            }
+            None => {
+                stream.set_nodelay(true).ok();
+                Box::new(stream) as _
+            }
+        };
+        match tokio::time::timeout(WS_CONNECT_TIMEOUT, client_async(request, stream)).await {
+            Ok(Ok((ws, _))) => Ok(ws),
+            Ok(Err(e)) => Err(format!("WebSocket handshake failed: {e}")),
+            Err(_) => Err("WebSocket handshake timed out".to_string()),
+        }
     }
 
     /// Disconnects from the Freenet node

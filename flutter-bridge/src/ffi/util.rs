@@ -275,28 +275,142 @@ pub(crate) fn tcp_probe(host: &str, port: u16) -> bool {
     .unwrap_or(false)
 }
 
-/// Cached TCP probe with a 5-second TTL to avoid repeated socket connections on hot paths.
-#[cfg_attr(test, allow(dead_code))] // only referenced from cfg(not(test)) paths
-pub(crate) fn cached_tcp_probe(host: &str, port: u16) -> bool {
+/// Shared 5-second-TTL probe cache, keyed by `(host, port)`. One cache backs
+/// both probe entry points below so an answer cached by one is visible to the
+/// other instead of each keeping a private copy.
+fn probe_cache() -> &'static Mutex<TtlCache<(String, u16), bool>> {
     use std::sync::OnceLock;
-
     static PROBE_CACHE: OnceLock<Mutex<TtlCache<(String, u16), bool>>> = OnceLock::new();
-    let cache = PROBE_CACHE.get_or_init(|| Mutex::new(TtlCache::new(5, 256)));
+    PROBE_CACHE.get_or_init(|| Mutex::new(TtlCache::new(5, 256)))
+}
+
+/// Reads a cached probe answer, if present. Caller must not hold the lock
+/// across I/O — see `cached_tcp_probe`.
+fn probe_cached(host: &str, port: u16, now: i64) -> Option<bool> {
     let key = (host.to_string(), port);
-    let now = soshal_common_core::format::now_secs();
-    {
-        let mut guard = lock(cache);
-        if let Some(&result) = guard.get(&key, now) {
-            return result;
-        }
+    lock(probe_cache()).get(&key, now).copied()
+}
+
+/// Stores a probe answer unless a concurrent caller already stored one, so all
+/// callers converge on the same verdict for a TTL window.
+fn probe_store(host: &str, port: u16, value: bool, now: i64) {
+    let key = (host.to_string(), port);
+    let mut guard = lock(probe_cache());
+    if guard.get(&key, now).is_none() {
+        guard.insert(key, value, now);
     }
-    // Probe OUTSIDE the cache lock: a 500 ms TCP connect must never serialize
-    // behind every other cached_tcp_probe caller (and must not re-check the
-    // cache under the same lock it fills — TOCTOU between get and insert).
-    let fresh = tcp_probe(host, port);
+}
+
+/// Probes two `(host, port)` endpoints concurrently, returning each one's
+/// answer in argument order.
+///
+/// `tcp_probe` is a blocking 500 ms `connect_timeout`. Probing the two daemon
+/// ports in sequence therefore cost the SUM of both timeouts before the caller
+/// learned anything — up to a second of latency on `resolved_kind`, which
+/// nearly every network FFI call takes. Probing in parallel makes the wall time
+/// the slowest single probe instead.
+///
+/// A `known_*` true short-circuits that endpoint: the caller already
+/// established it another way (a live mesh backend), so it is never re-probed.
+#[cfg_attr(test, allow(dead_code))] // only referenced from cfg(not(test)) paths
+pub(crate) fn cached_tcp_probe_pair(
+    a: (&str, u16),
+    b: (&str, u16),
+    known_a: bool,
+    known_b: bool,
+) -> (bool, bool) {
     let now = soshal_common_core::format::now_secs();
-    lock(cache).insert(key, fresh, now);
-    fresh
+    let cached_a = if known_a {
+        Some(true)
+    } else {
+        probe_cached(a.0, a.1, now)
+    };
+    let cached_b = if known_b {
+        Some(true)
+    } else {
+        probe_cached(b.0, b.1, now)
+    };
+    if let (Some(ra), Some(rb)) = (cached_a, cached_b) {
+        return (ra, rb);
+    }
+
+    // At least one endpoint needs a live probe. Probe only the uncached ones,
+    // concurrently, then fill the cache outside the lock — same discipline as
+    // `cached_tcp_probe`, for the same reason.
+    let need_a = cached_a.is_none();
+    let need_b = cached_b.is_none();
+    let (host_a, port_a) = a;
+    let (host_b, port_b) = b;
+    let (res_a, res_b) = std::thread::scope(|s| {
+        let ha = s.spawn(move || need_a.then(|| tcp_probe(host_a, port_a)));
+        let hb = s.spawn(move || need_b.then(|| tcp_probe(host_b, port_b)));
+        (ha.join().unwrap_or(None), hb.join().unwrap_or(None))
+    });
+
+    let now = soshal_common_core::format::now_secs();
+    if let Some(v) = res_a {
+        probe_store(a.0, a.1, v, now);
+    }
+    if let Some(v) = res_b {
+        probe_store(b.0, b.1, v, now);
+    }
+    // Merge each fresh probe over what we already knew. A `None` result means
+    // "not probed this round" (it was short-circuited or served from cache), so
+    // it must fall back to the earlier answer rather than to `false`.
+    (
+        res_a.or(cached_a).unwrap_or(false),
+        res_b.or(cached_b).unwrap_or(false),
+    )
+}
+
+#[cfg(test)]
+mod probe_tests {
+    use super::*;
+
+    /// A closed port on loopback: connect is refused immediately, so this
+    /// exercises the cache path without a real listener.
+    const DEAD: (&str, u16) = ("127.0.0.1", 1);
+
+    #[test]
+    fn tcp_probe_reports_dead_endpoint() {
+        assert!(!tcp_probe(DEAD.0, DEAD.1));
+    }
+
+    /// The pair helper must keep each endpoint's verdict separate — callers
+    /// pass both results to `transport_mode().resolve`, which needs to know
+    /// which daemon is up, not merely that one of them is.
+    #[test]
+    fn pair_keeps_per_endpoint_results() {
+        let key_a = (DEAD.0.to_string(), DEAD.1);
+        let now = soshal_common_core::format::now_secs();
+        probe_store(&key_a.0, key_a.1, true, now);
+        // (a) cached true, (b) uncached dead port -> must not collapse to a
+        // single "any" answer.
+        let (a, b) = cached_tcp_probe_pair(DEAD, ("127.0.0.1", 2), false, false);
+        assert!(a, "cached-true endpoint must report true");
+        assert!(!b, "dead endpoint must report false independently");
+    }
+
+    /// `known_*` short-circuits the probe: an endpoint the caller already
+    /// established must never be re-probed (and here the port is dead, so a
+    /// probe would have returned false).
+    #[test]
+    fn known_endpoint_short_circuits() {
+        let (a, b) = cached_tcp_probe_pair(DEAD, ("127.0.0.1", 3), true, false);
+        assert!(a, "known endpoint must be trusted without probing");
+        assert!(!b);
+    }
+
+    #[test]
+    fn probe_cache_round_trips() {
+        let now = soshal_common_core::format::now_secs();
+        assert_eq!(probe_cached("cache-test", 1234, now), None);
+        probe_store("cache-test", 1234, true, now);
+        assert_eq!(probe_cached("cache-test", 1234, now), Some(true));
+        // A second store must not overwrite an existing verdict.
+        probe_store("cache-test", 1234, false, now);
+        assert_eq!(probe_cached("cache-test", 1234, now), Some(true));
+    }
 }
 
 pub(crate) fn uuid_like() -> String {
@@ -304,6 +418,34 @@ pub(crate) fn uuid_like() -> String {
     let mut b = [0u8; 8];
     rand::rngs::OsRng.fill_bytes(&mut b);
     hex::encode(b)
+}
+
+/// Spawns a reactive observable stream from `soshal_db_core` directly into an FRB `StreamSink`.
+/// Emits the initial value immediately, then streams debounced updates whenever targeted
+/// tables change until the sink is cancelled.
+#[macro_export]
+macro_rules! spawn_db_stream {
+    ($sink:expr, $tables:expr, $options:expr, $query_fn:expr) => {{
+        let db = $crate::ffi::db::db_handle()?;
+        let handle = db
+            .observe($tables, $options, $query_fn)
+            .map_err(|e| format!("observe failed: {e}"))?;
+
+        let mut rx = handle.subscribe();
+        let _ = $sink.add(handle.current());
+
+        tokio::spawn(async move {
+            let _keep_handle = handle;
+            while rx.changed().await.is_ok() {
+                let val = rx.borrow().clone();
+                if $sink.add(val).is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok(())
+    }};
 }
 
 #[cfg(test)]

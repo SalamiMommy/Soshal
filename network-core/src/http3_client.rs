@@ -147,40 +147,55 @@ impl Http3Client {
             // (the client sends the verified IP), so the proxy cannot
             // re-resolve the hostname to an internal address either.
             let now = std::time::Instant::now();
-            let mut guard = self.pinned.lock().unwrap_or_else(|e| e.into_inner());
-            let client_opt = guard.get(&host).and_then(|(c, ts)| {
-                if now.duration_since(*ts) < PINNED_CLIENT_TTL {
-                    Some(c.clone())
-                } else {
-                    None
+            // Phase 1 (locked): look for a live cached client. Building a
+            // reqwest client does TLS setup, which is slow enough to serialize
+            // every other uncached-host request behind this mutex, so the
+            // build itself happens with the lock dropped.
+            let cached = {
+                let guard = self.pinned.lock().unwrap_or_else(|e| e.into_inner());
+                guard.get(&host).and_then(|(c, ts)| {
+                    if now.duration_since(*ts) < PINNED_CLIENT_TTL {
+                        Some(c.clone())
+                    } else {
+                        None
+                    }
+                })
+            };
+            if let Some(c) = cached {
+                c
+            } else {
+                let mut b = reqwest::Client::builder()
+                    .timeout(Duration::from_secs(30))
+                    .connect_timeout(Duration::from_secs(10))
+                    .redirect(reqwest::redirect::Policy::none())
+                    .pool_idle_timeout(Duration::from_secs(90))
+                    .pool_max_idle_per_host(10)
+                    .resolve_to_addrs(&host, &pinned_addrs);
+                if let Some(addr) = self.socks_addr {
+                    if let Ok(proxy) = reqwest::Proxy::all(format!("socks5://{addr}")) {
+                        b = b.proxy(proxy);
+                    }
                 }
-            });
-            match client_opt {
-                Some(c) => c,
-                None => {
+                // Built with no lock held.
+                let c = b
+                    .build()
+                    .map_err(|e| format!("HTTP client build error: {e}"))?;
+                // Phase 3 (locked): insert. A racing thread may have built and
+                // inserted an equally valid client for the same host first;
+                // keep theirs so concurrent callers share one pool.
+                let mut guard = self.pinned.lock().unwrap_or_else(|e| e.into_inner());
+                if guard.len() >= PINNED_CLIENT_CACHE_CAP {
+                    guard.retain(|_, (_, ts)| now.duration_since(*ts) < PINNED_CLIENT_TTL);
                     if guard.len() >= PINNED_CLIENT_CACHE_CAP {
-                        guard.retain(|_, (_, ts)| now.duration_since(*ts) < PINNED_CLIENT_TTL);
-                        if guard.len() >= PINNED_CLIENT_CACHE_CAP {
-                            guard.clear();
-                        }
+                        guard.clear();
                     }
-                    let mut b = reqwest::Client::builder()
-                        .timeout(Duration::from_secs(30))
-                        .connect_timeout(Duration::from_secs(10))
-                        .redirect(reqwest::redirect::Policy::none())
-                        .pool_idle_timeout(Duration::from_secs(90))
-                        .pool_max_idle_per_host(10)
-                        .resolve_to_addrs(&host, &pinned_addrs);
-                    if let Some(addr) = self.socks_addr {
-                        if let Ok(proxy) = reqwest::Proxy::all(format!("socks5://{addr}")) {
-                            b = b.proxy(proxy);
-                        }
+                }
+                match guard.get(&host) {
+                    Some((existing, _)) => existing.clone(),
+                    None => {
+                        guard.insert(host.clone(), (c.clone(), now));
+                        c
                     }
-                    let c = b
-                        .build()
-                        .map_err(|e| format!("HTTP client build error: {e}"))?;
-                    guard.insert(host.clone(), (c.clone(), now));
-                    c
                 }
             }
         };
