@@ -1239,25 +1239,36 @@ async fn serve_stream(
                 let manifest = store
                     .load_manifest(&chunk_req.hash)
                     .or_else(|| store.find_manifest_containing_chunk(&chunk_req.hash));
-                match manifest
-                    .as_ref()
-                    .and_then(|m| store.blob_slice(m, chunk_req.offset, chunk_req.length))
-                {
-                    Some(bytes) => {
-                        if let Err(e) =
-                            write_stream_frame(&mut send, ResponseKind::Ok, &bytes).await
-                        {
-                            log::warn!("quic response write: {e}");
+                match manifest.as_ref() {
+                    // Fast path: the range sits inside one chunk, so the bytes
+                    // are streamed straight from the mapping. Falls through on
+                    // `false`, which means "not mappable" (a cross-chunk range)
+                    // — never "partially sent".
+                    Some(m) => {
+                        if serve_range_mapped(&mut send, &store, m, &chunk_req).await {
                             return;
                         }
-                        if let Err(e) = send.finish() {
-                            log::warn!("quic response write: {e}");
-                            let _ =
-                                tokio::time::timeout(STREAM_WRITE_TIMEOUT, send.write_all(&[3u8]))
+                        match store.blob_slice(m, chunk_req.offset, chunk_req.length) {
+                            Some(bytes) => {
+                                if let Err(e) =
+                                    write_stream_frame(&mut send, ResponseKind::Ok, &bytes).await
+                                {
+                                    log::warn!("quic response write: {e}");
+                                    return;
+                                }
+                                if let Err(e) = send.finish() {
+                                    log::warn!("quic response write: {e}");
+                                    let _ = tokio::time::timeout(
+                                        STREAM_WRITE_TIMEOUT,
+                                        send.write_all(&[3u8]),
+                                    )
                                     .await;
-                            return;
+                                    return;
+                                }
+                                return;
+                            }
+                            None => ResponseKind::NotFound,
                         }
-                        return;
                     }
                     None => ResponseKind::NotFound,
                 }
@@ -1450,6 +1461,45 @@ async fn read_exact_async(recv: &mut quinn::RecvStream, buf: &mut [u8]) -> Resul
         }
     }
     Ok(())
+}
+
+/// Answer a chunk request whose range sits inside a single chunk, streaming
+/// straight from the store's mapping. Returns whether the response was dealt
+/// with — `true` on success *and* on a mid-stream write error, because by then
+/// bytes are already on the wire and the caller must not also send a status
+/// frame. `false` means the range is not mappable (cross-chunk) and nothing has
+/// been written, so the caller may fall back to `blob_slice`.
+///
+/// The old path always went through `blob_slice`, which builds a `Vec` of the
+/// whole requested range: an allocation of up to 16 MiB and a full copy per
+/// request, on top of the copy the QUIC send makes anyway. Serving a chunk is
+/// the bulk of what this server does, and QUIC is the preferred bulk transport
+/// (`swarm.rs` prefers `quic_port`), so that allocation and copy were on the hot
+/// path — the same waste `lan_transport::serve_range_zero_copy` already avoids
+/// for TCP, which is why the two paths had drifted apart.
+///
+/// A cross-chunk range still needs `blob_slice`: assembling it is what makes the
+/// result contiguous, and there is no single mapping to read from.
+async fn serve_range_mapped(
+    send: &mut quinn::SendStream,
+    store: &ChunkStore,
+    manifest: &soshal_media_core::chunking::ChunkManifest,
+    req: &crate::lan_transport::LanChunkRequest,
+) -> bool {
+    let Some((mmap, range)) = store.blob_range_mapped(manifest, req.offset, req.length) else {
+        return false;
+    };
+    // `mmap` is hash-verified by the store before it is handed out, so these
+    // are verified bytes — a corrupt chunk file cannot be streamed out.
+    if let Err(e) = write_stream_frame(send, ResponseKind::Ok, &mmap[range]).await {
+        log::warn!("quic response write: {e}");
+        return true;
+    }
+    if let Err(e) = send.finish() {
+        log::warn!("quic response write: {e}");
+        let _ = tokio::time::timeout(STREAM_WRITE_TIMEOUT, send.write_all(&[3u8])).await;
+    }
+    true
 }
 
 async fn write_stream_frame(

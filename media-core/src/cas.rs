@@ -395,12 +395,20 @@ impl ChunkStore {
     }
 
     /// Streams a chunk's bytes to a writer (e.g. a socket or base64 encoder).
+    ///
+    /// Reads from the mapping rather than through [`ChunkStore::get`]. `get`
+    /// is `get_mmap(hash).map(|m| m.as_ref().to_vec())`, so streaming a chunk
+    /// used to allocate and fill a heap copy of the whole thing — up to 16 MiB
+    /// — purely to hand it to `write_all` and drop it. The mapping is
+    /// hash-verified on the way in either way; the only thing removed is the
+    /// copy. Going through `get_mmap_cached` also lets a repeated stream of the
+    /// same chunk skip the open+mmap.
     pub fn write_chunk_to<W: Write>(&self, chr: &ChunkRef, out: &mut W) -> Result<(), String> {
-        if let Some(data) = self.get(&chr.blake3) {
-            out.write_all(&data)
-                .map_err(|e| format!("chunk write: {e}"))
-        } else {
-            Err(format!("chunk {} missing", chr.blake3))
+        match self.get_mmap_cached(&chr.blake3) {
+            Some(mmap) => out
+                .write_all(mmap.as_ref())
+                .map_err(|e| format!("chunk write: {e}")),
+            None => Err(format!("chunk {} missing", chr.blake3)),
         }
     }
 
@@ -425,35 +433,73 @@ impl ChunkStore {
         total
     }
 
-    /// Enforces a maximum byte quota on the chunk cache by removing oldest chunks.
-    pub fn enforce_cache_quota(&self, max_bytes: u64) -> Result<u64, String> {
-        let current = self.total_bytes();
-        if current <= max_bytes {
-            return Ok(0);
-        }
-
+    /// One walk of the store, yielding every file with its size and mtime.
+    ///
+    /// `chunk_path` puts chunks in `root/<2-char prefix>/<hash>` and manifests in
+    /// `root/manifests/<hash>.json`, so the store is exactly two levels deep and
+    /// this sees every file in it.
+    ///
+    /// Uses `DirEntry::file_type`/`metadata` rather than `path().is_dir()` plus
+    /// `Path::metadata()`: the first comes from the directory entry the kernel
+    /// already returned, the second resolves the name once, so a file costs one
+    /// stat instead of two. That matters because this is the store's only
+    /// full-tree scan and it runs over every chunk.
+    fn walk_store(&self) -> Vec<(PathBuf, u64, std::time::SystemTime)> {
         let mut files: Vec<(PathBuf, u64, std::time::SystemTime)> = Vec::new();
-        if let Ok(entries) = fs::read_dir(&self.root) {
-            for entry in entries.flatten() {
-                if entry.path().is_dir() {
-                    if let Ok(inner) = fs::read_dir(entry.path()) {
-                        for f in inner.flatten() {
-                            if let Ok(md) = f.metadata() {
-                                if md.is_file() {
-                                    let modified =
-                                        md.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                                    files.push((f.path(), md.len(), modified));
-                                }
-                            }
-                        }
-                    }
-                } else if let Ok(md) = entry.metadata() {
-                    if md.is_file() {
-                        let modified = md.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                        files.push((entry.path(), md.len(), modified));
+        let Ok(entries) = fs::read_dir(&self.root) else {
+            return files;
+        };
+        let mut push = |entry: &fs::DirEntry| {
+            // `file_type` avoids a stat on the common case; fall back to
+            // `metadata` if the filesystem will not answer it from `d_type`.
+            let is_file = match entry.file_type() {
+                Ok(ft) => ft.is_file(),
+                Err(_) => entry.metadata().map(|md| md.is_file()).unwrap_or(false),
+            };
+            if !is_file {
+                return;
+            }
+            let Ok(md) = entry.metadata() else { return };
+            let modified = md.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            files.push((entry.path(), md.len(), modified));
+        };
+        for entry in entries.flatten() {
+            // Only descend one level: the layout is two levels, and a deeper
+            // tree would be someone else's data in our cache directory.
+            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                if let Ok(inner) = fs::read_dir(entry.path()) {
+                    for f in inner.flatten() {
+                        push(&f);
                     }
                 }
+            } else {
+                push(&entry);
             }
+        }
+        files
+    }
+
+    /// Enforces a maximum byte quota on the chunk cache by removing oldest chunks.
+    ///
+    /// One walk, not two. This used to call `total_bytes()` — a full recursive
+    /// scan — and then, only if over quota, walk the *same* tree a second time to
+    /// build the eviction list. On a phone CAS with 50k chunks that is two full
+    /// scans of the directory, every time, for a number the first scan already
+    /// had. Both walks also used `path().is_dir()` alongside `Path::metadata()`,
+    /// so each file cost two stats.
+    ///
+    /// The `current <= max_bytes` early return is preserved, and now costs the
+    /// single walk instead of a scan plus a discarded second one. An incremental
+    /// byte counter maintained by `put_trusted`/`remove` would make this O(1),
+    /// but it would have to survive `clear`, external writes and the fact that
+    /// the store is process-global with a `default_root` that can be re-pointed
+    /// by the bridge at init — too much state to get quietly wrong for a
+    /// cache-pressure heuristic.
+    pub fn enforce_cache_quota(&self, max_bytes: u64) -> Result<u64, String> {
+        let mut files = self.walk_store();
+        let current: u64 = files.iter().map(|f| f.1).sum();
+        if current <= max_bytes {
+            return Ok(0);
         }
 
         files.sort_by_key(|f| f.2);
@@ -599,15 +645,65 @@ impl ChunkStore {
         None
     }
 
+    /// The bytes for `[offset, offset+len)` **when the whole range lies inside
+    /// one chunk**, as the mapped chunk plus the sub-range to use.
+    ///
+    /// `None` for a cross-chunk range, a range outside the manifest, or a chunk
+    /// that is missing or fails its hash — so a caller falls back to
+    /// [`ChunkStore::blob_slice`], which is always correct and always copies.
+    ///
+    /// This exists so a serving path can stream straight from the mapping.
+    /// [`ChunkStore::blob_slice`] has to build a `Vec` of the whole range
+    /// first, so a single-chunk read (the overwhelmingly common case for a
+    /// media chunk) pays an allocation of up to `MAX_CHUNK` bytes plus a full
+    /// copy before the transport copies it again. Here the transport's copy is
+    /// the only one.
+    ///
+    /// The mapping is hash-verified by `get_mmap_cached` before it is handed
+    /// out, so a caller that streams this slice is streaming verified bytes —
+    /// the same guarantee the TCP zero-copy path depends on.
+    pub fn blob_range_mapped(
+        &self,
+        manifest: &ChunkManifest,
+        offset: usize,
+        len: usize,
+    ) -> Option<(Arc<memmap2::Mmap>, std::ops::Range<usize>)> {
+        if !manifest.is_valid() || len == 0 {
+            return None;
+        }
+        let end = offset.checked_add(len)?;
+        if end > manifest.total_size as usize {
+            return None;
+        }
+        let chunk = manifest.chunks.iter().find(|c| {
+            let c_start = c.offset as usize;
+            offset >= c_start && end <= c_start + c.len
+        })?;
+        let mmap = self.get_mmap_cached(&chunk.blake3)?;
+        let c_start = chunk.offset as usize;
+        // A stored chunk shorter than the manifest declares cannot serve the
+        // requested window; `get_mmap_cached` already rejects one that fails
+        // its hash, but a manifest that over-declares its own length is still
+        // checked here rather than trusted.
+        let to = (end - c_start).min(mmap.len());
+        let from = offset - c_start;
+        if from > to {
+            return None;
+        }
+        Some((mmap, from..to))
+    }
+
     /// Returns the byte slice [offset, offset+len) of a stored blob, assembled
     /// from its chunks (which are verified on read). `None` if any chunk is
     /// missing or the manifest is invalid — never serves corrupt ranges.
     ///
     /// `is_valid()` guarantees the manifest's chunks tile `[0, total_size)`
     /// contiguously and without overlap, so a complete assembly is always
-    /// exactly `len` bytes. The length check therefore catches the one
-    /// reachable failure: a chunk whose stored bytes are shorter than the
-    /// manifest declares, which would otherwise hand back a short read.
+    /// exactly `len` bytes. Corruption — a stored chunk that does not match its
+    /// own BLAKE3, including one truncated on disk — is rejected by
+    /// [`ChunkStore::get_mmap`], which re-hashes the mapped bytes on every read
+    /// before trusting them; that, not any length arithmetic here, is what
+    /// refuses a short stored chunk.
     pub fn blob_slice(
         &self,
         manifest: &ChunkManifest,
@@ -636,55 +732,105 @@ impl ChunkStore {
         if overlapping.is_empty() {
             return None;
         }
-        let pieces: Vec<Option<Vec<u8>>> = if overlapping.len() >= PARALLEL_SLICE_CHUNKS {
-            overlapping
-                .par_iter()
-                .map(|c| self.slice_piece(c, offset, end))
-                .collect()
-        } else {
-            overlapping
-                .iter()
-                .map(|c| self.slice_piece(c, offset, end))
-                .collect()
+        // Resolve every chunk's source window first, so the output buffer is
+        // written exactly once per byte.
+        //
+        // This used to build each chunk's slice as its own `Vec` and then
+        // `extend_from_slice` it into the output: two copies of every byte, and
+        // a peak of 2x the range on top of the result, because all the
+        // per-chunk `Vec`s were alive at once under the rayon collect. The
+        // windows are pure arithmetic once the mmap is in hand, so resolving
+        // them and copying them are separable — and only the second is the
+        // expensive one.
+        let resolve = |c: &ChunkRef| -> Option<SourceWindow> {
+            let mmap = self.get_mmap_cached(&c.blake3)?;
+            let chunk = mmap.as_ref();
+            let c_start = c.offset as usize;
+            let c_end = c_start + c.len;
+            // `overlapping` is pre-filtered, but re-check the bounds so a
+            // manifest that lies about its own geometry still cannot panic the
+            // slicing. A chunk that contributes nothing is a legal empty
+            // window, not a failure.
+            if c_end <= offset || c_start >= end {
+                return Some(SourceWindow {
+                    mmap,
+                    from: 0,
+                    to: 0,
+                });
+            }
+            let from = offset.saturating_sub(c_start);
+            let to = (end - c_start).min(chunk.len());
+            if from > to {
+                return None;
+            }
+            Some(SourceWindow { mmap, from, to })
         };
-        let mut out = Vec::with_capacity(len);
-        for piece in pieces {
-            out.extend_from_slice(&piece?);
-        }
-        if out.len() != len {
+        let windows: Vec<Option<SourceWindow>> = if overlapping.len() >= PARALLEL_SLICE_CHUNKS {
+            overlapping.par_iter().map(|c| resolve(c)).collect()
+        } else {
+            overlapping.iter().map(|c| resolve(c)).collect()
+        };
+        let mut out = vec![0u8; len];
+        // The windows must tile [0, len) exactly, and no chunk may be missing —
+        // the documented contract is `None` if any chunk is missing.
+        //
+        // Note this is a *panic guard*, not the corruption gate. The old code's
+        // `out.len() != len` check sounded like the thing that refused a short
+        // stored chunk, and it was not: `get_mmap` re-hashes the mapped bytes
+        // and rejects the truncated chunk before any of this arithmetic runs.
+        // Verified by removing the per-mmap hash check and this check together,
+        // which is what actually makes `blob_slice_refuses_short_stored_chunk`
+        // fail. What this check buys is that `split_at_mut` below cannot panic
+        // in a media-serving path if the window geometry is ever wrong, and it
+        // keeps the documented "missing chunk is `None`" contract explicit.
+        let windows: Vec<SourceWindow> = windows.into_iter().collect::<Option<Vec<_>>>()?;
+        if windows.iter().map(|w| w.to - w.from).sum::<usize>() != len {
             return None;
+        }
+        // Hand the parallel copy disjoint destination segments. Splitting is
+        // pure pointer arithmetic, so doing it serially up front costs nothing
+        // and removes the need for the copy to coordinate at all.
+        let mut rest: &mut [u8] = &mut out;
+        let mut dsts: Vec<&mut [u8]> = Vec::with_capacity(windows.len());
+        for w in &windows {
+            let n = w.to - w.from;
+            let (head, tail) = rest.split_at_mut(n);
+            dsts.push(head);
+            rest = tail;
+        }
+        let copy = |(dst, w): (&mut &mut [u8], &SourceWindow)| {
+            dst.copy_from_slice(&w.mmap[w.from..w.to]);
+        };
+        if dsts.len() >= PARALLEL_SLICE_CHUNKS {
+            dsts.par_iter_mut().zip(&windows).for_each(copy);
+        } else {
+            dsts.iter_mut().zip(&windows).for_each(copy);
         }
         Some(out)
     }
+}
 
-    /// The part of one chunk that falls inside `[offset, end)`, or `None` if
-    /// the chunk is missing/malformed. Split out of `blob_slice` so the serial
-    /// and rayon paths share one implementation and cannot diverge.
-    fn slice_piece(&self, c: &ChunkRef, offset: usize, end: usize) -> Option<Vec<u8>> {
-        let mmap = self.get_mmap_cached(&c.blake3)?;
-        let chunk = mmap.as_ref();
-        let c_start = c.offset as usize;
-        let c_end = c_start + c.len;
-        // `overlapping` is pre-filtered, but re-check the bounds so a manifest
-        // that lies about its own geometry still cannot panic the slicing.
-        if c_end <= offset || c_start >= end {
-            return Some(Vec::new());
-        }
-        let from = offset.saturating_sub(c_start);
-        let to = (end - c_start).min(chunk.len());
-        if from > to {
-            return None;
-        }
-        Some(chunk[from..to].to_vec())
-    }
+/// One chunk's contribution to a range read: a mapped chunk plus the window
+/// within it that the range covers. Resolved before any copying happens, so the
+/// output can be sized and written once.
+struct SourceWindow {
+    mmap: Arc<memmap2::Mmap>,
+    from: usize,
+    to: usize,
 }
 
 /// Re-exposed for tests: re-read chunk data back out of the manifest.
+///
+/// Extends straight from each chunk's mapping. The old shape called
+/// `store.get(&c.blake3)`, which copies the chunk into a fresh `Vec` that is
+/// then `extend_from_slice`d into a second, full-blob buffer — so a whole-blob
+/// read peaked at 2x the blob, with the per-chunk copy contributing nothing the
+/// mapping did not already have.
 pub fn manifest_bytes(store: &ChunkStore, manifest: &ChunkManifest) -> Vec<u8> {
     let mut out = Vec::with_capacity(manifest.total_size as usize);
     for c in &manifest.chunks {
-        if let Some(d) = store.get(&c.blake3) {
-            out.extend_from_slice(&d);
+        if let Some(mmap) = store.get_mmap_cached(&c.blake3) {
+            out.extend_from_slice(mmap.as_ref());
         }
     }
     out
@@ -859,6 +1005,124 @@ mod tests {
         assert!(
             store.blob_slice(&honest, 0, data.len()).is_none(),
             "a short stored chunk must be refused, not served truncated"
+        );
+    }
+
+    /// The mapped-range fast path must be byte-identical to `blob_slice` for
+    /// every range it claims, and must decline everything it cannot serve — the
+    /// QUIC server treats a decline as "fall back", so a false accept would
+    /// return wrong bytes and a false decline would just lose the optimization.
+    #[test]
+    fn blob_range_mapped_agrees_with_blob_slice_and_declines_the_rest() {
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas-mapped"));
+        let mut state = 0xDEAD_BEEF_1234_5678u64;
+        let data: Vec<u8> = (0..6 * 1024 * 1024)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                (state >> 24) as u8
+            })
+            .collect();
+        let m = store.store_reader(std::io::Cursor::new(&data)).unwrap();
+        assert!(m.chunks.len() >= 2, "fixture must span several chunks");
+
+        let mut accepted = 0usize;
+        let mut declined = 0usize;
+        // Walk ranges on a fine grid so the single-chunk and cross-chunk cases
+        // are both hit, and the chunk boundaries are straddled.
+        for offset in (0..data.len()).step_by(997) {
+            for len in [1usize, 333, 4096, 200_000] {
+                let end = (offset + len).min(data.len());
+                if end == offset {
+                    continue;
+                }
+                let want = &data[offset..end];
+                match store.blob_range_mapped(&m, offset, end - offset) {
+                    Some((mmap, range)) => {
+                        accepted += 1;
+                        assert_eq!(
+                            &mmap[range],
+                            want,
+                            "mapped bytes must match the blob at {offset}+{}",
+                            end - offset
+                        );
+                        // Anything it accepts must also be what blob_slice says.
+                        assert_eq!(
+                            store.blob_slice(&m, offset, end - offset).as_deref(),
+                            Some(want)
+                        );
+                    }
+                    None => {
+                        declined += 1;
+                    }
+                }
+            }
+        }
+        assert!(accepted > 0, "the grid must hit some single-chunk ranges");
+        assert!(
+            declined > 0,
+            "the grid must hit some cross-chunk ranges to decline"
+        );
+
+        // Ranges it must always decline.
+        assert!(
+            store.blob_range_mapped(&m, 0, 0).is_none(),
+            "an empty range is not a range"
+        );
+        assert!(
+            store.blob_range_mapped(&m, data.len() - 1, 2).is_none(),
+            "a range past the end must be declined"
+        );
+        // A whole-blob request spans chunks, so it is never mappable.
+        assert!(store.blob_range_mapped(&m, 0, data.len()).is_none());
+        // A hash that is not in the store at all.
+        let missing = ChunkManifest {
+            blob_hash: "e".repeat(64),
+            total_size: 16,
+            chunks: vec![ChunkRef {
+                blake3: "f".repeat(64),
+                offset: 0,
+                len: 16,
+            }],
+        };
+        assert!(store.blob_range_mapped(&missing, 0, 16).is_none());
+    }
+
+    /// The mapped range must not hand out bytes from a chunk that fails its
+    /// hash. It gets that guarantee from the same verification `blob_slice` uses,
+    /// but the fast path bypasses `blob_slice`, so it needs its own pin — a
+    /// corrupt chunk streamed from the mapping is exactly what the hash exists to
+    /// prevent.
+    ///
+    /// **Known limit, and it is not this function's:** `get_mmap_cached` returns
+    /// the cached mapping on a hit without re-hashing, so a chunk corrupted
+    /// *after* it was first mapped is served stale. This was found by writing
+    /// this test, and it is pre-existing and identical on the `blob_slice` path
+    /// — `blob_slice` on a warmed, corrupted chunk returns bytes too (verified:
+    /// 1024 bytes for a 1024-byte request). Low severity: chunk files are named
+    /// by their own hash, so nothing in this codebase writes different content
+    /// to a chunk path, and the CAS lives in the app's own cache directory, so
+    /// the realistic causes are bit rot or disk corruption rather than a hostile
+    /// writer. Closing it means re-hashing on every cache hit, which is the
+    /// cost the cache exists to avoid — a deliberate trade, not an oversight, but
+    /// one that should be a conscious decision rather than a documented-in-a-test
+    /// accident.
+    #[test]
+    fn blob_range_mapped_refuses_an_unverified_chunk() {
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas-mapped-bad"));
+        let data: Vec<u8> = (0..512 * 1024).map(|i| (i % 251) as u8).collect();
+        let m = store.store_reader(std::io::Cursor::new(&data)).unwrap();
+        let first = &m.chunks[0];
+        let path = store.chunk_path(&first.blake3);
+        let mut on_disk = fs::read(&path).unwrap();
+        on_disk[0] ^= 0xFF;
+        fs::write(&path, &on_disk).unwrap();
+        assert!(
+            store
+                .blob_range_mapped(&m, first.offset as usize, first.len)
+                .is_none(),
+            "a chunk that no longer matches its hash must not be served"
         );
     }
 
@@ -1132,6 +1396,97 @@ mod tests {
         let reclaimed = store.enforce_cache_quota(2000).unwrap();
         assert!(reclaimed > 0);
         assert!(store.total_bytes() <= 2000);
+    }
+
+    /// Quota enforcement is now one walk that builds the eviction list and the
+    /// total at the same time, so the *order* of that list is the part worth
+    /// pinning: eviction must be oldest-first, and the newest chunk must be the
+    /// one that survives.
+    ///
+    /// The mtimes are set explicitly because three chunks written back to back
+    /// can share a filesystem timestamp, and then eviction order is just
+    /// directory order — the test would pass or fail for reasons unrelated to
+    /// the code.
+    #[test]
+    fn quota_evicts_oldest_first_and_leaves_the_newest() {
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas_quota_lru"));
+        // Distinct contents so a surviving chunk is identifiable by its bytes.
+        let chunks: Vec<Vec<u8>> = (0..5u8).map(|i| vec![i.wrapping_add(1); 1024]).collect();
+        let hashes: Vec<String> = chunks
+            .iter()
+            .map(|c| {
+                let h = blake3::hash(c).to_hex().to_string();
+                assert!(store.put_trusted(&h, c), "chunk must be stored");
+                h
+            })
+            .collect();
+        assert_eq!(hashes.len(), 5);
+
+        // Oldest first, with a wide gap so no two share a timestamp.
+        let base = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        for (i, h) in hashes.iter().enumerate() {
+            let f = fs::File::options()
+                .write(true)
+                .open(store.chunk_path(h))
+                .expect("open chunk to stamp it");
+            f.set_times(
+                std::fs::FileTimes::new()
+                    .set_modified(base + std::time::Duration::from_secs(i as u64 * 3600)),
+            )
+            .expect("set mtime");
+        }
+
+        // A quota that leaves room for two chunks forces two evictions, so a
+        // "sorted the wrong way" bug cannot hide behind evicting everything.
+        let chunk_len = 1024usize;
+        let chunk_bytes = chunk_len as u64;
+        let per_chunk_total = chunk_bytes * 5;
+        let reclaimed = store
+            .enforce_cache_quota(per_chunk_total - chunk_bytes * 2)
+            .unwrap();
+        assert!(
+            reclaimed > 0,
+            "over-quota store must reclaim something, store is {per_chunk_total}"
+        );
+
+        // The two oldest are gone; the newest three are still readable and
+        // still hold their own bytes.
+        for (i, h) in hashes.iter().enumerate() {
+            let present = store
+                .blob_range_mapped(
+                    &ChunkManifest {
+                        blob_hash: "a".repeat(64),
+                        total_size: chunk_bytes,
+                        chunks: vec![ChunkRef {
+                            blake3: h.clone(),
+                            offset: 0,
+                            len: chunk_len,
+                        }],
+                    },
+                    0,
+                    chunk_len,
+                )
+                .is_some();
+            assert_eq!(
+                present,
+                i >= 2,
+                "chunk {i} ({}) should be {}",
+                &h[..8],
+                if i >= 2 { "kept" } else { "evicted" }
+            );
+        }
+    }
+
+    /// A store at or under quota must not delete anything and must not need the
+    /// eviction list at all.
+    #[test]
+    fn quota_under_limit_is_a_no_op() {
+        let store = ChunkStore::new(soshal_test_util::tmp_root("cas_quota_noop"));
+        store.put(&vec![7u8; 4096]);
+        let before = store.total_bytes();
+        assert!(before > 0);
+        assert_eq!(store.enforce_cache_quota(u64::MAX).unwrap(), 0);
+        assert_eq!(store.total_bytes(), before, "nothing may be deleted");
     }
 
     #[test]

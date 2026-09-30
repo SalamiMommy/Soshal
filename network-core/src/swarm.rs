@@ -12,7 +12,7 @@
 
 use crate::lan_transport::{fetch_chunk_range, LanChunkRequest};
 use crate::quic::{fetch_quic_chunk, QuicChunkPool};
-use soshal_media_core::chunking::ChunkManifest;
+use soshal_media_core::chunking::{ChunkManifest, ChunkRef};
 use std::collections::HashSet;
 use std::fs::File;
 use std::net::SocketAddr;
@@ -80,101 +80,35 @@ pub fn spawn_swarm_download(
 }
 
 async fn download(cfg: SwarmConfig, abort: Arc<AtomicBool>) -> SwarmReport {
-    // Validate out_path before opening: canonicalize the parent directory and
-    // reject components that escape it (.. / symlink traversal). The caller
-    // supplies this path (an app cache directory); we must not let a hostiley
-    // supplied path redirect the write elsewhere.
-    if let Err(e) = validate_out_path(&cfg.out_path) {
-        log::warn!("swarm: invalid out_path {}: {e}", cfg.out_path.display());
-        return SwarmReport {
-            failures: cfg.manifest.chunks.len(),
-            failed_hashes: cfg
-                .manifest
-                .chunks
-                .iter()
-                .map(|c| c.blake3.clone())
-                .collect(),
-            ..SwarmReport::default()
-        };
-    }
     let total = cfg.manifest.total_size;
     let chunks = Arc::new(cfg.manifest.chunks.clone());
+    // Cheap, pure-memory gates first, so a manifest we will never download does
+    // not pay for a filesystem round trip at all.
     if total > crate::blob_grab::MAX_BLOB_FETCH_BYTES {
         log::warn!("swarm: manifest total_size {total} exceeds cap");
-        return SwarmReport {
-            failures: chunks.len(),
-            failed_hashes: chunks.iter().map(|c| c.blake3.clone()).collect(),
-            ..SwarmReport::default()
-        };
+        return failed(&chunks);
     }
     if chunks.is_empty() || cfg.peers.is_empty() {
-        return SwarmReport {
-            failures: chunks.len(),
-            failed_hashes: chunks.iter().map(|c| c.blake3.clone()).collect(),
-            ..SwarmReport::default()
-        };
+        return failed(&chunks);
     }
 
-    // WP11: refuse a symlink at the final path component. A link dropped in
-    // place (or swapped between this check and open) lets an attacker
-    // redirect the entire sparse-file write + mmap to an arbitrary file.
-    match std::fs::symlink_metadata(&cfg.out_path) {
-        Ok(meta) if meta.file_type().is_symlink() => {
-            log::warn!(
-                "swarm: refusing symlink out_path {}",
-                cfg.out_path.display()
-            );
-            return SwarmReport {
-                failures: chunks.len(),
-                failed_hashes: chunks.iter().map(|c| c.blake3.clone()).collect(),
-                ..SwarmReport::default()
-            };
+    // Every filesystem step — canonicalize, symlink refusal, open, ftruncate,
+    // mmap — goes on the blocking pool. Run inline they executed on the caller's
+    // runtime thread, and `set_len` on a sparse file of up to `MAX_BLOB_FETCH_BYTES`
+    // is not quick on an SD card or a network filesystem. One slow filesystem
+    // then stalls every *other* task sharing that runtime, which on Android is
+    // the frb runtime carrying the relay node and the database too.
+    let out_path = cfg.out_path.clone();
+    let prep = tokio::task::spawn_blocking(move || prepare_target(&out_path, total)).await;
+    let mmap = match prep {
+        Ok(Ok(m)) => m,
+        Ok(Err(e)) => {
+            log::warn!("swarm: {e}");
+            return failed(&chunks);
         }
-        Ok(_) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => {
-            log::warn!("swarm: stat {}: {e}", cfg.out_path.display());
-            return SwarmReport {
-                failures: chunks.len(),
-                failed_hashes: chunks.iter().map(|c| c.blake3.clone()).collect(),
-                ..SwarmReport::default()
-            };
-        }
-    }
-
-    let file = match File::options()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&cfg.out_path)
-    {
-        Ok(f) => f,
-        Err(e) => {
-            log::warn!("swarm: open {}: {e}", cfg.out_path.display());
-            return SwarmReport {
-                failures: chunks.len(),
-                failed_hashes: chunks.iter().map(|c| c.blake3.clone()).collect(),
-                ..SwarmReport::default()
-            };
-        }
-    };
-    if let Err(e) = file.set_len(total) {
-        log::warn!("swarm: sparse set_len: {e}");
-        return SwarmReport {
-            failures: chunks.len(),
-            failed_hashes: chunks.iter().map(|c| c.blake3.clone()).collect(),
-            ..SwarmReport::default()
-        };
-    }
-    let mmap = match unsafe_mmap(&file) {
-        Some(m) => m,
-        None => {
-            return SwarmReport {
-                failures: chunks.len(),
-                failed_hashes: chunks.iter().map(|c| c.blake3.clone()).collect(),
-                ..SwarmReport::default()
-            };
+        Err(je) => {
+            log::warn!("swarm: target setup panicked: {je}");
+            return failed(&chunks);
         }
     };
     let map = Arc::new(Mutex::new(mmap));
@@ -400,6 +334,61 @@ async fn download(cfg: SwarmConfig, abort: Arc<AtomicBool>) -> SwarmReport {
 
 /// Validate a swarm destination path: it must be absolute, its parent must
 /// not be a symlink, and no normalized component may escape via `..`.
+/// Report for a download that could not be attempted at all: every chunk is a
+/// failure and every hash is reported as failed.
+///
+/// The six call sites this replaced each rebuilt the same literal, which is six
+/// places to keep in sync if the report shape ever changes.
+fn failed(chunks: &[ChunkRef]) -> SwarmReport {
+    SwarmReport {
+        failures: chunks.len(),
+        failed_hashes: chunks.iter().map(|c| c.blake3.clone()).collect(),
+        ..SwarmReport::default()
+    }
+}
+
+/// Filesystem setup for the sparse target file: path validation, the WP11
+/// symlink refusal, open, `set_len`, and the writable mapping.
+///
+/// Step order is load-bearing and unchanged from the inline version. Validation
+/// and the symlink check both have to happen **before** `open`: a link swapped in
+/// between the check and the open is precisely the attack WP11 guards, and a
+/// check after the open would be checking the wrong inode. Likewise `set_len`
+/// must precede the mapping, or the map covers a zero-length file.
+///
+/// Every call here is a blocking syscall, so this runs on the blocking pool —
+/// see the comment at the call site.
+fn prepare_target(out_path: &std::path::Path, total: u64) -> Result<memmap2::MmapMut, String> {
+    // The caller supplies this path (an app cache directory); we must not let a
+    // hostile supplied path redirect the write elsewhere.
+    validate_out_path(out_path).map_err(|e| format!("invalid out_path: {e}"))?;
+
+    // WP11: refuse a symlink at the final path component. A link dropped in place
+    // lets an attacker redirect the entire sparse-file write + mmap to an
+    // arbitrary file.
+    match std::fs::symlink_metadata(out_path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(format!("refusing symlink out_path {}", out_path.display()));
+        }
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(format!("stat {}: {e}", out_path.display()));
+        }
+    }
+
+    let file = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(out_path)
+        .map_err(|e| format!("open {}: {e}", out_path.display()))?;
+    file.set_len(total)
+        .map_err(|e| format!("sparse set_len: {e}"))?;
+    unsafe_mmap(&file).ok_or_else(|| "mmap failed".to_string())
+}
+
 fn validate_out_path(path: &std::path::Path) -> Result<(), String> {
     let parent = path
         .parent()
@@ -544,6 +533,150 @@ mod tests {
         );
         assert_eq!(report.failed_hashes, vec!["ef".repeat(32)]);
         assert!(!target.exists(), "symlink target must not be created");
+    }
+
+    // ─── prepare_target: the extracted filesystem setup ───────────────────
+    //
+    // This is the code that moved onto the blocking pool. What needed pinning is
+    // not the thread it runs on (that is a structural property of the
+    // `spawn_blocking` call, and a test for it would be a timing test, which is
+    // either flaky or slow) but the *order* of the checks, because that is what
+    // makes WP11 hold. `swarm_refuses_symlink_out_path` covers it end to end;
+    // these pin each step's contribution in isolation.
+
+    /// The symlink refusal has to precede `open`. Checking afterwards would be
+    /// checking the wrong inode — `open` follows the link, so the "refusal"
+    /// would come after the target had already been opened for write and
+    /// `ftruncate`d to the blob's length, which destroys whatever was there.
+    #[test]
+    fn prepare_target_refuses_a_symlink_and_leaves_its_target_intact() {
+        use std::os::unix::fs::symlink;
+        let root = soshal_test_util::tmp_root("prep_symlink");
+        let target = root.join("real.bin");
+        std::fs::write(&target, b"precious").unwrap();
+        let link = root.join("link.bin");
+        symlink(&target, &link).unwrap();
+
+        let err = prepare_target(&link, 4096).expect_err("must refuse");
+        assert!(err.contains("symlink"), "unexpected error: {err}");
+        assert_eq!(
+            std::fs::read(&target).unwrap(),
+            b"precious",
+            "the symlink target must not be opened, truncated or resized"
+        );
+    }
+
+    /// Path validation must also precede `open`, so a rejected name never results in
+    /// a file appearing on disk. This is the other half of WP11: the symlink check
+    /// covers a *link* at the final component, validation covers a *traversal*
+    /// through it.
+    ///
+    /// Worth being precise about what validation actually does, because the obvious
+    /// reading of the code is wrong: it does **not** reject `..` anywhere in the
+    /// path. The parent is canonicalized — which resolves both symlinks and `..` —
+    /// and only the final component is required to be a plain basename. So
+    /// `dir/../file.bin` is fine (it lands inside the canonicalized parent, same as
+    /// the canonical path would), while a final component that is itself a traversal
+    /// is refused.
+    #[test]
+    fn prepare_target_rejects_a_traversing_final_component() {
+        let root = soshal_test_util::tmp_root("prep_traversal");
+
+        // A final component containing "..", in two shapes: one that is a name
+        // with dots in it, and one that *is* a directory component.
+        let dotted = root.join("..escaped.bin");
+        let as_dir = root.join("sub").join("..");
+        for (label, hostile) in [("dotted name", &dotted), ("directory component", &as_dir)] {
+            let err = prepare_target(hostile, 4096).expect_err("must refuse");
+            assert!(
+                err.contains("file name") || err.contains("invalid out_path"),
+                "{label}: unexpected error: {err}"
+            );
+            assert!(
+                !std::fs::symlink_metadata(&dotted).is_ok_and(|m| m.is_file()),
+                "{label}: a rejected path must not create a file"
+            );
+        }
+        // Nothing at all was written into the validated directory.
+        let entries: Vec<_> = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert!(entries.is_empty(), "created: {entries:?}");
+    }
+
+    /// The other half of the same property, stated positively: a `..` in the
+    /// parent must *not* be an escape. It is canonicalized, so the file lands in
+    /// the canonicalized parent rather than anywhere above it. This is the case a
+    /// naive "reject any `..`" implementation would break, so it is pinned.
+    #[test]
+    fn a_dotdot_in_the_parent_resolves_rather_than_escaping() {
+        let root = soshal_test_util::tmp_root("prep_parent_dotdot");
+        let nested = root.join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        // `root/nested/../inside.bin` names a file in `root`.
+        let path = nested.join("..").join("inside.bin");
+
+        let map = prepare_target(&path, 128).expect("setup");
+        assert_eq!(map.len(), 128);
+        assert!(
+            root.join("inside.bin").exists(),
+            "the file must land in the canonicalized parent"
+        );
+        assert!(
+            !root.parent().unwrap().join("inside.bin").exists(),
+            "and must not land a level above the validated parent"
+        );
+    }
+
+    /// The happy path must produce exactly a sparse file of `total` bytes,
+    /// mapped over its full length. Getting this wrong is silent — a mapping
+    /// shorter than the blob makes every worker hit the `range exceeds mmap len`
+    /// branch and the whole download reports zero verified chunks — so it is
+    /// worth asserting the exact length on both sides.
+    #[test]
+    fn prepare_target_sparsifies_to_exactly_total_bytes() {
+        for total in [0u64, 1, 4096, 300_000] {
+            let root = soshal_test_util::tmp_root("prep_sparse");
+            let path = root.join("blob.bin");
+            let map = prepare_target(&path, total).expect("setup");
+
+            assert_eq!(map.len() as u64, total, "mapping must span the blob");
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().len(),
+                total,
+                "file must be sized to the blob, not left at 0"
+            );
+            // Sparse means untouched pages read as zero, which is also what the
+            // workers rely on before writing their ranges.
+            assert!(
+                map.iter().all(|&b| b == 0),
+                "a fresh sparse mapping must read as zeros ({total} bytes)"
+            );
+        }
+    }
+
+    /// `set_len` must come after `open` and before `mmap`. Mapping first would
+    /// either fail outright on a zero-length file or produce a mapping whose
+    /// length does not match the manifest, and the download would silently verify
+    /// nothing.
+    #[test]
+    fn prepare_target_reuses_an_existing_file_without_truncating_it() {
+        let root = soshal_test_util::tmp_root("prep_reuse");
+        let path = root.join("existing.bin");
+        std::fs::write(&path, vec![0xAAu8; 9000]).unwrap();
+
+        let map = prepare_target(&path, 4096).expect("setup");
+        assert_eq!(map.len(), 4096);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().len(),
+            4096,
+            "set_len resizes; it must not leave the old 9000 bytes"
+        );
+        assert!(
+            map.iter().all(|&b| b == 0xAA),
+            "resize preserves contents in place, so the tail is not zeroed for us"
+        );
     }
 
     #[test]

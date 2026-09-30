@@ -76,7 +76,7 @@ fn decode_p2p_frame_valid() {
             .map(|c| ChunkInput {
                 index: c.index,
                 total: c.total,
-                data: c.data,
+                data: c.data.into_owned(),
                 checksum: c.checksum,
             })
             .collect(),
@@ -171,7 +171,7 @@ fn decode_p2p_frame_crc_mismatch() {
         .map(|c| ChunkInput {
             index: c.index,
             total: c.total,
-            data: c.data,
+            data: c.data.into_owned(),
             checksum: c.checksum,
         })
         .collect();

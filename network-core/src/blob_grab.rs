@@ -10,6 +10,37 @@
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
 
+/// Take the body for chunk `want` from a channel that delivers in *completion*
+/// order, buffering whatever lands early in `pending`.
+///
+/// Two failure kinds, kept distinct because the caller has to treat them
+/// differently: the body itself may be a fetch `Err` (returned as
+/// `Ok(Err(..))`), while a disconnected channel before `want` arrived means a
+/// worker thread panicked mid-fetch (returned as `Err`).
+///
+/// A blocking receive is correct precisely because nothing may be written
+/// before `want`, and draining the channel into `pending` cannot deadlock: a
+/// worker blocked in `send` is blocked *only* because this is its sole reader
+/// and is about to read.
+fn take_in_order(
+    rx: &std::sync::mpsc::Receiver<(usize, Result<Vec<u8>, String>)>,
+    pending: &mut std::collections::BTreeMap<usize, Result<Vec<u8>, String>>,
+    want: usize,
+) -> Result<Result<Vec<u8>, String>, &'static str> {
+    if let Some(res) = pending.remove(&want) {
+        return Ok(res);
+    }
+    loop {
+        match rx.recv() {
+            Ok((idx, res)) if idx == want => return Ok(res),
+            Ok((idx, res)) => {
+                pending.insert(idx, res);
+            }
+            Err(_) => return Err("chunk thread panic"),
+        }
+    }
+}
+
 use soshal_media_core::cas::ChunkStore;
 use soshal_media_core::chunking::{ChunkManifest, ChunkRef};
 
@@ -251,78 +282,89 @@ pub fn fetch_blob_from_peer(
         //
         // Fetching is the only parallel part: the store/write/hash work below
         // stays strictly in manifest order, because the whole-blob BLAKE3 is a
-        // rolling hash over that exact sequence. Workers therefore only produce
-        // `(index, bytes)` pairs; each worker accumulates its own vector and the
-        // results are merged by index after the scope closes.
+        // rolling hash over that exact sequence. So the consumer needs chunks
+        // in index order while workers finish in completion order, and the
+        // consumer runs *inside* the scope, interleaved with the fetching.
+        //
+        // The previous shape collected every body into one `Vec` before the
+        // first `write_all`, so peak RSS was the whole blob — every chunk of a
+        // 512 MiB fetch resident at once, then CAS-put, then file-write: three
+        // passes over data that only needed to exist once. Peak is now
+        // independent of blob size.
+        //
+        // The bound is `2 * CONCURRENT_CHUNKS` bodies, not `CONCURRENT_CHUNKS`,
+        // and that floor is structural: the bodies being fetched and the bodies
+        // waiting for their turn at the front of the queue are necessarily
+        // different bodies, and both sets are live simultaneously. So 8 in
+        // flight + up to 8 reordered = 16 bodies = 256 MiB at
+        // QUIC_MAX_CHUNK, versus up to MAX_BLOB_FETCH_BYTES (512 MiB) before.
+        // The channel is 1-slot so it contributes no extra buffering of its
+        // own; the `BTreeMap` is the whole reorder buffer.
         let total_chunks = manifest.chunks.len();
         let cursor = std::sync::atomic::AtomicUsize::new(0);
         let workers = CONCURRENT_CHUNKS.min(total_chunks.max(1));
         // Borrow the manifest (not move) so the same refs serve both the
         // workers and the in-order write pass below.
         let chunks = &manifest.chunks[..];
-        let fetched: Vec<(usize, Result<Vec<u8>, String>)> = std::thread::scope(|s| {
-            let handles: Vec<_> = (0..workers)
-                .map(|_| {
-                    let cursor = &cursor;
-                    s.spawn(move || {
-                        let mut mine: Vec<(usize, Result<Vec<u8>, String>)> = Vec::new();
-                        loop {
-                            let idx = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            if idx >= total_chunks {
-                                break;
-                            }
-                            let chr = chunks[idx].clone();
-                            let res = fetch_chunk_bytes(*peer, key, my_pubkey, quic_addr, chr);
-                            mine.push((idx, res));
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(usize, Result<Vec<u8>, String>)>(1);
+        std::thread::scope(|s| -> Result<(), String> {
+            for _ in 0..workers {
+                let cursor = &cursor;
+                let tx = tx.clone();
+                s.spawn(move || {
+                    loop {
+                        let idx = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if idx >= total_chunks {
+                            break;
                         }
-                        mine
-                    })
-                })
-                .collect();
-            handles
-                .into_iter()
-                .filter_map(|h| h.join().ok())
-                .flatten()
-                .collect()
-        });
-        // Restore manifest order: the rolling blob hash depends on it.
-        let mut by_index: Vec<Option<Result<Vec<u8>, String>>> =
-            (0..total_chunks).map(|_| None).collect();
-        for (idx, res) in fetched {
-            if let Some(slot) = by_index.get_mut(idx) {
-                *slot = Some(res);
+                        let chr = chunks[idx].clone();
+                        let res = fetch_chunk_bytes(*peer, key, my_pubkey, quic_addr, chr);
+                        // A failed send means the consumer has already given
+                        // up — it hit a fetch error, or a short chunk, and
+                        // dropped the receiver. Stop pulling work instead of
+                        // blocking forever on a channel nobody will read; the
+                        // scope would otherwise join us here.
+                        if tx.send((idx, res)).is_err() {
+                            break;
+                        }
+                    }
+                });
             }
-        }
+            // Drop the consumer's own sender. Without this, `rx` can never see
+            // the disconnect that marks "every worker finished", so the final
+            // index would block forever waiting on a sender that is still alive.
+            drop(tx);
 
-        for (bi, res) in by_index.into_iter().enumerate() {
-            let chr = &manifest.chunks[bi];
-            let bytes = match res {
-                Some(res) => res?,
-                // A worker thread panicked: its slot never resolved.
-                None => return Err("chunk thread panic".to_string()),
-            };
-            if bytes.len() != chr.len {
-                return Err(format!(
-                    "chunk {} short ({} != {})",
-                    chr.blake3,
-                    bytes.len(),
-                    chr.len
-                ));
+            let mut pending: std::collections::BTreeMap<usize, Result<Vec<u8>, String>> =
+                std::collections::BTreeMap::new();
+            for bi in 0..total_chunks {
+                let res = take_in_order(&rx, &mut pending, bi).map_err(|e| e.to_string())??;
+                let chr = &manifest.chunks[bi];
+                let bytes = res;
+                if bytes.len() != chr.len {
+                    return Err(format!(
+                        "chunk {} short ({} != {})",
+                        chr.blake3,
+                        bytes.len(),
+                        chr.len
+                    ));
+                }
+                // Dedupe is normal (same clip via two peers / earlier run):
+                // only the first writer stores; the whole-blob BLAKE3 check
+                // still guards us.
+                let stored = absorbed.put_trusted(&chr.blake3, &bytes);
+                if stored {
+                    newly_absorbed.push(chr.blake3.clone());
+                } else if !absorbed.contains(&chr.blake3) {
+                    return Err(format!("chunk {} store failed", chr.blake3));
+                }
+                file.write_all(&bytes)
+                    .map_err(|e| format!("write {tmp_path}: {e}"))?;
+                hasher.update(&bytes);
+                written += bytes.len() as u64;
             }
-            // Dedupe is normal (same clip via two peers / earlier run):
-            // only the first writer stores; the whole-blob BLAKE3 check
-            // still guards us.
-            let stored = absorbed.put_trusted(&chr.blake3, &bytes);
-            if stored {
-                newly_absorbed.push(chr.blake3.clone());
-            } else if !absorbed.contains(&chr.blake3) {
-                return Err(format!("chunk {} store failed", chr.blake3));
-            }
-            file.write_all(&bytes)
-                .map_err(|e| format!("write {tmp_path}: {e}"))?;
-            hasher.update(&bytes);
-            written += bytes.len() as u64;
-        }
+            Ok(())
+        })?;
 
         // 3) Whole-blob verification + CAS absorb + atomic rename.
         if hasher.finalize().to_hex().as_str() != blob_hash {
@@ -350,6 +392,177 @@ mod tests {
     use super::*;
     use soshal_media_core::chunking::ChunkRef;
     use std::io::{BufRead, Read, Write};
+
+    /// Drain a channel fed in the given index order, asserting the bodies come
+    /// back in manifest order. This is the property the whole-blob BLAKE3
+    /// depends on and the one the parallel fetch makes non-obvious.
+    ///
+    /// The channel here is generously sized so the producer never blocks and
+    /// delivery order is exactly `order`. The production 1-slot channel is
+    /// covered separately by `one_slot_channel_does_not_deadlock`.
+    fn drain_in_order(order: &[usize]) -> Vec<(usize, Vec<u8>)> {
+        let (tx, rx) = std::sync::mpsc::sync_channel(order.len().max(1));
+        for &i in order {
+            tx.send((i, Ok(vec![i as u8]))).unwrap();
+        }
+        drop(tx);
+        let mut pending = std::collections::BTreeMap::new();
+        (0..order.len())
+            .map(|want| {
+                let body = take_in_order(&rx, &mut pending, want)
+                    .expect("no worker panic")
+                    .expect("no fetch error");
+                (want, body)
+            })
+            .collect()
+    }
+
+    /// The production shape: a 1-slot channel with several live senders. The
+    /// consumer asking for chunk 0 while chunks 3, 2, 1 are queued is the case
+    /// that deadlocks if the consumer ever blocks on `send` or waits for its own
+    /// index to be at the *front* of the channel.
+    ///
+    /// Two sender threads, so the delivery order is genuinely concurrent rather
+    /// than a fixed script; only the required output order is asserted.
+    #[test]
+    fn one_slot_channel_does_not_deadlock() {
+        const N: usize = 12;
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let senders: Vec<_> = (0..3)
+            .map(|lane| {
+                let tx = tx.clone();
+                std::thread::spawn(move || {
+                    // Strided lanes: lane L sends L, L+3, L+6, …, so all N
+                    // chunks are delivered exactly once and completion order is
+                    // not index order.
+                    let mut i = lane;
+                    while i < N {
+                        if tx.send((i, Ok(vec![i as u8]))).is_err() {
+                            return;
+                        }
+                        i += 3;
+                    }
+                })
+            })
+            .collect();
+        drop(tx);
+
+        // Drain *while* the senders run. Joining them first would deadlock on
+        // the 1-slot channel: the senders would block with a full channel and
+        // nothing would be consuming, which is exactly the shape this test
+        // exists to rule out in the real call site.
+        let mut pending = std::collections::BTreeMap::new();
+        for want in 0..N {
+            let body = take_in_order(&rx, &mut pending, want)
+                .expect("no worker panic")
+                .expect("no fetch error");
+            assert_eq!(
+                body,
+                vec![want as u8],
+                "chunk {want} must carry its own body, not another chunk's"
+            );
+        }
+        assert!(pending.is_empty(), "no chunk body may be left unconsumed");
+
+        // All N bodies were consumed, so every send completed and the senders
+        // are free to finish.
+        for s in senders {
+            s.join().unwrap();
+        }
+    }
+
+    /// Chunks must be handed to the writer in manifest order no matter what
+    /// order they finish in. Reversed order is the worst case: every chunk is
+    /// early but the one being asked for.
+    #[test]
+    fn out_of_order_completion_is_reordered_to_manifest_order() {
+        assert_eq!(
+            drain_in_order(&[0, 1, 2, 3]),
+            vec![(0, vec![0]), (1, vec![1]), (2, vec![2]), (3, vec![3]),]
+        );
+        // Reversed, and the fully shuffled case: the first request is for
+        // chunk 0 while 3, 2, 1 are all sitting in the channel.
+        assert_eq!(
+            drain_in_order(&[3, 2, 1, 0]),
+            vec![(0, vec![0]), (1, vec![1]), (2, vec![2]), (3, vec![3]),]
+        );
+        assert_eq!(
+            drain_in_order(&[1, 3, 0, 2]),
+            vec![(0, vec![0]), (1, vec![1]), (2, vec![2]), (3, vec![3]),]
+        );
+    }
+
+    /// A fetch error belongs to its own chunk and must not be confused with a
+    /// worker dying. An error on a chunk ahead of the current one is buffered
+    /// and surfaces when that chunk is reached; an error on the chunk being
+    /// asked for surfaces immediately. Neither reads as a panic.
+    #[test]
+    fn a_fetch_error_is_not_mistaken_for_a_worker_panic() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(3);
+        // Chunk 2 fails, and it is delivered *before* chunk 0 — the error is
+        // buffered, not raised, because the consumer is not at chunk 2 yet.
+        tx.send((2, Err("quic: boom".to_string()))).unwrap();
+        tx.send((0, Ok(vec![0]))).unwrap();
+        tx.send((1, Ok(vec![1]))).unwrap();
+        drop(tx);
+        let mut pending = std::collections::BTreeMap::new();
+
+        // Chunk 0 is fine even though an error is already buffered ahead of it.
+        let first = take_in_order(&rx, &mut pending, 0).expect("must not be a panic");
+        assert_eq!(first.expect("chunk 0 must succeed"), vec![0]);
+
+        // Reaching chunk 2 surfaces the fetch error, still not a panic.
+        let second = take_in_order(&rx, &mut pending, 1).expect("must not be a panic");
+        assert_eq!(second.expect("chunk 1 must succeed"), vec![1]);
+        let third = take_in_order(&rx, &mut pending, 2).expect("must not be a panic");
+        assert_eq!(
+            third.unwrap_err(),
+            "quic: boom",
+            "the real error is reported"
+        );
+    }
+
+    /// A worker that dies leaves its chunk undelivered, and every sender
+    /// eventually disconnects. That must report a panic, not hang, and not be
+    /// mistaken for a fetch error.
+    #[test]
+    fn a_worker_panic_reports_instead_of_hanging() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        // Only chunk 0 is ever delivered; chunk 1's worker "dies".
+        tx.send((0, Ok(vec![0]))).unwrap();
+        drop(tx);
+        let mut pending = std::collections::BTreeMap::new();
+
+        let first = take_in_order(&rx, &mut pending, 0).expect("must not be a panic");
+        assert_eq!(first.expect("chunk 0 must succeed"), vec![0]);
+
+        let missing = take_in_order(&rx, &mut pending, 1);
+        assert_eq!(missing.unwrap_err(), "chunk thread panic");
+    }
+
+    /// A chunk already buffered is served from the buffer, not by reaching for
+    /// the channel — the buffer is the authority, because it holds bodies that
+    /// arrived earlier for this index than anything still in flight.
+    #[test]
+    fn a_buffered_chunk_wins_over_one_still_in_the_channel() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        // A different body for the same index sits in the channel. An
+        // implementation that always reached for the channel before checking
+        // the buffer would return 99 and fail here.
+        tx.send((7, Ok(vec![99]))).unwrap();
+        let mut pending = std::collections::BTreeMap::new();
+        pending.insert(7, Ok(vec![7]));
+
+        assert_eq!(
+            take_in_order(&rx, &mut pending, 7).unwrap().unwrap(),
+            vec![7]
+        );
+        // Served from the buffer, so the channel entry is still there and was
+        // not silently consumed.
+        assert!(pending.is_empty());
+        assert_eq!(rx.try_recv().unwrap().0, 7);
+        drop(tx);
+    }
 
     #[test]
     fn hash_only_fetch_over_quic_then_tcp() {

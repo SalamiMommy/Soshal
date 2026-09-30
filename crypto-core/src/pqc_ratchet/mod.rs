@@ -21,7 +21,7 @@
 use zeroize::Zeroize;
 
 use self::ratchet_crypto::{
-    compress_json, decompress_json, derive_chain, derive_msg_key, derive_msg_key_bytes,
+    compress_bytes, decompress_bytes, derive_chain, derive_msg_key, derive_msg_key_bytes,
     derive_root_step, init_root, RATCHET_DOMAIN,
 };
 use crate::nip44::{decrypt as nip44_decrypt, encrypt as nip44_encrypt};
@@ -251,7 +251,7 @@ pub fn init_state(
 
 pub fn encrypt_ratchet(
     state: &RatchetInput,
-    plaintext: &str,
+    plaintext: &[u8],
 ) -> Result<(RatchetOutput, HeaderOutput, String), &'static str> {
     if state.version != RATCHET_VERSION {
         return Err("ratchet v3 required");
@@ -315,7 +315,7 @@ pub fn encrypt_ratchet(
     let (msg_key, next_chain) = derive_msg_key(&sending_chain_key, &state.context)?;
     sending_chain_key = hex::encode(&next_chain);
 
-    let compressed = compress_json(plaintext)?;
+    let compressed = compress_bytes(plaintext)?;
     let mut mk_arr = [0u8; 32];
     mk_arr.copy_from_slice(&msg_key);
     let ciphertext = nip44_encrypt(&compressed, &mk_arr)?;
@@ -366,7 +366,7 @@ pub fn decrypt_ratchet(
     state: &RatchetInput,
     header: &HeaderOutput,
     ciphertext: &str,
-) -> Result<(RatchetOutput, String), &'static str> {
+) -> Result<(RatchetOutput, Vec<u8>), &'static str> {
     if state.version != RATCHET_VERSION {
         return Err("ratchet v3 required");
     }
@@ -521,13 +521,7 @@ pub fn decrypt_ratchet(
     }
 
     let compressed_bytes = nip44_decrypt(ciphertext, &msg_key)?;
-    let inflated = decompress_json(&compressed_bytes)?;
-    let plaintext_value: serde_json::Value =
-        serde_json::from_slice(&inflated).map_err(|_| "bad json")?;
-    let final_plaintext = match plaintext_value {
-        serde_json::Value::String(s) => s,
-        other => other.to_string(),
-    };
+    let final_plaintext = decompress_bytes(&compressed_bytes)?;
 
     // Verify the header MAC before adopting the wire-supplied pk. The MAC is
     // keyed by the session root key: only a peer who shares the root (i.e. can
