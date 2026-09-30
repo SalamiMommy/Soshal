@@ -52,4 +52,12 @@ pub trait MeshBackend: Send {
 
     /// Downcast helper for backend-specific operations.
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+
+    /// Extra health counters this backend wants surfaced in the relay status
+    /// JSON. Merged into the top-level status object, so a backend that
+    /// buffers or drops work can report it instead of losing it silently.
+    /// Defaults to `null` for backends with nothing extra to report.
+    fn health(&self) -> serde_json::Value {
+        serde_json::Value::Null
+    }
 }

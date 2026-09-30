@@ -360,6 +360,19 @@ impl FreenetWebSocketClient {
         let request_bytes = bincode::serialize(&native_req)
             .map_err(|e| format!("Freenet request serialization failed: {e}"))?;
 
+        // This lock spans the send *and* the whole drain below, so concurrent
+        // contract calls serialize here. That is required by the protocol, not
+        // an oversight: `freenet_stdlib::client_api::ClientRequest` carries no
+        // correlation id on any variant (the only `stream_id` is server-assigned
+        // for streamed responses), so a response cannot be matched back to the
+        // request that produced it. A reader task feeding a shared queue would
+        // let two concurrent `get_contract` calls receive each other's state and
+        // silently return the wrong contract to the wrong caller.
+        //
+        // Narrowing this lock needs an upstream protocol change first. The
+        // practical mitigation already shipped: `FreenetBackend::broadcast`
+        // (relay-core/src/backends/freenet.rs) enqueues instead of putting
+        // inline, so a slow node no longer stalls the mesh ingest thread.
         let mut socket_guard = self.socket.lock().await;
         let ws = socket_guard.as_mut().ok_or("WebSocket not connected")?;
 

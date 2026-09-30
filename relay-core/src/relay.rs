@@ -285,20 +285,30 @@ impl RelayNode {
             .collect()
     }
 
-    /// JSON status: `{running, peers:{kind:n}, published, received, delivered}`.
+    /// JSON status: `{running, peers:{kind:n}, published, received, delivered}`
+    /// plus any per-backend `health()` counters.
     pub fn status(&self) -> String {
         let mut peers = serde_json::Map::new();
         for (kind, count) in self.peers() {
             peers.insert(kind.as_str().to_string(), serde_json::Value::from(count));
         }
-        serde_json::json!({
+        let mut out = serde_json::json!({
             "running": self.running,
             "peers": peers,
             "published": self.published,
             "received": self.received,
             "delivered": self.delivered.len(),
-        })
-        .to_string()
+        });
+        if let Some(map) = out.as_object_mut() {
+            for backend in &self.backends {
+                if let serde_json::Value::Object(health) = backend.health() {
+                    for (k, v) in health {
+                        map.insert(k, v);
+                    }
+                }
+            }
+        }
+        out.to_string()
     }
 
     fn re_broadcast(&mut self, env: MeshEnvelope, source_idx: usize) {
