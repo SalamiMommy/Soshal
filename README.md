@@ -237,5 +237,5 @@ Users control their own keys, data, and which relays they connect to.
 
 ## License
 
-MIT
+GPL2
 
